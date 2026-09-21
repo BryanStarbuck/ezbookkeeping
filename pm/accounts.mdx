@@ -1,0 +1,410 @@
+---
+title: ezBookkeeping — sign-in accounts, the bound user, and getting started
+description: >
+  What you type into http://localhost:8080/, why the first visit shows a login page and not a setup
+  wizard, how to get back in when the password is forgotten (there is no email on this install), and
+  how the ONE sign-in user of this install becomes the BOUND USER that the machine plane (apis.mdx),
+  the CLI (cli.mdx) and the MCP server (mcp.mdx) all act as. This spec is about USER accounts — the
+  row in the `user` table that logs into the web UI. It is NOT about ledger accounts (checking,
+  savings, credit cards) — those are ezBookkeeping's `account` rows, provisioned from the statements
+  manifest (apis.mdx §15) and listed by `ezbk accounts` (cli.mdx). Upstream ezBookkeeping is a
+  multi-user web app with its own registration, login, 2FA and admin CLI; this fork changes NONE of
+  that. It only adds the rule that a headless client acts as exactly one of those users (apis.mdx §6).
+---
+
+# ezBookkeeping — sign-in accounts, the bound user, and getting started
+
+`~/BGit/Bryan_git/ezbookkeeping/` · web UI **http://localhost:8080/** · sign-up **/signup**
+
+---
+
+## Simple instructions
+
+There is **no preset login, no "admin" user, and no default password**. You create your own
+account on the login page. You can log in with that **username or email**, plus the password you
+chose.
+
+**Get it running (once):**
+
+1. `brew install go node just` (Go, Node/npm, just). No Docker.
+2. `cd ~/BGit/Bryan_git/ezbookkeeping && just build`
+3. `just run`. It prints the URL. Open **http://localhost:8080/**
+
+**Log in:**
+
+- **First time (no users yet)** → you land on a login page anyway. Click **"Create an account"**
+  under the form. Fill in username, email, nickname and password (6+ characters). Pick your
+  **default currency** (USD) on that form too. Submit, and you are in. From now on, log in with that
+  username (or email) and password.
+- **Not sure if an account exists?** Run `just users`. It lists every username and email in the
+  local database, or says "No users yet".
+- **Forgot the password?** The "Forget Password?" link cannot help here, because this install has
+  no mail server. Run `just reset-password <username>` instead. It asks for the new password twice
+  and does not echo it. Then log in. Your data is untouched.
+- **Nothing in the database worth keeping?** You can start over instead. Stop `just run`
+  (Ctrl+C), delete `data/ezbookkeeping.db`, then `just run` again. You are back at "Create an
+  account".
+
+After the first login, the CLI (`ezbk`) and the MCP act as that same user automatically (§5).
+
+Everything below is the long version: why it works this way (§3), other ways back in (§4), and how
+this one login is also who the CLI and MCP act as (§5).
+
+---
+
+## Table of Contents
+
+- [Simple instructions](#simple-instructions)
+- [Introduction](#introduction)
+- [Goal](#goal)
+- [Overview](#overview)
+- [1. Three things called "account", and never confusing them](#1-three-things-called-account-and-never-confusing-them)
+- [2. The direct answer — what to type on the login page](#2-the-direct-answer--what-to-type-on-the-login-page)
+- [3. First run — how the one user comes to exist](#3-first-run--how-the-one-user-comes-to-exist)
+- [4. Forgotten password — ways back in](#4-forgotten-password--ways-back-in)
+- [5. The bound user — how one sign-in user drives the CLI and the MCP](#5-the-bound-user--how-one-sign-in-user-drives-the-cli-and-the-mcp)
+- [6. A second user, and closing registration](#6-a-second-user-and-closing-registration)
+- [7. Getting started after the first login](#7-getting-started-after-the-first-login)
+- [8. Upstream account features we keep as-is](#8-upstream-account-features-we-keep-as-is)
+- [9. Running without Docker, and the URL](#9-running-without-docker-and-the-url)
+- [10. Troubleshooting](#10-troubleshooting)
+- [11. Security and open-source safety (LOCKED)](#11-security-and-open-source-safety-locked)
+- [12. Acceptance criteria](#12-acceptance-criteria)
+- [13. Related specs](#13-related-specs)
+
+---
+
+## Introduction
+
+This install of ezBookkeeping runs on one computer, for one person, and is driven three ways: the
+browser at http://localhost:8080/, the `ezbk` CLI, and the `ezbookkeeping` MCP server inside Claude
+Code. Only the browser ever asks for a password. The CLI and the MCP never see one. They hold the
+machine key (apis.mdx §5), and the plane decides which USER they act as. That user is the same row
+in the `user` table that the browser logs in with.
+
+So "what do I log in with?" has a short answer (§2). The longer answer explains why the first visit
+looks the way it does (§3), what to do when the password is gone (§4), and how that one login is also
+the identity behind every `ezbk` command and every `ezb_` tool (§5). Everything here is upstream
+ezBookkeeping behaviour except §5 and the `just users` / `just reset-password` recipes, which are
+this fork's additions.
+
+---
+
+## Goal
+
+- Anyone standing at the login page knows, from this document alone, what to type and how to make
+  the first account.
+- A forgotten password never means a reinstall or lost books. There is a documented way back in
+  that needs no mail server and no hand-editing of the database.
+- The identity model is stated once: one sign-in user, one bound user, and the web UI, the CLI and
+  the MCP agree on who that is.
+- Nothing in this spec, or in the repo, contains a real username, email, password or hash. The
+  examples use `operator` and `you@example.com`.
+
+---
+
+## Overview
+
+| Question                            | Answer                                                                                            |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Username or email?                  | Either. The login field says "Username", but the server accepts the username **or** the email.   |
+| Which one?                          | The one you chose on **Create an account**. `just users` lists them.                              |
+| Which password?                     | The one chosen at sign-up. It is stored only as a salted hash.                                   |
+| Is there an admin account?          | No. ezBookkeeping has no admin role in the UI. Admin work is the binary's `userdata` CLI (§8).   |
+| First visit shows a login page?     | Yes. Upstream has no first-run redirect; registration is a link under the form (§3).             |
+| Forgot it?                          | `just reset-password <username>` (§4.1). The email reset needs SMTP, which is off here.          |
+| Who do `ezbk` / the MCP act as?     | The bound user: configured by name, or the only user when there is exactly one (§5).             |
+| Where do I see who that is?         | `ezbk whoami` → `GET /machine/v1/whoami` (apis.mdx §10).                                         |
+| Which URL?                          | **http://localhost:8080/** — `just run`, `just url` and plain `just` all print it (§9).          |
+
+---
+
+## 1. Three things called "account", and never confusing them
+
+1. **A sign-in user** — a row in `user`: username, email, nickname, password hash, default currency,
+   first day of week, optional 2FA, a `disabled` flag and feature restrictions. This spec is about
+   these.
+   Model: `~/BGit/Bryan_git/ezbookkeeping/pkg/models/user.go`, struct `User`.
+2. **The bound user** — not a separate row, but the one sign-in user whose `uid` the machine plane
+   uses for every call. apis.mdx §6.
+   Resolution: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/binduser.go`, `ResolveBoundUser()`.
+3. **A ledger account** — a checking account, savings, a credit card, cash. Rows in `account`,
+   provisioned from the statements manifest (apis.mdx §15), listed by `ezbk accounts`, exposed as
+   `ezb_list_accounts`.
+   Model: `~/BGit/Bryan_git/ezbookkeeping/pkg/models/account.go`.
+
+When a spec, a command or an MCP tool says "account" without qualification, it means the third kind.
+This document is the only place where the bare word means the first.
+
+---
+
+## 2. The direct answer — what to type on the login page
+
+- **Username** (or email): what you typed on **Create an account**. To read it without logging in,
+  run `just users`. It queries the local `data/ezbookkeeping.db` and prints username, email and
+  `disabled` for every user. Once the plane is up, `ezbk whoami` also prints the bound username.
+- **Password**: whatever was typed at sign-up (6 to 128 characters). It exists nowhere but the hash
+  in the database. Nothing else can tell you what it is: not the `.ini`, not the credentials file,
+  not this repo. If it is gone, go to §4.
+- **Two-factor code**: asked only if you turned 2FA on for this user (§8).
+- **Which URL**: **http://localhost:8080/**. `127.0.0.1:8080` also works, because the server listens
+  on the loopback address. But `localhost` is the configured domain (`EBK_SERVER_DOMAIN=localhost`),
+  so links the app builds itself point there. Pick one host and stay on it. The login token is kept
+  per host, so switching hosts looks like being logged out.
+
+The login form's field is labelled "Username", but the server matches it against both columns.
+Implemented in `~/BGit/Bryan_git/ezbookkeeping/pkg/api/authorizations.go`, `AuthorizationsApi.AuthorizeHandler()`;
+the lookup is `~/BGit/Bryan_git/ezbookkeeping/pkg/services/users.go`, `UserService.GetUserByUsernameOrEmailAndPassword()`.
+
+---
+
+## 3. First run — how the one user comes to exist
+
+ezBookkeeping has no seeded admin account, no default password and no setup wizard. On a fresh
+database:
+
+1. `just run` starts the server. The binary creates or migrates `data/ezbookkeeping.db`. The `user`
+   table is empty.
+2. The first visit to http://localhost:8080/ shows the **normal login page**. Unlike Firefly III,
+   upstream does not redirect to sign-up when there are zero users. Below the form it says
+   "Don't have an account? **Create an account**" (route `/signup`).
+3. The sign-up form asks for username (max 32, letters/digits/`_`/`-`), email, nickname, password,
+   language, **default currency** and first day of week. Submitting creates the user, logs you in,
+   and optionally seeds a starter set of categories.
+   Implemented in `~/BGit/Bryan_git/ezbookkeeping/pkg/api/users.go`, `UsersApi.UserRegisterHandler()`;
+   request shape `UserRegisterRequest` in `pkg/models/user.go`.
+4. Registration **stays open** afterwards. Upstream's `[user] enable_register = true` has no
+   "first user only" rule. That is fine here because the server only listens on `127.0.0.1`, so
+   nobody off this computer can reach `/signup`. §6 shows how to close it anyway.
+
+Email verification is off (`enable_email_verify = false`), so nothing waits on a confirmation mail.
+
+Admin alternative, no browser needed: the binary's own `userdata user-add` subcommand creates a user
+from the terminal (§8). Nothing in the normal flow uses it.
+
+---
+
+## 4. Forgotten password — ways back in
+
+None of these edit the SQLite file by hand. Your books are never at risk from a lost password.
+
+### 4.1 `just reset-password <username>` (preferred)
+
+Upstream ships an admin subcommand, `ezbookkeeping userdata user-modify-password`, that sets a
+password directly in the database. The justfile wraps it:
+
+```
+just users                         # find the username
+just reset-password operator       # prompts twice, no echo; then log in
+```
+
+The recipe reads the password with `read -s`, so it never appears on screen or in shell history.
+It runs the binary with the same `EBK_WORK_DIR`, config file and secret key as `just run`, so it hits
+the same database. The server can stay running. Existing sessions of that user stay valid.
+
+Implemented in the justfile recipe `reset-password`, which calls
+`~/BGit/Bryan_git/ezbookkeeping/pkg/cli/user_data.go`, `UserDataCli.ModifyUserPassword()`.
+
+Caveat: upstream takes the password as a `--password` flag, so it is briefly visible to `ps` on this
+machine while the command runs (under a second). On a single-user computer that is acceptable. Do
+not run it on a shared host.
+
+### 4.2 "Forget Password?" on the login page — does not work here
+
+The link exists and `enable_forget_password = true`, but the reset link is sent **by email**, and
+`[mail] enable_smtp = false` on this install. Submitting the form fails with "SMTP server is not
+enabled". Unlike Firefly III, ezBookkeeping has no "log" mail driver, so the link is not written to
+a log file either. To use this path, you would have to configure an SMTP server in
+`EBK_MAIL_*` environment variables. That is not worth it for a single-user install; use §4.1.
+Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/services/forget_passwords.go`, `ForgetPasswordService.SendPasswordResetEmail()`.
+
+### 4.3 Start over — only if the books are empty
+
+If the database holds nothing worth keeping (a first sign-up with a typo, say): stop `just run`,
+delete `data/ezbookkeeping.db`, and run `just run` again. You are back at "Create an account".
+This destroys every transaction and the machine plane's import records. Do not do this to recover a
+password on real books. §4.1 always works.
+
+---
+
+## 5. The bound user — how one sign-in user drives the CLI and the MCP
+
+The machine plane never authenticates a person. It authenticates the *machine* (the key, apis.mdx
+§5) and then acts **as a user**: the bound user. Resolution, first hit wins (apis.mdx §6.1):
+
+1. `EZBK_MACHINE_USERNAME` in the **server's** environment.
+2. `ezbookkeeping.machine.username` in `~/.credentials/ezbookkeeping.json`.
+3. The database has **exactly one** non-deleted user → that user.
+4. Otherwise → `not_ready`. With zero users, the hint says to register the first user at
+   http://localhost:8080/. With two or more, it names the usernames and the setting to choose one.
+
+Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/binduser.go`, `ResolveBoundUser()`.
+
+What this means at the login page: **the user you log in as and the bound user are the same person.**
+A transaction the MCP creates shows up in the browser, because both use the same `uid`. There is no
+second login for the CLI and no API token to mint. The machine key is the whole credential, and it is
+not tied to a password.
+
+To see the resolved identity without a browser:
+
+```
+ezbk whoami        # bound user, default currency, timezone, tiers, key fingerprint
+ezbk status        # port, pid, health, tiers, bound user
+```
+
+Both read `GET /machine/v1/whoami` and `/health` (apis.mdx §10). The MCP mirrors them as
+`ezb_whoami` and `ezb_health` (mcp.mdx).
+
+---
+
+## 6. A second user, and closing registration
+
+This install is one person's books. If a second user is ever wanted (a spouse, a test user):
+
+1. Open http://localhost:8080/, log out, click **Create an account**, register the second user.
+   Or from the terminal: `ezbookkeeping userdata user-add --username … --email … --nickname …
+   --password … --default-currency USD` (same `EBK_WORK_DIR` and `--conf-path` as `just run`).
+2. Tell the plane whose books to open. Set `ezbookkeeping.machine.username` in
+   `~/.credentials/ezbookkeeping.json`. With two users and nothing set, the plane refuses on purpose
+   (§5 rule 4). `ezbk status` confirms.
+3. Optional: close registration so `/signup` refuses. Start the server with
+   `EBK_USER_ENABLE_REGISTER=false just run`. The `run` recipe passes your environment through, and
+   upstream reads any `EBK_<SECTION>_<KEY>` override. The "Create an account" link then shows as
+   disabled.
+
+ezBookkeeping users never share books. Each user's accounts and transactions are separate. There is
+no "administration" or "household" concept to join.
+
+---
+
+## 7. Getting started after the first login
+
+The first login lands on an empty home page. In order:
+
+1. **Default currency.** You picked it at sign-up. Check it under *User Settings → Basic*. `ezbk whoami`
+   shows it too. Make sure it reads `USD` before importing anything. Amounts are converted to it in
+   every total.
+2. **Ledger accounts.** Do not hand-make them in the UI when the statements archive has a manifest.
+   `ezbk statements manifest` → `ezbk accounts plan` / `apply` provisions every account named in the
+   manifest, with the exact naming rule (apis.mdx §15, cli.mdx §10). Hand-made accounts with slightly
+   different names are the first cause of duplicated books.
+3. **Statements.** `ezbk statements scan` → `plan` → `apply` (cli.mdx §10). Every apply is a dry run
+   first, with a confirm token. Duplicates are decided by the plane's `machine_import_record` table.
+   Writes need the server started with `ezbk up --allow-write` (or `EZBK_MACHINE_ALLOW_WRITE=1`).
+4. **The MCP.** `just install-mcp yes` registers `ezbookkeeping` with Claude Code. Restart Claude
+   Code or run `/mcp`. `ezb_whoami` should name the same user the browser is logged in as (mcp.mdx).
+5. **Optional: 2FA.** *User Settings → Two-Factor Authentication* turns on TOTP. It protects the
+   browser login only. The machine plane is unaffected, because it never logs in (apis.mdx §6.3).
+
+---
+
+## 8. Upstream account features we keep as-is
+
+| Feature                       | Where                                        | Notes for this install                                                              |
+| ----------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Username/email + password     | `/login`                                     | The only credential a human ever types.                                             |
+| Registration                  | `/signup`                                    | Open by default (`enable_register`). Loopback-only; closable (§6).                  |
+| Password reset by email       | "Forget Password?"                           | Needs SMTP; off here. Use `just reset-password` (§4).                               |
+| Change password / email       | *User Settings → Basic*                      | Renaming the user means updating `ezbookkeeping.machine.username` if it is set.     |
+| Two-factor (TOTP)             | *User Settings → Two-Factor Authentication*  | Browser only. Recovery codes are shown once; keep them outside the repo.            |
+| Sessions                      | *User Settings → Device & Sessions*          | `ezbk` never appears here: the plane creates no session (apis.mdx §6.2).            |
+| Admin CLI                     | `./ezbookkeeping userdata …`                 | `user-add`, `user-get`, `user-modify-password`, `user-enable`/`user-disable`, `user-2fa-disable`, `user-delete`. |
+| OAuth 2.0 / OIDC login        | `[auth] enable_oauth2_auth`                  | Off. Not used.                                                                      |
+| Upstream API tokens / MCP     | `[security] enable_api_token`, `[mcp]`       | Off, and stay off (root CLAUDE.md). `ezbk` and our MCP use the machine key.         |
+
+The admin CLI lives in `~/BGit/Bryan_git/ezbookkeeping/cmd/user_data.go` (command `userdata`); the
+work is in `~/BGit/Bryan_git/ezbookkeeping/pkg/cli/user_data.go`, struct `UserDataCli`.
+Locked out by 2FA? `userdata user-2fa-disable --username <name>` turns it off for that user.
+
+---
+
+## 9. Running without Docker, and the URL
+
+ezBookkeeping runs natively on macOS. Upstream publishes a Docker image, but nothing on this fork
+needs it. The binary is plain Go (with cgo for SQLite), the front end is a static Vite build served
+by that same binary, and the database is a SQLite file. So there is no `docker.mdx`: no hard reason
+exists to containerise it.
+
+- `just build` compiles `./ezbookkeeping`, `./dist`, `./cli/bin/ezbk` and `./mcp/dist`.
+- `just run` serves everything on one port, in the foreground, and prints
+  **http://localhost:8080/** in a banner before the server starts.
+- `just` (no recipe) and `just url` print the same URL. `just build` ends by printing it.
+- `EBK_PORT=9090 just run` changes the port. Every printed URL follows.
+
+**Why `localhost` and not `127.0.0.1`.** The server binds to `127.0.0.1` so it is unreachable from
+the network. The URL uses the name `localhost`, and `EBK_SERVER_DOMAIN=localhost` makes the app build
+its own links (root URL, QR code for mobile) with that name. macOS browsers resolve `localhost` and
+reach the loopback listener. Nothing in ezBookkeeping checks the `Host` header, so the Firefly III
+"Host-header does not match" trap does not exist here. The machine plane's clients (`ezbk`, the MCP)
+talk to `127.0.0.1` directly. That is an API detail, not a URL anyone types.
+
+---
+
+## 10. Troubleshooting
+
+| Symptom                                               | Cause                                                          | Fix                                                                                   |
+| ----------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Login page, no idea what to type                      | No user yet, or you forgot which one exists.                   | `just users`. "No users yet" → click **Create an account**.                           |
+| "Login name or password is wrong"                     | Wrong password, or a typo in the username/email.               | `just users` for the exact name; `just reset-password <name>`.                        |
+| "Forget Password?" fails: SMTP server is not enabled  | No mail server configured on this install.                     | `just reset-password <name>` (§4.1).                                                  |
+| "User is disabled"                                    | Disabled with `userdata user-disable`.                         | `./ezbookkeeping --conf-path conf/ezbookkeeping.ini userdata user-enable --username <name>` (with `EBK_WORK_DIR="$PWD"`). |
+| Lost the 2FA device                                   | TOTP on, recovery codes gone.                                  | `userdata user-2fa-disable --username <name>`, then log in and re-enrol.              |
+| "Create an account" is greyed out                     | Registration closed (`EBK_USER_ENABLE_REGISTER=false`).        | Restart with plain `just run`, or add the user with `userdata user-add`.             |
+| Logged out after switching `localhost` ↔ `127.0.0.1`  | The login token is stored per host.                            | Use http://localhost:8080/ always.                                                    |
+| Page does not load at all                             | Server not running, or `./dist` missing.                       | `just build`, then `just run`.                                                        |
+| `ezbk status` says not ready                          | Zero users, or two users and no `machine.username`.            | Register the first user, or set `ezbookkeeping.machine.username`.                     |
+| Browser and MCP disagree on what exists               | Logged into a different user than the bound user.              | `ezbk whoami` vs the user menu; align `ezbookkeeping.machine.username`.               |
+
+---
+
+## 11. Security and open-source safety (LOCKED)
+
+- Your username and email are personal data. They live in `data/ezbookkeeping.db` (git-ignored) and
+  in `~/.credentials/ezbookkeeping.json` if you set `machine.username`. They go nowhere else: never in
+  a spec, a test fixture, a commit message, or a committed log. Examples use `operator` and
+  `you@example.com`.
+- The password exists only as a hash in the database. Nothing in the repo, the credentials file or
+  the state directory holds a plaintext password, and no recipe prints one. `just reset-password`
+  reads it without echo and does not store it.
+- The machine key (`~/.credentials/ezbookkeeping.json`) cannot log a browser in, and the password
+  cannot call the machine plane. Two credentials, two doors, no bridge between them (apis.mdx §5, §6).
+- The key is also not `data/.secret_key`. That file is upstream's `[security] secret_key`, which
+  signs login tokens and encrypts 2FA secrets. Deleting it logs every browser out and breaks
+  existing 2FA enrolments.
+- The server listens on `127.0.0.1` only (`EBK_SERVER_HTTP_ADDR=127.0.0.1` in `just run`). That is
+  what makes open registration safe. Never change it to `0.0.0.0` on this install.
+- Before real statements are imported, prefer moving `db_path`, the log and storage outside the repo
+  (root CLAUDE.md, "Runtime state location").
+
+---
+
+## 12. Acceptance criteria
+
+1. On a fresh database, http://localhost:8080/ shows the login page with an enabled "Create an
+   account" link. Signing up creates the user and logs them in.
+2. The login form accepts that user's **username** and, separately, their **email**, each with the
+   password.
+3. `just users` prints "No users yet" on an empty database and the username/email table otherwise.
+4. `just reset-password <name>` prompts twice without echo, refuses when the two differ, and
+   afterwards the new password logs in. No transaction, account or import record changes.
+5. `ezbk whoami` names, as the bound user, the same username the browser is logged in as.
+6. With two users and no `machine.username`, the plane answers `not_ready` naming both. Setting it
+   resolves the error.
+7. `just`, `just url`, `just build` and `just run` each print `http://localhost:8080/` (or the
+   `EBK_PORT` port). None prints `127.0.0.1`.
+8. Nothing in the flow needs Docker.
+9. The repo's real-data canary finds nothing in this file.
+
+---
+
+## 13. Related specs
+
+- `apis.mdx` — §5 the machine key; §6 the bound user; §10 `/whoami` and `/health`; §14 the ingest plane; §15 provisioning
+  ledger accounts from the manifest.
+- `cli.mdx` — §3 bring-up (`ezbk up`), `ezbk whoami` / `status` / `doctor`, §10 the statements
+  pipeline.
+- `mcp.mdx` — registering with Claude Code; `ezb_whoami` / `ezb_health`.
+- `error_err.mdx` — where a failed login or a failed `userdata` command is recorded
+  (`~/T/ezbookkeeping/error.err`).
+- Root `CLAUDE.md` — running locally, the key, the private-data boundary.
+- Root `justfile` — `build`, `run`, `url`, `users`, `reset-password`.

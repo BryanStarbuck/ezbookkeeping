@@ -2,7 +2,10 @@
 #
 #   just build   -> Go backend binary (./ezbookkeeping) + Vue frontend (./dist) + ezbk CLI (./cli/bin/ezbk)
 #                   + the MCP server (./mcp/dist), after syncing the vendored errfile copies
-#   just run     -> serves both at http://localhost:8080/
+#   just run     -> serves both at http://localhost:8080/ (prints the full URL)
+#   just url     -> prints the full URL to open in the browser
+#   just users   -> lists the sign-in users (username, email) in the local database
+#   just reset-password NAME -> sets a new password for NAME (prompted, never echoed)
 #   just lint    -> go vet (+ errfile/catch-must-report) for both Go modules, then the two eslint runs
 #   just test    -> every suite: root Go, cli Go, vitest, mcp vitest
 #   just check-errors -> builds bin/errfilecheck and runs the error-file coverage script (pm/error_err.mdx §13.3)
@@ -17,15 +20,25 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 port := env_var_or_default("EBK_PORT", "8080")
 bin := "ezbookkeeping"
+url := "http://localhost:" + port + "/"
 
-# List recipes
+# Print the URL, then list recipes
 default:
+    @echo ""
+    @echo "  ezBookkeeping: {{url}}"
+    @echo "  (start it with: just run — sign-in help: pm/accounts.mdx)"
+    @echo ""
     @just --list
+
+# Print the full URL to open in the browser
+url:
+    @echo "{{url}}"
 
 # Build backend + frontend + the ezbk CLI + the MCP server (after syncing the vendored errfile copies)
 build: sync-errfile build-backend build-frontend build-cli build-mcp
     @echo ""
     @echo "Build complete. Start it with: just run"
+    @echo "Then open: {{url}}"
 
 # Regenerate cli/internal/errfile and mcp/src/errfile from pkg/errfile and src/lib/errfile (pm/error_err.mdx §4.1, §5.5)
 sync-errfile:
@@ -114,7 +127,7 @@ run:
     @[ -s data/.secret_key ] || { openssl rand -hex 24 | tr -d '\n' > data/.secret_key; echo "Generated data/.secret_key"; }
     @echo ""
     @echo "=============================================="
-    @echo "  ezBookkeeping: http://localhost:{{port}}/"
+    @echo "  ezBookkeeping: {{url}}"
     @echo "=============================================="
     @echo ""
     EBK_WORK_DIR="$PWD" \
@@ -124,6 +137,24 @@ run:
     EBK_SERVER_STATIC_ROOT_PATH=dist \
     EBKCFP_SECURITY_SECRET_KEY="$PWD/data/.secret_key" \
     ./{{bin}} --conf-path conf/ezbookkeeping.ini server run
+
+# List the sign-in users in the local database (username, email, disabled?) — pm/accounts.mdx §2
+users:
+    @[ -f data/ezbookkeeping.db ] || { echo "No database yet (data/ezbookkeeping.db). Run: just run, then create an account at {{url}}"; exit 0; }
+    @command -v sqlite3 >/dev/null || { echo "Error: sqlite3 is required"; exit 127; }
+    @n=$(sqlite3 data/ezbookkeeping.db "select count(*) from user where deleted=0"); \
+     if [ "$n" = "0" ]; then echo "No users yet. Open {{url}} and click 'Create an account'."; \
+     else sqlite3 -header -column data/ezbookkeeping.db "select username, email, disabled from user where deleted=0 order by uid"; fi
+
+# Set a new password for USERNAME without email (prompted, never echoed or kept in history) — pm/accounts.mdx §4
+reset-password USERNAME:
+    @[ -x ./{{bin}} ] || { echo "Error: backend not built. Run: just build"; exit 1; }
+    @read -r -s -p "New password for {{USERNAME}} (6-128 chars): " p1; echo; \
+     read -r -s -p "Repeat it: " p2; echo; \
+     [ "$p1" = "$p2" ] || { echo "Error: the two passwords differ; nothing changed"; exit 1; }; \
+     EBK_WORK_DIR="$PWD" EBKCFP_SECURITY_SECRET_KEY="$PWD/data/.secret_key" \
+     ./{{bin}} --conf-path conf/ezbookkeeping.ini userdata user-modify-password --username "{{USERNAME}}" --password "$p1"; \
+     echo "Done. Log in at {{url}} as {{USERNAME}}."
 
 # Run the Vite dev server (hot reload, :8081) — needs `just run` in another terminal
 dev:
