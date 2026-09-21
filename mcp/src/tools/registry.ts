@@ -3,7 +3,7 @@
  *
  * tools/list and dispatch both read TOOLS. A tool present in the catalogue but missing from
  * dispatch is a model calling it and getting -32601, which looks like a broken server; a single
- * array makes that impossible. Seventy-two tools in ten families: forty-nine read, twenty-three
+ * array makes that impossible. Seventy-four tools in ten families: fifty read, twenty-four
  * write; one of the writes (ezb_delete_transactions, §9.5b) deletes, at the admin tier.
  */
 import { ACCOUNT_TOOLS } from './accounts.js';

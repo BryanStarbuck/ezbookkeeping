@@ -16,11 +16,11 @@ const STATEMENT_UNTRUSTED = ['description', 'comment', 'label', 'name', 'entity'
 const ARCHIVE_READ_ONLY = 'The archive itself is read-only: nothing under the statements root is ever written, moved or renamed.';
 
 /** `root` is optional everywhere: the plane falls back to ezbookkeeping.statements.root in the credentials file. */
-const ROOT_PROPERTIES: Record<string, unknown> = {
+export const ROOT_PROPERTIES: Record<string, unknown> = {
   root: strField('The statements root directory. Defaults to ezbookkeeping.statements.root in the credentials file (or EZBK_STATEMENTS_DIR).'),
   manifest_path: strField('The manifest file, relative to the root. Defaults to the one the plane finds.'),
 };
-const zRoot = { root: z.string().min(1).optional(), manifest_path: z.string().min(1).optional() };
+export const zRoot = { root: z.string().min(1).optional(), manifest_path: z.string().min(1).optional() };
 type RootArgs = { root?: string; manifest_path?: string };
 
 const MODES = ['prepared', 'raw'] as const;

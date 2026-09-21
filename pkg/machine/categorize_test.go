@@ -1,6 +1,7 @@
 package machine
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -297,7 +298,7 @@ func TestCatzPlanEnsure(t *testing.T) {
 }
 
 func TestCatzRoutesRegistered(t *testing.T) {
-	want := map[string]bool{"GET /transactions/uncategorized": false, "POST /transactions/categorize": false, "POST /categories/ensure": false}
+	want := map[string]bool{"GET /transactions/uncategorized": false, "POST /transactions/categorize": false, "POST /categories/ensure": false, "GET /categories/tree": false, "POST /ingest/categorize": false}
 
 	for _, r := range Routes() {
 		k := r.Method + " " + r.Path
@@ -311,5 +312,93 @@ func TestCatzRoutesRegistered(t *testing.T) {
 		if !seen {
 			t.Fatalf("route %s is not registered", k)
 		}
+	}
+}
+
+func TestCatzBuildTreeAndYAML(t *testing.T) {
+	all := []*models.TransactionCategory{
+		{CategoryId: 10, Name: "Food & Drink", Type: models.CATEGORY_TYPE_EXPENSE, DisplayOrder: 1},
+		{CategoryId: 11, Name: "Groceries", ParentCategoryId: 10, Type: models.CATEGORY_TYPE_EXPENSE, DisplayOrder: 2},
+		{CategoryId: 12, Name: "Coffee: Beans", ParentCategoryId: 10, Type: models.CATEGORY_TYPE_EXPENSE, DisplayOrder: 1},
+		{CategoryId: 13, Name: "Old", ParentCategoryId: 10, Type: models.CATEGORY_TYPE_EXPENSE, DisplayOrder: 3, Hidden: true},
+		{CategoryId: 20, Name: "Earnings", Type: models.CATEGORY_TYPE_INCOME, DisplayOrder: 1},
+		{CategoryId: 21, Name: "Salary", ParentCategoryId: 20, Type: models.CATEGORY_TYPE_INCOME, DisplayOrder: 1},
+	}
+
+	groups, counts := catzBuildTree(all, false, 0)
+
+	if counts.Groups != 2 || counts.Subcategories != 3 {
+		t.Fatalf("counts: %+v", counts)
+	}
+
+	// income before expense (the type order), subs in display order, hidden left out
+	if groups[0].Name != "Earnings" || groups[0].Type != "income" || groups[1].Subcategories[0].Name != "Coffee: Beans" || groups[1].Subcategories[1].Name != "Groceries" {
+		t.Fatalf("order: %+v", groups)
+	}
+
+	if _, c := catzBuildTree(all, true, 0); c.Subcategories != 4 {
+		t.Fatalf("include_hidden: %+v", c)
+	}
+
+	if g, c := catzBuildTree(all, false, models.CATEGORY_TYPE_EXPENSE); c.Groups != 1 || g[0].Name != "Food & Drink" {
+		t.Fatalf("type filter: %+v", g)
+	}
+
+	doc, err := catzTreeYAML(groups, counts, "2026-01-02T03:04:05Z")
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{"app: ezbookkeeping\n", "generated_at: \"2026-01-02T03:04:05Z\"\n", "counts:\n  groups: 2\n  subcategories: 3\n", "groups:\n  - name: Earnings\n    type: income\n    id: \"20\"\n", "name: 'Coffee: Beans'", "subcategories:\n      - name: Salary\n"} {
+		if !strings.Contains(doc, want) {
+			t.Fatalf("yaml lacks %q:\n%s", want, doc)
+		}
+	}
+
+	if !strings.HasPrefix(doc, "app:") {
+		t.Fatalf("app is the first key:\n%s", doc)
+	}
+}
+
+func TestIngCatzParseFile(t *testing.T) {
+	tsv := "\xef\xbb\xbfTime\tTimezone\tType\tCategory\tSub Category\tAccount\tAmount\tDescription\tFITID\n" +
+		"2026-01-01 11:59:59\t+00:00\tBalance Modification\t\t\tNorthbank Checking ••4021\t100.00\tOpening balance\t\n" +
+		"2026-01-02 12:00:00\t+00:00\tExpense\tFood & Drink\tGroceries\tNorthbank Checking ••4021\t12.50\tMERIDIAN MARKET, INC\t4021-20260102-1250-0\n" +
+		"2026-01-03 12:00:00\t+00:00\tIncome\t\t\tNorthbank Checking ••4021\t5.00\tREFUND\t4021-20260103-500-0\n" +
+		"\n"
+
+	rows, err := ingCatzParseFile([]byte(tsv), "Checking_x4021_ALL_ezbookkeeping.tsv")
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(rows) != 3 {
+		t.Fatalf("rows: %d", len(rows))
+	}
+
+	if r := rows[1]; r.Line != 3 || r.Type != models.CATEGORY_TYPE_EXPENSE || r.Group != "Food & Drink" || r.Sub != "Groceries" || r.BankId != "4021-20260102-1250-0" || r.Desc != "MERIDIAN MARKET, INC" {
+		t.Fatalf("expense row: %+v", r)
+	}
+
+	if rows[0].Type != 0 || rows[2].Sub != "" || rows[2].Type != models.CATEGORY_TYPE_INCOME {
+		t.Fatalf("other rows: %+v %+v", rows[0], rows[2])
+	}
+
+	// the column order does not matter; a missing FITID column is refused, naming it
+	if _, err := ingCatzParseFile([]byte("Type\tCategory\tSub Category\n"), "x.tsv"); txnFailCode(t, err) != CodeInvalidInput {
+		t.Fatalf("missing FITID should be invalid_input, got %v", err)
+	}
+
+	// a CSV honours quoting, so a comma inside a description does not shift the columns
+	csvRows, err := ingCatzParseFile([]byte("FITID,Type,Category,Sub Category,Description\nA1,Expense,Food & Drink,Groceries,\"MERIDIAN, INC\"\n"), "x.csv")
+
+	if err != nil || len(csvRows) != 1 || csvRows[0].Sub != "Groceries" || csvRows[0].Desc != "MERIDIAN, INC" {
+		t.Fatalf("csv: %+v %v", csvRows, err)
+	}
+
+	if got := ingCatzCompanion("import/personal/Northbank/Checking_x4021_ALL_ezbookkeeping.ofx"); got != "import/personal/Northbank/Checking_x4021_ALL_ezbookkeeping.tsv" {
+		t.Fatalf("companion: %s", got)
 	}
 }

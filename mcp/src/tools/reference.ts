@@ -1,6 +1,6 @@
 /**
- * Reference data — pm/mcp.mdx §9.5. Six read tools: categories, tags, tag groups, templates and
- * scheduled transactions, what the schedules will create, saved insights.
+ * Reference data — pm/mcp.mdx §9.5. Seven read tools: categories (the list and the YAML tree), tags,
+ * tag groups, templates and scheduled transactions, what the schedules will create, saved insights.
  */
 import { z } from 'zod';
 
@@ -39,6 +39,38 @@ export const listCategories: ToolDef = {
     const a = args as { type?: string; include_hidden?: boolean; parent_id?: string; name?: string; flat?: boolean };
     const res = await ctx.client.request('/categories', { query: { type: a.type, include_hidden: a.include_hidden, parent_id: a.parent_id, name: a.name, flat: a.flat } });
     return fromPlane(res, ['name', 'comment']);
+  },
+};
+
+export const getCategoryTree: ToolDef = {
+  name: 'ezb_get_category_tree',
+  route: { method: 'GET', path: '/categories/tree' },
+  tier: 'read',
+  description: describe({
+    what: 'Returns the whole category tree as ONE YAML document — every group (primary category) with its sub-categories, by major category (income, expense, transfer) — so a categoriser reads every choice before picking one; a transaction holds a sub-category, named by the path "Type > Group > Sub".',
+    tier: 'read',
+    insteadOf: 'Read this before categorising anything (ezb_set_transaction_categories, ezb_set_import_categories) and pick only paths it lists; create a missing path deliberately with ezb_add_categories. For one category or a filtered flat list, ezb_list_categories.',
+  }),
+  inputSchema: objectSchema({
+    type: enumField('Only groups of this major category.', CATEGORY_TYPES),
+    include_hidden: boolField('Include hidden groups and sub-categories. Defaults to false.'),
+    format: enumField('yaml (the default): data.yaml is the document, with the counts. json: the structured groups as well.', ['yaml', 'json'] as const),
+  }),
+  schema: z
+    .object({
+      type: z.enum(CATEGORY_TYPES).optional(),
+      include_hidden: z.boolean().optional(),
+      format: z.enum(['yaml', 'json']).optional(),
+    })
+    .strict(),
+  async run(args, ctx) {
+    const a = args as { type?: string; include_hidden?: boolean; format?: 'yaml' | 'json' };
+    const res = await ctx.client.request('/categories/tree', { query: { type: a.type, include_hidden: a.include_hidden } });
+    if (a.format !== 'json' && res.data !== null && typeof res.data === 'object') {
+      const d = res.data as Record<string, unknown>;
+      return { data: { app: d.app, generatedAt: d.generatedAt, counts: d.counts, yaml: d.yaml, note: d.note }, meta: res.meta, untrusted: ['yaml'] };
+    }
+    return fromPlane(res, ['name', 'yaml']);
   },
 };
 
@@ -155,4 +187,4 @@ export const listSavedInsights: ToolDef = {
   },
 };
 
-export const REFERENCE_TOOLS: ToolDef[] = [listCategories, listTags, listTagGroups, listTemplates, listUpcomingSchedules, listSavedInsights];
+export const REFERENCE_TOOLS: ToolDef[] = [listCategories, getCategoryTree, listTags, listTagGroups, listTemplates, listUpcomingSchedules, listSavedInsights];

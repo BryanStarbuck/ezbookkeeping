@@ -112,10 +112,10 @@ describe('live integration (a real server, the built MCP, synthetic books)', () 
     return true;
   };
 
-  it('spine: initialize names the server, lists 72 tools, and the banner shows only a fingerprint (AC 1, 4)', async ({ skip }) => {
+  it('spine: initialize names the server, lists 74 tools, and the banner shows only a fingerprint (AC 1, 4)', async ({ skip }) => {
     if (!needsLive(skip)) return;
     const tools = await rw!.listTools();
-    expect(tools.length).toBe(72);
+    expect(tools.length).toBe(74);
     expect(tools.every(t => t.name.startsWith('ezb_'))).toBe(true);
     const stderr = rw!.stderr.join('');
     expect(stderr).toContain('writes ENABLED');
@@ -146,7 +146,7 @@ describe('live integration (a real server, the built MCP, synthetic books)', () 
     if (!needsLive(skip)) return;
     const tools = await ro!.listTools();
     const disabled = tools.filter(t => t.description.includes('CURRENTLY DISABLED'));
-    expect(disabled.length).toBe(23);
+    expect(disabled.length).toBe(24);
     const refused = await call(ro!, 'ezb_add_tag', { name: 'nope' });
     expect(error(refused).code).toBe('write_disabled');
     expect(error(refused).hint).toContain('EZBKMCP_ALLOW_WRITE=1');

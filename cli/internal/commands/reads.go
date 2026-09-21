@@ -16,6 +16,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"regexp"
 	"sort"
@@ -127,6 +128,15 @@ func init() {
 				{Name: "parent", Value: "id|name", Help: "only the secondaries under this primary"},
 			},
 			Run: orRunCategoriesList,
+		},
+		app.Verb{
+			Name: "categories tree", Group: orGroupRead, MaxArgs: 0,
+			Summary: "the whole tree as one YAML document: every group with its sub-categories, by major category",
+			Flags: []app.Flag{
+				{Name: "type", Value: "income|expense|transfer", Help: "only groups of this major category"},
+				{Name: "include-hidden", Help: "include hidden groups and sub-categories"},
+			},
+			Run: orRunCategoriesTree,
 		},
 		app.Verb{
 			Name: "tags list", Group: orGroupRead, MaxArgs: 0,
@@ -1908,6 +1918,46 @@ func orRunCategoriesList(c *app.Ctx) error {
 	}
 
 	return orEmitRows(c, env, rows, cols, "no categories (the browser offers a default set; or ezbk categories add)")
+}
+
+// orRunCategoriesTree prints the server's YAML document (data.yaml) even when piped; an explicit
+// --format json prints the whole envelope, the structured groups included. The CLI never assembles the tree itself.
+func orRunCategoriesTree(c *app.Ctx) error {
+	q := url.Values{}
+
+	if t := strings.ToLower(c.String("type")); t != "" {
+		if t != "income" && t != "expense" && t != "transfer" {
+			return app.Usage(fmt.Sprintf("--type %q is not income, expense or transfer", t), "ezbk help categories tree")
+		}
+
+		q.Set("type", t)
+	}
+
+	if c.Bool("include-hidden") {
+		q.Set("include_hidden", "true")
+	}
+
+	env, err := c.Call("GET", "/categories/tree", q, nil)
+
+	if err != nil {
+		return err
+	}
+
+	// YAML is the point of this verb, piped or not; only an explicit --format json asks for the envelope
+	if strings.EqualFold(strings.TrimSpace(c.String("format")), "json") {
+		return render.PrettyJSON(c.Out, env.Raw)
+	}
+
+	doc, _ := orData(env)["yaml"].(string)
+
+	if doc == "" {
+		c.Info("%s", "no categories (the browser offers a default set; or ezbk categories add)")
+		return nil
+	}
+
+	_, err = io.WriteString(c.Out, doc)
+
+	return err
 }
 
 func orRunTagsList(c *app.Ctx) error {

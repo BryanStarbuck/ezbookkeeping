@@ -22,7 +22,7 @@ describe('gate 4 — mode', () => {
     const { host, config } = makeHost();
     expect(config.allowWrite).toBe(false);
     const listed = host.handleListTools().tools;
-    expect(listed.length).toBe(72);
+    expect(listed.length).toBe(74);
     for (const tool of WRITE_TOOLS) {
       const entry = listed.find(t => t.name === tool.name);
       expect(entry?.description).toContain('CURRENTLY DISABLED');

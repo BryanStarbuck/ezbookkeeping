@@ -1404,6 +1404,7 @@ In code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_transfers.go` — `x
 | `/categories/batch`   | POST   | W     | `categories[]` — `CategoryCreateBatchHandler` (the "default categories" preset) |
 | `/categories/:id`     | PATCH  | W     | `name`, `parent_id` \| `parent_name`, `color`, `icon`, `comment`; `:id` may be a path (§10.3.1) |
 | `/categories/ensure`  | POST   | W     | `paths[]` (`Type > Group > Sub`), `color`, `icon` — creates only what is missing (§10.3.1) |
+| `/categories/tree`    | GET    | R     | `type`, `include_hidden` (false), `format` (json\|yaml) — every group with its sub-categories as JSON **and** one YAML document (§10.4.1) |
 | `/categories/:id/hide`| POST   | W     | `hidden`                                                                     |
 | `/categories/:id/move`| POST   | W     | `to_index`                                                                   |
 | `/categories/:id`     | DELETE | **A** | `confirm_token` — refused while transactions use it, naming the count        |
@@ -1411,6 +1412,46 @@ In code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_transfers.go` — `x
 **Two levels, and transactions use the second.** Primary categories group secondary ones; a
 transaction references a **secondary** category. `POST /transactions` naming a primary category is
 `invalid_input` listing its children.
+
+#### 10.4.1 The category tree as one document — `GET /categories/tree`
+
+A categoriser — an agent, a script, the operator in a text editor — needs the whole list of choices
+before it picks one: every major category (income, expense, transfer), every group under it, every
+sub-category under that. `GET /categories` answers the tree too, but as the app's full category rows;
+`/categories/tree` answers exactly the choices, in display order, and renders them **on the server** as
+one YAML document, so no client assembles or re-sorts them.
+
+The JSON envelope carries both: `data.groups[]` (`name`, `type`, `id`, `hidden`, `subcategories[]` of
+`name`, `id`, `hidden`), `data.counts` (`groups`, `subcategories`), `data.generatedAt`, and
+`data.yaml` — the same tree as text. `format=yaml` answers the document alone
+(`application/yaml`), for curl and a text editor. Hidden groups and sub-categories are left out unless
+`include_hidden`; `type` narrows to one major category.
+
+```yaml
+app: ezbookkeeping
+generated_at: "2026-09-21T22:00:00Z"
+counts:
+  groups: 2
+  subcategories: 3
+groups:
+  - name: Food & Drink
+    type: expense
+    id: "3401855937219633200"
+    hidden: false
+    subcategories:
+      - name: Groceries
+        id: "3401855937219633201"
+        hidden: false
+```
+
+The shape is shared with the sister apps' planes (Actual Budget's `GET /categories/tree` and Firefly
+III's), so one categoriser reads all three: `app`, `generated_at`, `counts`, `groups[name, type, id,
+hidden, subcategories[name, id, hidden]]` — an app without a type or a hidden flag leaves that key out.
+The document lists choices, never amounts. Surfaces: MCP `ezb_get_category_tree` (mcp.mdx §9.5), CLI
+`ezbk categories tree` (cli.mdx §6).
+
+Builds the tree, in the list route's order, and renders the YAML in code:
+~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_categorize.go `catzHandleTree`, `catzBuildTree`, `catzTreeYAML`
 
 ### 10.5 Tags and tag groups
 
@@ -1985,6 +2026,47 @@ Code: `ingIsEmptyFile()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_p
 - Never invents a date, an amount, or a balancing row. An unreadable row is named in `_conflicts.csv`
   and counted.
 - Never uploads a statement anywhere — including to the LLM recognisers upstream offers.
+
+### 14.10 Categorising imported rows from the statement file — `POST /ingest/categorize`
+
+An OFX row carries no category, so an import lands every income and expense row in a fallback
+category (§14.9: ingest never guesses one). The categories are decided afterwards, outside the plane,
+and written into each account's **companion file** — the ezBookkeeping TSV next to the import
+(import_formats.mdx §11.4a) with `Type` (the major category), `Category` (the group), `Sub Category`,
+and a `FITID` column repeating the OFX row's bank id. This route gives the rows already in the books
+those categories, importing nothing again.
+
+| Argument                  | Meaning                                                                                 |
+| ------------------------- | --------------------------------------------------------------------------------------- |
+| `root`, `manifest_path`   | as §14.2; the manifest names each account's `file`, whose same-stem `.tsv` is the companion |
+| `accounts[]`              | account keys, labels, paths or last-fours (default: every manifest account)            |
+| `file`                    | one account's category file instead of its companion (`.tsv`, or a quoted `.csv`); exactly one account |
+| `fallback_category_ids[]` | the categories rows may leave (a group means its sub-categories); default every sub-category named `Uncategorized` |
+| `overwrite`               | also change rows already outside the fallback (default false)                          |
+| `limit`                   | rows changed per call, default and cap 5000; `preview.remaining` counts the rest       |
+| `summary_only`            | drop the per-row before/after from the preview                                         |
+| `dry_run`, `confirm_token`, `max_changes` | §9.2                                                                   |
+
+Per row: the file's `FITID` becomes the import id `{account_key}|FITID:{fitid}` (§14.5), the import
+record names its transaction, and the transaction must still exist, must not be a balance modification,
+and must hold the file's major category — a row the reclassify pass turned into a transfer is skipped
+as `type_differs`, never converted back. A row outside the fallback is counted `already_categorized`
+unless `overwrite`. The path `Type > Category > Sub Category` must exist: an unknown one is listed in
+`preview.unknownCategories` with its row count and never created (create it with
+`POST /categories/ensure`, then plan again). Everything else is exactly `POST /transactions/categorize`
+(§9.8): one bulk plan, `preview.byCategory`, a confirm token over the change set, one journal entry
+that `/undo` reverses. `changes` carries `update`, `unchanged` and one `skip_<reason>` count per reason
+(`no_category`, `no_fitid`, `not_imported`, `transaction_gone`, `balance_modification`, `type_differs`,
+`already_categorized`, `unknown_category`, `duplicate`, `over_limit`); `preview.skippedSamples` names
+the first 50 skipped rows by account and line.
+
+Re-running is safe by construction: changed rows leave the fallback, so a second plan finds `update: 0`,
+and a category the operator set by hand is never overwritten without `overwrite`.
+
+Reads the companion file, traces each FITID through `machine_import_record` and builds the plan in code:
+~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_categorize.go `ingHandleCategorize`, `ingCatzParseFile`, `ingCatzFiles`
+Plans and applies the category changes (shared with `/transactions/categorize`) in code:
+~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_categorize.go `catzPlanAssignments`, `catzApply`
 
 ---
 

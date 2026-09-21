@@ -607,6 +607,9 @@ READING THE BOOKS
   ezbk transactions export [same filters] --format csv|tsv
   ezbk transactions transfer-candidates [--account A]... [--start D] [--end D] [--window-days 4] [--no-hint] [--limit N]
   ezbk categories list [--type income|expense|transfer] [--include-hidden]
+  ezbk categories tree [--type income|expense|transfer] [--include-hidden]   # the server's YAML document
+                                                                           # (GET /categories/tree, apis.mdx §10.4.1);
+                                                                           # YAML even when piped, --format json for the envelope
   ezbk tags list | ezbk tag-groups list
   ezbk templates list [--scheduled]
   ezbk schedules upcoming [--days 30]

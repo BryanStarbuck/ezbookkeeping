@@ -786,8 +786,9 @@ Done in `~/BGit/Bryan_git/Bryan_Arindom/bank_statements/import/_tools/emit_ezboo
 | `*_ezbookkeeping.tsv`    | ezBookkeeping's own TSV: for a person, a spreadsheet, or a hand import into **empty** books | ❌ never alongside the OFX |
 
 The TSV carries the opening balance as a `Balance Modification` row dated 11:59:59 UTC, value and bridge
-rows with their categories (§11.7), and the tag `statement-import`, so a person importing it by hand gets
-the same books — without ids.
+rows with their categories (§11.7), the tag `statement-import`, the operator's categories on every other
+row the rules decide, and a last column `FITID` (§11.4a) — so a person importing it by hand gets the same
+books, and the plane can later give rows already imported from the OFX the TSV's categories.
 
 ### 11.2 Layout and the manifest
 
@@ -866,6 +867,33 @@ and a re-import plans `new 0`. These are **the same ids the Actual files carry**
 one id in both apps. The `_ALL` roll-up keeps one row per id, so the id is unique within the file (§8.3).
 `{last4}` is the label when there is no number (`Crypto-value-…`).
 
+### 11.4a The companion TSV as the category file
+
+The OFX carries no category (§3.4), so the categories are decided outside the plane and written into
+the companion TSV, whose header is ezBookkeeping's own plus one column:
+
+```
+Time  Timezone  Type  Category  Sub Category  Account  Account Currency  Amount  Account2  Account2 Currency  Account2 Amount  Geographic Location  Tags  Description  FITID
+2026-01-02 12:00:00  +00:00  Expense  Food & Drink  Groceries  Northbank Checking ••4021  USD  12.50  …  statement-import  MERIDIAN MARKET  4021-20260102-1250-0-3f2a9c1d
+```
+
+- `Type` is the **major category** (`Income` / `Expense`, from the sign) and never changes; `Category` is
+  the **group** and `Sub Category` the **sub-category**, both of that type — a path the category tree
+  (`GET /categories/tree`, apis.mdx §10.4.1) lists, or one the categoriser creates on purpose first.
+- `FITID` repeats the OFX row's `<FITID>` (§11.4) byte for byte. It is the only link between a TSV row and
+  the transaction the OFX import made (`machine_import_record`: `{account_key}|FITID:{fitid}`). Upstream's
+  TSV reader maps columns by header name and ignores one it does not know, so a hand import still works.
+- A row the categoriser leaves blank stays in the import's fallback category (§11.7). Blank is the honest
+  answer for a move between the operator's own accounts (the reclassify pass makes it a transfer), a
+  pipeline row (value change, bridge) and any payee the rules cannot decide — never a guess.
+- Only the `_ALL` companion is read back (`POST /ingest/categorize`, apis.mdx §14.10); the per-month TSVs
+  carry the same categories for a person reading them.
+
+The operator's categoriser is private to the statement pipeline (its rules name real payees):
+`~/BGit/Bryan_git/Bryan_Arindom/bank_statements/import/_tools/categorize_ezbookkeeping.py` with its rules
+file `category_rules_ezbookkeeping.yaml`. It runs inside the emitter (`write_tsv`), so a rebuild keeps the
+categories, and on its own to retrofit the files and print the coverage and the largest unmatched payees.
+
 ### 11.5 Per-row field rules
 
 | OFX tag    | Written as                                                                                        |
@@ -906,8 +934,9 @@ the last `LEDGERBAL`. The import script checks it for every account (§12.3).
 ### 11.7 Categories and fallbacks
 
 OFX rows never carry a category (§3.4), and ezBookkeeping requires one on every Income and Expense row
-(§2.4). So the import names **fallback categories per row mode**, and the operator re-categorises later
-with `ezb_list_import_fallout` → `ezb_set_transaction_category`:
+(§2.4). So the import names **fallback categories per row mode**, and the categories arrive afterwards —
+from the companion TSV in bulk (§11.4a, `ezb_set_import_categories`), and for what is left by hand or by
+an agent through `ezb_list_uncategorized` → `ezb_set_transaction_categories`:
 
 | Mode    | Fallback (expense and income sides)       | Why                                                                          |
 | ------- | ------------------------------------------ | ---------------------------------------------------------------------------- |
@@ -943,6 +972,17 @@ which speaks JSON-RPC to the **same** `ezbookkeeping` MCP server Claude Code loa
    conflict or block → `ezb_apply_statement_import` with the token and `max_changes` = the plan's `new`.
 4. Re-plan: **`new` must be 0**, or the ids are not stable — a pipeline bug.
 5. `ezb_list_accounts`: the account's balance must equal the manifest's `last_printed_balance`.
+
+Then, after the reclassify pass has turned own-account moves and value rows into transfers, the categories
+— scripted in `…/_tools/categorize_via_mcp_ezbookkeeping.mjs`, through the same MCP server:
+
+6. `ezb_get_category_tree`, then `ezb_add_categories` with every path the rules use (only the missing ones
+   are created; preview, then apply).
+7. Per account: `ezb_set_import_categories` (manifest_path, `accounts: [key]`, `summary_only`) → stop on
+   any `unknownCategories` → apply with the token and `max_changes` = the preview's `update`; repeat while
+   `remaining` > 0.
+8. Preview again: **`update` must be 0**. Balances do not move (a category is not an amount); the
+   verification of step 5 still matches.
 
 ---
 

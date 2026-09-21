@@ -1,5 +1,5 @@
 /**
- * The write tier — pm/mcp.mdx §9.5, §9.7. Twenty-one tools, off by default. Every one but ezb_undo
+ * The write tier — pm/mcp.mdx §9.5, §9.7. Twenty-two tools, off by default. Every one but ezb_undo
  * previews by default (dry_run: true) and applies only with dry_run: false plus the confirm_token
  * the preview returned, under a max_changes ceiling; the plane recomputes the change set at apply
  * time and refuses a moved fingerprint with conflict. None deletes anything.
@@ -8,7 +8,7 @@ import { z } from 'zod';
 
 import { ACCOUNT_CATEGORIES, ACCOUNT_REF_PROPERTIES, accountSegment, zAccountRef } from './accounts.js';
 import { CATEGORY_TYPES } from './reference.js';
-import { PLAN_FILE_PROPERTIES, PLAN_IMPORT_PROPERTIES, withRoot, zPlanFile, zPlanImport } from './statements.js';
+import { PLAN_FILE_PROPERTIES, PLAN_IMPORT_PROPERTIES, ROOT_PROPERTIES, withRoot, zPlanFile, zPlanImport, zRoot } from './statements.js';
 import { amountField, boolField, currencyField, dateField, describe, enumField, fromPlane, hundredths, idField, idListField, intField, objectSchema, seg, strField, toolFail, WRITE_PROPERTIES, withoutWriteKeys, writeOpts, zCurrency, zDate, zId, zWrite } from './tool.js';
 import type { ToolDef, ToolResult, WriteArgs } from './tool.js';
 import { FILTER_PROPERTIES, filterOnly, zFilter } from './transactions.js';
@@ -108,6 +108,46 @@ export const applyFileImport: ToolDef = {
   async run(args, ctx) {
     const a = args as WriteArgs & Record<string, unknown>;
     const res = await ctx.client.request('/ingest/file/apply', { method: 'POST', body: { ...withRoot(withoutWriteKeys(a), ctx), ...writeOpts(a, ctx.config) }, noTimeout: true });
+    return fromWrite(res);
+  },
+};
+
+export const setImportCategories: ToolDef = {
+  name: 'ezb_set_import_categories',
+  route: { method: 'POST', path: '/ingest/categorize' },
+  tier: 'write',
+  hasDryRun: true,
+  noTimeout: true,
+  description: describe({
+    what: "Gives rows that are ALREADY imported the categories their statement file now carries, importing nothing again: per manifest account it reads the companion TSV (Type, Category, Sub Category, FITID), traces each FITID through the plane's import record to its transaction, and categorises it in one previewed, undoable write. By default only rows still in a fallback category (Uncategorized) change; a row whose major category differs from the file (reclassified into a transfer) is skipped; unknown category paths are listed, never created.",
+    tier: 'write',
+    insteadOf: 'Read ezb_get_category_tree first; create the paths preview.unknownCategories lists with ezb_add_categories, then preview again. For ids you picked yourself (a payee group), ezb_set_transaction_categories.',
+  }),
+  inputSchema: objectSchema({
+    ...ROOT_PROPERTIES,
+    accounts: { type: 'array', items: { type: 'string' }, description: 'Only these manifest accounts (account keys, labels or last-fours). Defaults to every account in the manifest.' },
+    file: strField("One account's category file instead of its companion TSV, relative to the root (a .tsv, or a quoted .csv, with Type, Category, Sub Category and FITID columns). Needs exactly one account."),
+    fallback_category_ids: idListField('The categories rows may be categorised OUT of (a group includes its sub-categories). Defaults to every sub-category named Uncategorized.'),
+    overwrite: boolField('Also re-categorise rows that already have a non-fallback category. Defaults to false: a category the operator set by hand is never overwritten.'),
+    limit: intField('At most this many rows change in one call (default and cap 5000); preview.remaining says how many wait, and a second call picks them up.', { minimum: 1, maximum: 5000 }),
+    summary_only: boolField('Leave the per-row before-and-after out of the preview and keep the per-category counts. Use it for large files.'),
+    ...WRITE_PROPERTIES,
+  }),
+  schema: z
+    .object({
+      ...zRoot,
+      accounts: z.array(z.string().min(1)).optional(),
+      file: z.string().min(1).optional(),
+      fallback_category_ids: z.array(zId).optional(),
+      overwrite: z.boolean().optional(),
+      limit: z.number().int().min(1).max(5000).optional(),
+      summary_only: z.boolean().optional(),
+      ...zWrite,
+    })
+    .strict(),
+  async run(args, ctx) {
+    const a = args as WriteArgs & Record<string, unknown>;
+    const res = await ctx.client.request('/ingest/categorize', { method: 'POST', body: { ...withRoot(withoutWriteKeys(a), ctx), ...writeOpts(a, ctx.config) }, noTimeout: true });
     return fromWrite(res);
   },
 };
@@ -895,6 +935,7 @@ export const WRITE_TOOLS: ToolDef[] = [
   applyAccounts,
   applyStatementImport,
   applyFileImport,
+  setImportCategories,
   addTransactions,
   updateTransaction,
   setTransactionCategory,

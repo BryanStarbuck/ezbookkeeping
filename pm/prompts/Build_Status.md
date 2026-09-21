@@ -132,7 +132,24 @@ STATEMENT IMPORT FORMATS  (pm/import_formats.mdx — the contract for every file
               handlers on a temp SQLite, incl. a real ingEvaluate re-plan), TestGatesMcpReachesOnlyTheBulkDelete,
               TestXf* (cli), mcp/test/transfers.test.ts                    2026-09-21
 
+[ DONE]  S9   categories: GET /categories/tree (apis.mdx §10.4.1) — every group with its sub-categories
+              as JSON and one YAML document, the shape shared with the Actual Budget and Firefly III
+              forks; POST /ingest/categorize (apis.mdx §14.10) — rows already imported take the
+              categories of their companion TSV (Type, Category, Sub Category, FITID → import record →
+              transaction), only out of the fallback unless overwrite, type differences and unknown
+              paths skipped and listed, never created; shares catzPlanAssignments / catzApply with
+              /transactions/categorize. MCP ezb_get_category_tree and ezb_set_import_categories — 74
+              tools, 50 read, 24 write; CLI `ezbk categories tree`. import_formats.mdx §11.4a (the
+              companion as the category file) and §11.9 steps 6-8; mcp.mdx §11.5b; the MCP prompt.
+              Tests TestCatzBuildTreeAndYAML, TestIngCatzParseFile, TestIngCatzEndToEnd (temp SQLite,
+              through upstream's handlers: dry run, apply, balances, second run 0, undo),
+              TestIngCatzLimitAndFileArgument; 171 MCP tests. Real run through the MCP after a
+              rehearsal on a copy: 27 categories created, 9,020 rows categorised, balances still
+              equal to the last printed statements, second run 0; write tier back off   2026-09-21
+
 NEXT: the confirm-group account imports only when the operator names it (--group confirm).
+      The rows the operator's rules leave blank (own-account moves the reclassify pass did not
+      pair, and payees only the operator can place) wait in ezb_list_uncategorized.
 
 --------------------------------------------------------------------------------------------------
 KNOWN

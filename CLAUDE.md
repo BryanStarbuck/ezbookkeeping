@@ -20,7 +20,7 @@ Our fork adds seven things:
 1. **Machine-plane API** at `/machine/v1`, inside the same Go server. It only answers loopback callers, and every call needs the API secret key (below). It calls the same `pkg/services` the browser's API uses, so the browser, the CLI and the agent never disagree about a number. Spec: `pm/apis.mdx`.
 2. **CLI `ezbk`**: a thin Go client of the machine plane. It starts the app if it is down. Its flagship job is importing years of bank statements exactly once. Spec: `pm/cli.mdx`.
 3. **MCP server `ezbookkeeping`** (tools prefixed `ezb_`): a thin Node + TypeScript stdio client of the machine plane, for Claude Code.
-   * 72 tools: 49 read, 23 write. Writes are off by default. One tool deletes (`ezb_delete_transactions`, by id only), and it also needs the admin tier on both sides (`EZBKMCP_ALLOW_ADMIN=1`, `ezbk up --allow-admin`).
+   * 74 tools: 50 read, 24 write. Writes are off by default. One tool deletes (`ezb_delete_transactions`, by id only), and it also needs the admin tier on both sides (`EZBKMCP_ALLOW_ADMIN=1`, `ezbk up --allow-admin`).
    * Spec: `pm/mcp.mdx`.
    * Its instructions to the model: `ai/mcp_prompt_ezbookkeeping.md`.
 4. **More APIs, and more charting.** Upstream's statistics page groups categories and converts currencies in the browser (`src/stores/statistics.ts`). We move that work into Go analytics routes (`/machine/v1/analytics/*`) so every total is computed once. Future charts must read those same routes, never re-add numbers in new TypeScript (`pm/apis.mdx` §12.4).

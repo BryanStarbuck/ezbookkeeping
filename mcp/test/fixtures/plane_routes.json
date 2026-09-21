@@ -297,6 +297,12 @@
     },
     {
       "method": "GET",
+      "path": "/categories/tree",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
       "path": "/data/export",
       "tier": "read",
       "status": "live"
@@ -352,6 +358,12 @@
     {
       "method": "POST",
       "path": "/ingest/apply",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/ingest/categorize",
       "tier": "write",
       "status": "live"
     },

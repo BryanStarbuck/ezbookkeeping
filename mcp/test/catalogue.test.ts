@@ -70,16 +70,16 @@ const OMISSIONS: Record<string, string> = {
 };
 
 describe('the catalogue', () => {
-  it('is seventy-two tools: forty-nine read, twenty-three write', () => {
-    expect(TOTAL_TOOLS).toBe(72);
-    expect(READ_TOOLS).toBe(49);
-    expect(WRITE_TOOL_COUNT).toBe(23);
-    expect(TOOLS.length).toBe(72);
+  it('is seventy-four tools: fifty read, twenty-four write', () => {
+    expect(TOTAL_TOOLS).toBe(74);
+    expect(READ_TOOLS).toBe(50);
+    expect(WRITE_TOOL_COUNT).toBe(24);
+    expect(TOOLS.length).toBe(74);
   });
 
   it('has the families of §9.5 with their sizes', () => {
     const sizes = Object.fromEntries(FAMILIES.map(f => [f.name, f.tools.length]));
-    expect(sizes).toEqual({ orientation: 4, accounts: 5, transactions: 5, reference: 6, currency: 2, analytics: 13, statements: 11, previews: 2, writes: 21, transfers: 3 });
+    expect(sizes).toEqual({ orientation: 4, accounts: 5, transactions: 5, reference: 7, currency: 2, analytics: 13, statements: 11, previews: 2, writes: 22, transfers: 3 });
   });
 
   it('names every tool ^ezb_[a-z_]+$ with a verb from the closed set (or a sanctioned bare name)', () => {
@@ -276,7 +276,7 @@ describe('the error vocabulary (§12.3, AC 22)', () => {
 });
 
 describe('timeout exemption metadata (§14)', () => {
-  it('ToolDef.noTimeout names exactly the six long-running ingest tools', () => {
+  it('ToolDef.noTimeout names exactly the seven long-running ingest tools', () => {
     const exempt = TOOLS.filter(t => t.noTimeout).map(t => t.name).sort();
     expect(exempt).toEqual([
       'ezb_apply_accounts',
@@ -285,6 +285,7 @@ describe('timeout exemption metadata (§14)', () => {
       'ezb_extract_statements',
       'ezb_plan_file_import',
       'ezb_plan_statement_import',
+      'ezb_set_import_categories',
     ]);
   });
 });

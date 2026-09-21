@@ -6,6 +6,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/mayswind/ezbookkeeping/pkg/api"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
@@ -25,6 +28,9 @@ import (
 //                                     (income / expense / transfer) when allowed
 //   POST /categories/ensure           make sure "Type > Group > Sub" paths exist, creating only
 //                                     what is missing
+//   GET  /categories/tree             the whole two-level tree — every group with its
+//                                     sub-categories — as JSON and as one YAML document, so a
+//                                     categoriser reads the choices before it picks one
 //
 // The three levels an operator thinks in map onto ezBookkeeping like this: the MAJOR category is
 // the category type (income, expense, transfer — it is also the transaction's type); the GROUP is
@@ -39,6 +45,7 @@ func catzRoutes() []RouteDef {
 	return []RouteDef{
 		{Method: "GET", Path: "/transactions/uncategorized", Tier: TierRead, Composed: true, Summary: "The categorisation work queue: rows in the fallback categories grouped by normalised payee, largest group first, each with its ids and a suggestion learned from already-categorised rows with the same payee.", Handler: catzHandleQueue, Untrusted: []string{"payee", "variants", "accountNames"}},
 		{Method: "POST", Path: "/transactions/categorize", Tier: TierWrite, DryRunnable: true, Composed: true, Summary: "Categorise many transactions in one write: assignments [{ids, category (\"Type > Group > Sub\") | category_id}]; allow_type_change lets the major category (income/expense/transfer) change; dry run by default, undoable.", Handler: catzHandleCategorize},
+		{Method: "GET", Path: "/categories/tree", Tier: TierRead, Summary: "Every category group (primary) with its sub-categories, by major category (income, expense, transfer) in display order — as JSON and as one YAML document (data.yaml; format=yaml answers the document alone). Args: type, include_hidden (false), format (json|yaml).", Handler: catzHandleTree, Untrusted: []string{"name", "yaml"}},
 		{Method: "POST", Path: "/categories/ensure", Tier: TierWrite, DryRunnable: true, Composed: true, Summary: "Make sure category paths \"Type > Group > Sub\" exist, creating only the missing groups and sub-categories; existing ones are reported with their ids.", Handler: catzHandleEnsure},
 	}
 }
@@ -295,232 +302,244 @@ func catzHandleCategorize(mc *Ctx) (any, error) {
 			return nil, err
 		}
 
-		// every id once, in request order, remembering which assignment named it
-		var wanted []int64
-		owner := map[int64]int{}
-
-		for i, a := range body.Assignments {
-			ids := append([]string{}, a.Ids...)
-
-			if strings.TrimSpace(a.Id) != "" {
-				ids = append(ids, a.Id)
-			}
-
-			if len(ids) == 0 {
-				return nil, Invalid("give every assignment id or ids", "assignment %d names no transaction", i)
-			}
-
-			for _, s := range ids {
-				id, err := ResolveId(fmt.Sprintf("assignments[%d].ids", i), s)
-
-				if err != nil {
-					return nil, err
-				}
-
-				if prev, dup := owner[id]; dup {
-					return nil, Invalid("name each transaction in one assignment only", "transaction %s is in assignments %d and %d", s, prev, i)
-				}
-
-				owner[id] = i
-				wanted = append(wanted, id)
-			}
-		}
-
-		if len(wanted) > txnSelectCap {
-			return nil, Conflict(fmt.Sprintf("split the work into calls of %d rows or fewer", txnSelectCap), "%d transactions were named; one call categorises at most %d", len(wanted), txnSelectCap)
-		}
-
-		states, canon, missing, err := txnReadStates(mc, wanted)
-
-		if err != nil {
-			return nil, err
-		}
-
-		var rejected []catzRejection
-		reject := func(i int, id string, err error) error {
-			f, ok := err.(*Fail)
-
-			if !ok {
-				return err
-			}
-
-			if !body.SkipInvalid {
-				return f
-			}
-
-			rejected = append(rejected, catzRejection{Index: i, Id: id, Code: f.Code, Message: f.Message, Hint: f.Hint})
-			return nil
-		}
-
-		for _, id := range missing {
-			if err := reject(owner[id], idString(id), NotFound("GET /machine/v1/transactions lists them; drop the id", "transaction %s does not exist", idString(id))); err != nil {
-				return nil, err
-			}
-		}
-
-		// resolve each assignment's category per row type, and its counter account, once
-		type catKey struct {
-			index int
-			ttype models.TransactionType
-		}
-
-		type catResolved struct {
-			cat *models.TransactionCategory
-			err error
-		}
-
-		catCache := map[catKey]catResolved{}
-		counters := map[int]*models.Account{}
-		counterAmounts := map[int]*int64{}
-
-		for i, a := range body.Assignments {
-			if strings.TrimSpace(a.CounterAccountId) != "" || strings.TrimSpace(a.CounterAccountName) != "" {
-				acc, err := lk.resolveAccount("counter_account_id", a.CounterAccountId, "counter_account_name", a.CounterAccountName, true)
-
-				if err != nil {
-					return nil, err
-				}
-
-				counters[i] = acc
-			}
-
-			if a.CounterAmount != "" {
-				v, err := AmountArg(fmt.Sprintf("assignments[%d].counter_amount", i), a.CounterAmount)
-
-				if err != nil {
-					return nil, err
-				}
-
-				counterAmounts[i] = &v
-			}
-		}
-
-		sel := &txnSelection{States: map[int64]*txnState{}, By: "ids"}
-		afters := map[int64]txnState{}
-		assignedTo := map[int64]int{}
-
-		for _, id := range wanted {
-			apiId, ok := canon[id]
-
-			if !ok {
-				continue
-			}
-
-			if _, seen := sel.States[apiId]; seen {
-				continue // both legs of one transfer were named
-			}
-
-			i := owner[id]
-			s := states[apiId]
-			key := catKey{i, models.TransactionType(s.Type)}
-			res, ok := catCache[key]
-
-			if !ok {
-				a := body.Assignments[i]
-				res.cat, res.err = lk.resolveCategoryFor(a.CategoryId, a.Category, models.TransactionType(s.Type))
-				catCache[key] = res
-			}
-
-			if res.err != nil {
-				if err := reject(i, s.Id, res.err); err != nil {
-					return nil, err
-				}
-
-				continue
-			}
-
-			cat := res.cat
-
-			after, err := catzTargetState(lk, *s, catzTarget{Index: i, Category: cat, Counter: counters[i], CounterAmount: counterAmounts[i]}, body.AllowTypeChange)
-
-			if err != nil {
-				if err := reject(i, s.Id, err); err != nil {
-					return nil, err
-				}
-
-				continue
-			}
-
-			sel.Ids = append(sel.Ids, apiId)
-			sel.States[apiId] = s
-			afters[apiId] = after
-			assignedTo[apiId] = i
-		}
-
-		plan, err := txnBulkPlan(mc, lk, sel, func(s txnState) (txnState, error) {
-			id, _ := strconv.ParseInt(s.Id, 10, 64)
-			return afters[id], nil
-		}, nil)
-
-		if err != nil {
-			return nil, err
-		}
-
-		st := plan.State.(*txnBulkState)
-		typeChanges := 0
-
-		type bucket struct {
-			CategoryId   string `json:"categoryId"`
-			CategoryPath string `json:"categoryPath"`
-			Count        int    `json:"count"`
-			TypeChanges  int    `json:"typeChanges,omitempty"`
-		}
-
-		buckets := map[string]*bucket{}
-		var order []string
-
-		for _, id := range st.Changed {
-			before, after := st.Before[id], st.After[id]
-			b := buckets[after.CategoryId]
-
-			if b == nil {
-				cid, _ := strconv.ParseInt(after.CategoryId, 10, 64)
-				b = &bucket{CategoryId: after.CategoryId, CategoryPath: lk.categoryFullPath(cid)}
-				buckets[after.CategoryId] = b
-				order = append(order, after.CategoryId)
-			}
-
-			b.Count++
-
-			if before.Type != after.Type {
-				b.TypeChanges++
-				typeChanges++
-			}
-		}
-
-		byCategory := make([]*bucket, 0, len(order))
-
-		for _, k := range order {
-			byCategory = append(byCategory, buckets[k])
-		}
-
-		sort.SliceStable(byCategory, func(i, j int) bool { return byCategory[i].Count > byCategory[j].Count })
-
-		preview := plan.Preview.(map[string]any)
-		preview["byCategory"] = byCategory
-		preview["assignments"] = len(body.Assignments)
-
-		if rejected == nil {
-			rejected = []catzRejection{}
-		}
-
-		preview["skipped"] = rejected
-		plan.Changes["skipped"] = len(rejected)
-
-		if typeChanges > 0 {
-			plan.Changes["type_change"] = typeChanges
-			plan.Warnings = append(plan.Warnings, fmt.Sprintf("%d rows change their major category (income / expense / transfer); each one's before and after type is in its changes", typeChanges))
-		}
-
-		if body.SummaryOnly {
-			preview["rowsOmitted"] = len(st.Changed)
-			delete(preview, "rows")
-		}
-
-		return plan, nil
+		return catzPlanAssignments(mc, lk, &body)
 	}
 
-	apply := func(p *Plan) (any, error) {
+	return RunWrite(mc, body.WriteOpts, resolve, catzApply(mc))
+}
+
+// catzPlanAssignments resolves a categorise body against the lookup into the bulk plan: the half of
+// POST /transactions/categorize that POST /ingest/categorize shares (it builds the assignments from
+// a statement file instead of a caller's ids)
+func catzPlanAssignments(mc *Ctx, lk *txnLookup, body *catzCategorizeBody) (*Plan, error) {
+	// every id once, in request order, remembering which assignment named it
+	var wanted []int64
+	owner := map[int64]int{}
+
+	for i, a := range body.Assignments {
+		ids := append([]string{}, a.Ids...)
+
+		if strings.TrimSpace(a.Id) != "" {
+			ids = append(ids, a.Id)
+		}
+
+		if len(ids) == 0 {
+			return nil, Invalid("give every assignment id or ids", "assignment %d names no transaction", i)
+		}
+
+		for _, s := range ids {
+			id, err := ResolveId(fmt.Sprintf("assignments[%d].ids", i), s)
+
+			if err != nil {
+				return nil, err
+			}
+
+			if prev, dup := owner[id]; dup {
+				return nil, Invalid("name each transaction in one assignment only", "transaction %s is in assignments %d and %d", s, prev, i)
+			}
+
+			owner[id] = i
+			wanted = append(wanted, id)
+		}
+	}
+
+	if len(wanted) > txnSelectCap {
+		return nil, Conflict(fmt.Sprintf("split the work into calls of %d rows or fewer", txnSelectCap), "%d transactions were named; one call categorises at most %d", len(wanted), txnSelectCap)
+	}
+
+	states, canon, missing, err := txnReadStates(mc, wanted)
+
+	if err != nil {
+		return nil, err
+	}
+
+	var rejected []catzRejection
+	reject := func(i int, id string, err error) error {
+		f, ok := err.(*Fail)
+
+		if !ok {
+			return err
+		}
+
+		if !body.SkipInvalid {
+			return f
+		}
+
+		rejected = append(rejected, catzRejection{Index: i, Id: id, Code: f.Code, Message: f.Message, Hint: f.Hint})
+		return nil
+	}
+
+	for _, id := range missing {
+		if err := reject(owner[id], idString(id), NotFound("GET /machine/v1/transactions lists them; drop the id", "transaction %s does not exist", idString(id))); err != nil {
+			return nil, err
+		}
+	}
+
+	// resolve each assignment's category per row type, and its counter account, once
+	type catKey struct {
+		index int
+		ttype models.TransactionType
+	}
+
+	type catResolved struct {
+		cat *models.TransactionCategory
+		err error
+	}
+
+	catCache := map[catKey]catResolved{}
+	counters := map[int]*models.Account{}
+	counterAmounts := map[int]*int64{}
+
+	for i, a := range body.Assignments {
+		if strings.TrimSpace(a.CounterAccountId) != "" || strings.TrimSpace(a.CounterAccountName) != "" {
+			acc, err := lk.resolveAccount("counter_account_id", a.CounterAccountId, "counter_account_name", a.CounterAccountName, true)
+
+			if err != nil {
+				return nil, err
+			}
+
+			counters[i] = acc
+		}
+
+		if a.CounterAmount != "" {
+			v, err := AmountArg(fmt.Sprintf("assignments[%d].counter_amount", i), a.CounterAmount)
+
+			if err != nil {
+				return nil, err
+			}
+
+			counterAmounts[i] = &v
+		}
+	}
+
+	sel := &txnSelection{States: map[int64]*txnState{}, By: "ids"}
+	afters := map[int64]txnState{}
+	assignedTo := map[int64]int{}
+
+	for _, id := range wanted {
+		apiId, ok := canon[id]
+
+		if !ok {
+			continue
+		}
+
+		if _, seen := sel.States[apiId]; seen {
+			continue // both legs of one transfer were named
+		}
+
+		i := owner[id]
+		s := states[apiId]
+		key := catKey{i, models.TransactionType(s.Type)}
+		res, ok := catCache[key]
+
+		if !ok {
+			a := body.Assignments[i]
+			res.cat, res.err = lk.resolveCategoryFor(a.CategoryId, a.Category, models.TransactionType(s.Type))
+			catCache[key] = res
+		}
+
+		if res.err != nil {
+			if err := reject(i, s.Id, res.err); err != nil {
+				return nil, err
+			}
+
+			continue
+		}
+
+		cat := res.cat
+
+		after, err := catzTargetState(lk, *s, catzTarget{Index: i, Category: cat, Counter: counters[i], CounterAmount: counterAmounts[i]}, body.AllowTypeChange)
+
+		if err != nil {
+			if err := reject(i, s.Id, err); err != nil {
+				return nil, err
+			}
+
+			continue
+		}
+
+		sel.Ids = append(sel.Ids, apiId)
+		sel.States[apiId] = s
+		afters[apiId] = after
+		assignedTo[apiId] = i
+	}
+
+	plan, err := txnBulkPlan(mc, lk, sel, func(s txnState) (txnState, error) {
+		id, _ := strconv.ParseInt(s.Id, 10, 64)
+		return afters[id], nil
+	}, nil)
+
+	if err != nil {
+		return nil, err
+	}
+
+	st := plan.State.(*txnBulkState)
+	typeChanges := 0
+
+	type bucket struct {
+		CategoryId   string `json:"categoryId"`
+		CategoryPath string `json:"categoryPath"`
+		Count        int    `json:"count"`
+		TypeChanges  int    `json:"typeChanges,omitempty"`
+	}
+
+	buckets := map[string]*bucket{}
+	var order []string
+
+	for _, id := range st.Changed {
+		before, after := st.Before[id], st.After[id]
+		b := buckets[after.CategoryId]
+
+		if b == nil {
+			cid, _ := strconv.ParseInt(after.CategoryId, 10, 64)
+			b = &bucket{CategoryId: after.CategoryId, CategoryPath: lk.categoryFullPath(cid)}
+			buckets[after.CategoryId] = b
+			order = append(order, after.CategoryId)
+		}
+
+		b.Count++
+
+		if before.Type != after.Type {
+			b.TypeChanges++
+			typeChanges++
+		}
+	}
+
+	byCategory := make([]*bucket, 0, len(order))
+
+	for _, k := range order {
+		byCategory = append(byCategory, buckets[k])
+	}
+
+	sort.SliceStable(byCategory, func(i, j int) bool { return byCategory[i].Count > byCategory[j].Count })
+
+	preview := plan.Preview.(map[string]any)
+	preview["byCategory"] = byCategory
+	preview["assignments"] = len(body.Assignments)
+
+	if rejected == nil {
+		rejected = []catzRejection{}
+	}
+
+	preview["skipped"] = rejected
+	plan.Changes["skipped"] = len(rejected)
+
+	if typeChanges > 0 {
+		plan.Changes["type_change"] = typeChanges
+		plan.Warnings = append(plan.Warnings, fmt.Sprintf("%d rows change their major category (income / expense / transfer); each one's before and after type is in its changes", typeChanges))
+	}
+
+	if body.SummaryOnly {
+		preview["rowsOmitted"] = len(st.Changed)
+		delete(preview, "rows")
+	}
+
+	return plan, nil
+}
+
+// catzApply is the apply half of a categorise plan: one bulk update, journaled for /undo
+func catzApply(mc *Ctx) func(p *Plan) (any, error) {
+	return func(p *Plan) (any, error) {
 		st := p.State.(*txnBulkState)
 
 		if len(st.Changed) == 0 {
@@ -533,8 +552,6 @@ func catzHandleCategorize(mc *Ctx) (any, error) {
 
 		return txnBulkFinish(mc, st, fmt.Sprintf("categorise %d transactions", len(st.Changed)))
 	}
-
-	return RunWrite(mc, body.WriteOpts, resolve, apply)
 }
 
 // ─── GET /transactions/uncategorized ───────────────────────────────────────────────────────────
@@ -670,18 +687,18 @@ func (h *catzHistory) suggest(lk *txnLookup, key string, allowed map[models.Tran
 
 // catzQueueGroup is one payee's rows in the work queue
 type catzQueueGroup struct {
-	Payee        string            `json:"payee"`
-	Count        int               `json:"count"`
-	Types        map[string]int    `json:"types"`
-	Totals       []map[string]any  `json:"totals"`
-	FirstDate    string            `json:"firstDate"`
-	LastDate     string            `json:"lastDate"`
-	AccountNames []string          `json:"accountNames"`
-	Variants     []string          `json:"variants"`
-	Ids          []string          `json:"ids"`
-	IdsTruncated bool              `json:"idsTruncated"`
-	Suggestion   *catzSuggestion   `json:"suggestion"`
-	Samples      []map[string]any  `json:"samples"`
+	Payee        string           `json:"payee"`
+	Count        int              `json:"count"`
+	Types        map[string]int   `json:"types"`
+	Totals       []map[string]any `json:"totals"`
+	FirstDate    string           `json:"firstDate"`
+	LastDate     string           `json:"lastDate"`
+	AccountNames []string         `json:"accountNames"`
+	Variants     []string         `json:"variants"`
+	Ids          []string         `json:"ids"`
+	IdsTruncated bool             `json:"idsTruncated"`
+	Suggestion   *catzSuggestion  `json:"suggestion"`
+	Samples      []map[string]any `json:"samples"`
 	typesSeen    map[models.TransactionType]bool
 	totals       map[string]int64
 }
@@ -1260,4 +1277,129 @@ func catzHandleEnsure(mc *Ctx) (any, error) {
 	}
 
 	return RunWrite(mc, body.WriteOpts, resolve, apply)
+}
+
+// ─── GET /categories/tree ──────────────────────────────────────────────────────────────────────
+
+// catzTreeSub is one sub-category of the tree
+type catzTreeSub struct {
+	Name   string `json:"name" yaml:"name"`
+	Id     string `json:"id" yaml:"id"`
+	Hidden bool   `json:"hidden" yaml:"hidden"`
+}
+
+// catzTreeGroup is one group (primary category) with its sub-categories
+type catzTreeGroup struct {
+	Name          string        `json:"name" yaml:"name"`
+	Type          string        `json:"type" yaml:"type"`
+	Id            string        `json:"id" yaml:"id"`
+	Hidden        bool          `json:"hidden" yaml:"hidden"`
+	Subcategories []catzTreeSub `json:"subcategories" yaml:"subcategories"`
+}
+
+type catzTreeCounts struct {
+	Groups        int `json:"groups" yaml:"groups"`
+	Subcategories int `json:"subcategories" yaml:"subcategories"`
+}
+
+// catzTreeDoc is the YAML document. Its shape is shared with the sister apps' planes (Actual Budget,
+// Firefly III): app, generated_at, counts, groups[name, type, id, hidden, subcategories[…]].
+type catzTreeDoc struct {
+	App         string          `yaml:"app"`
+	GeneratedAt string          `yaml:"generated_at"`
+	Counts      catzTreeCounts  `yaml:"counts"`
+	Groups      []catzTreeGroup `yaml:"groups"`
+}
+
+// catzBuildTree turns the category list into the tree, reusing the list route's ordering (major
+// category, then display order). Pure.
+func catzBuildTree(all []*models.TransactionCategory, includeHidden bool, typ models.TransactionCategoryType) ([]catzTreeGroup, catzTreeCounts) {
+	views := refCategoryTree(all, includeHidden, typ)
+	groups := make([]catzTreeGroup, 0, len(views))
+	counts := catzTreeCounts{}
+
+	for _, v := range views {
+		g := catzTreeGroup{Name: v.Name, Type: v.Type, Id: v.Id, Hidden: v.Hidden, Subcategories: []catzTreeSub{}}
+
+		for _, s := range v.SubCategories {
+			g.Subcategories = append(g.Subcategories, catzTreeSub{Name: s.Name, Id: s.Id, Hidden: s.Hidden})
+		}
+
+		counts.Groups++
+		counts.Subcategories += len(g.Subcategories)
+		groups = append(groups, g)
+	}
+
+	return groups, counts
+}
+
+// catzTreeYAML renders the tree as the shared YAML document
+func catzTreeYAML(groups []catzTreeGroup, counts catzTreeCounts, generatedAt string) (string, error) {
+	var buf strings.Builder
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+
+	if err := enc.Encode(catzTreeDoc{App: "ezbookkeeping", GeneratedAt: generatedAt, Counts: counts, Groups: groups}); err != nil {
+		errfile.Caught("rendering the category tree as YAML", err)
+		return "", NewFail(CodeUpstreamError, "check ~/T/ezbookkeeping/error.err", "the category tree could not be rendered as YAML")
+	}
+
+	if err := enc.Close(); err != nil {
+		errfile.Caught("closing the category tree's YAML encoder", err)
+		return "", NewFail(CodeUpstreamError, "check ~/T/ezbookkeeping/error.err", "the category tree could not be rendered as YAML")
+	}
+
+	return buf.String(), nil
+}
+
+func catzHandleTree(mc *Ctx) (any, error) {
+	if err := anCheckQueryOnly(mc, "type", "include_hidden", "format"); err != nil {
+		return nil, err
+	}
+
+	typ, err := refCategoryType(mc.Query("type"))
+
+	if err != nil {
+		return nil, err
+	}
+
+	includeHidden, err := mc.QueryBool("include_hidden", false)
+
+	if err != nil {
+		return nil, err
+	}
+
+	format := strings.ToLower(strings.TrimSpace(mc.Query("format")))
+
+	if format != "" && format != "json" && format != "yaml" {
+		return nil, Invalid("format is json (the envelope, with the YAML document in data.yaml) or yaml (the document alone)", "unknown format %q", format)
+	}
+
+	all, err := refLoadCategories(mc)
+
+	if err != nil {
+		return nil, err
+	}
+
+	groups, counts := catzBuildTree(all, includeHidden, typ)
+	generatedAt := time.Now().UTC().Format(time.RFC3339)
+	doc, err := catzTreeYAML(groups, counts, generatedAt)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if format == "yaml" {
+		return &RawResult{ContentType: "application/yaml; charset=utf-8", Data: []byte(doc)}, nil
+	}
+
+	return map[string]any{
+		"app":         "ezbookkeeping",
+		"generatedAt": generatedAt,
+		"counts":      counts,
+		"groups":      groups,
+		"yaml":        doc,
+		"filters":     map[string]any{"type": refCategoryTypeNames[typ], "includeHidden": includeHidden},
+		"note":        "the major category is each group's type (income, expense, transfer); transactions hold a sub-category, named by the path \"Type > Group > Sub\". POST /machine/v1/categories/ensure creates missing paths.",
+	}, nil
 }
