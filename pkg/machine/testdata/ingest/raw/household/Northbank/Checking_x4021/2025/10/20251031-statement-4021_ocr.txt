@@ -1,0 +1,10 @@
+NORTHBANK SYNTHETIC STATEMENT
+Statement Period 10/01/2025 through 10/31/2025
+Beginning balance                              2,190.00
+Deposits and additions
+10/08   Refund Grocer Mart                          7.50
+Withdrawals
+10/02   Grocer Mart                                42.17
+10/15   Utility Example                           120.00
+10/20   Mystery line without an amount
+Ending balance                                 2,035.33

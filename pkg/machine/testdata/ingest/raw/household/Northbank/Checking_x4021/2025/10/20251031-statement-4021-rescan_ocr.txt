@@ -1,0 +1,4 @@
+NORTHBANK SYNTHETIC STATEMENT (rescan, missing a row)
+Statement Period 10/01/2025 through 10/31/2025
+Withdrawals
+10/02   Grocer Mart                                42.17

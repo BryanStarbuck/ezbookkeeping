@@ -20,6 +20,7 @@ import (
 	"github.com/mayswind/ezbookkeeping/pkg/cron"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
+	"github.com/mayswind/ezbookkeeping/pkg/machine"
 	"github.com/mayswind/ezbookkeeping/pkg/mcp"
 	"github.com/mayswind/ezbookkeeping/pkg/middlewares"
 	"github.com/mayswind/ezbookkeeping/pkg/requestid"
@@ -512,6 +513,9 @@ func startWebServer(c *core.CliContext) error {
 			apiV1Route.GET("/systems/version.json", bindApi(api.Systems.VersionHandler, config))
 		}
 	}
+
+	machine.Arm(c, config)
+	machine.Mount(router, config)
 
 	listenAddr := fmt.Sprintf("%s:%d", config.HttpAddr, config.HttpPort)
 

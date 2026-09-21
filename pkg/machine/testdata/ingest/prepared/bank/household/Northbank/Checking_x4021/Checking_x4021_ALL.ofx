@@ -1,0 +1,56 @@
+<OFX>
+  <BANKMSGSRSV1>
+    <STMTTRNRS>
+      <STMTRS>
+        <CURDEF>USD</CURDEF>
+        <BANKACCTFROM>
+          <ACCTID>000111224021</ACCTID>
+        </BANKACCTFROM>
+        <BANKTRANLIST>
+          <STMTTRN>
+            <TRNTYPE>DEBIT</TRNTYPE>
+            <DTPOSTED>20250903120000.000[-7:PDT]</DTPOSTED>
+            <TRNAMT>-5.00</TRNAMT>
+            <FITID>NB202509030001</FITID>
+            <NAME>Corner Coffee</NAME>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>DEBIT</TRNTYPE>
+            <DTPOSTED>20250903120000.000[-7:PDT]</DTPOSTED>
+            <TRNAMT>-5.00</TRNAMT>
+            <FITID>NB202509030002</FITID>
+            <NAME>Corner Coffee</NAME>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>CREDIT</TRNTYPE>
+            <DTPOSTED>20250905120000.000[-7:PDT]</DTPOSTED>
+            <TRNAMT>2500.00</TRNAMT>
+            <FITID>NB202509050001</FITID>
+            <NAME>Payroll Example Corp</NAME>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>DEBIT</TRNTYPE>
+            <DTPOSTED>20250920120000.000[-7:PDT]</DTPOSTED>
+            <TRNAMT>-300.00</TRNAMT>
+            <FITID>NB202509200001</FITID>
+            <NAME>Card Payment Northbank</NAME>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>DEBIT</TRNTYPE>
+            <DTPOSTED>20251002120000.000[-7:PDT]</DTPOSTED>
+            <TRNAMT>-42.17</TRNAMT>
+            <FITID>NB202510020001</FITID>
+            <NAME>Grocer Mart</NAME>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>DEBIT</TRNTYPE>
+            <DTPOSTED>20251015120000.000[-7:PDT]</DTPOSTED>
+            <TRNAMT>-120.00</TRNAMT>
+            <FITID>NB202510150001</FITID>
+            <NAME>Utility Example</NAME>
+          </STMTTRN>
+        </BANKTRANLIST>
+      </STMTRS>
+    </STMTTRNRS>
+  </BANKMSGSRSV1>
+</OFX>

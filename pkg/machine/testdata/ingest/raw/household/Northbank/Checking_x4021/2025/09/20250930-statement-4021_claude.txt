@@ -1,0 +1,7 @@
+Northbank (synthetic) - Checking x4021
+Statement period: 09/01/2025 - 09/30/2025
+date,description,amount
+09/03/2025,Corner Coffee,-5.00
+09/03/2025,Corner Coffee,-5.00
+09/05/2025,"Payroll Example Corp, Inc",2500.00
+09/20/2025,Card Payment Northbank,-300.00

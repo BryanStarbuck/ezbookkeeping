@@ -1,6 +1,6 @@
 # ezBookkeeping — build and run on localhost (no Docker)
 #
-#   just build   -> Go backend binary (./ezbookkeeping) + Vue frontend (./dist)
+#   just build   -> Go backend binary (./ezbookkeeping) + Vue frontend (./dist) + ezbk CLI (./cli/bin/ezbk)
 #   just run     -> serves both at http://localhost:8080/
 #
 # Runtime state stays in the repo root, all git-ignored:
@@ -17,8 +17,8 @@ bin := "ezbookkeeping"
 default:
     @just --list
 
-# Build backend + frontend
-build: build-backend build-frontend
+# Build backend + frontend + the ezbk CLI
+build: build-backend build-frontend build-cli
     @echo ""
     @echo "Build complete. Start it with: just run"
 
@@ -37,6 +37,17 @@ build-frontend:
     npm install --no-audit --no-fund
     @echo "==> Building frontend..."
     npm run build
+
+# Build the ezbk CLI (its own Go module under cli/, stdlib only) into ./cli/bin/ezbk
+build-cli:
+    @command -v go >/dev/null || { echo "Error: go is required"; exit 127; }
+    @echo "==> Building ezbk CLI..."
+    cd cli && go build -trimpath -o bin/ezbk ./cmd/ezbk
+
+# Print the line that puts ezbk on PATH (nothing is changed; add it to ~/.zshrc yourself)
+install-cli:
+    @[ -x ./cli/bin/ezbk ] || { echo "Error: ezbk not built. Run: just build-cli"; exit 1; }
+    @echo 'export PATH="{{justfile_directory()}}/cli/bin:$PATH"'
 
 # Run the server on localhost (foreground; Ctrl+C to stop)
 run:
@@ -64,4 +75,4 @@ dev:
 # Remove build outputs (keeps data/)
 clean:
     rm -f {{bin}}
-    rm -rf dist
+    rm -rf dist cli/bin

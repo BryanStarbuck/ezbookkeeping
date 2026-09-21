@@ -1,0 +1,28 @@
+<OFX>
+  <BANKMSGSRSV1>
+    <STMTTRNRS>
+      <STMTRS>
+        <CURDEF>USD</CURDEF>
+        <BANKACCTFROM>
+          <ACCTID>000111224021</ACCTID>
+        </BANKACCTFROM>
+        <BANKTRANLIST>
+          <STMTTRN>
+            <TRNTYPE>DEBIT</TRNTYPE>
+            <DTPOSTED>20251002120000.000[-7:PDT]</DTPOSTED>
+            <TRNAMT>-42.17</TRNAMT>
+            <FITID>NB202510020001</FITID>
+            <NAME>Grocer Mart</NAME>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>DEBIT</TRNTYPE>
+            <DTPOSTED>20251015120000.000[-7:PDT]</DTPOSTED>
+            <TRNAMT>-120.00</TRNAMT>
+            <FITID>NB202510150001</FITID>
+            <NAME>Utility Example</NAME>
+          </STMTTRN>
+        </BANKTRANLIST>
+      </STMTRS>
+    </STMTTRNRS>
+  </BANKMSGSRSV1>
+</OFX>
