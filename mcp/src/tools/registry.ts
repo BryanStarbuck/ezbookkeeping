@@ -3,8 +3,8 @@
  *
  * tools/list and dispatch both read TOOLS. A tool present in the catalogue but missing from
  * dispatch is a model calling it and getting -32601, which looks like a broken server; a single
- * array makes that impossible. Sixty-five tools in ten families: forty-seven read, eighteen write,
- * none deletes.
+ * array makes that impossible. Seventy-two tools in ten families: forty-nine read, twenty-three
+ * write; one of the writes (ezb_delete_transactions, §9.5b) deletes, at the admin tier.
  */
 import { ACCOUNT_TOOLS } from './accounts.js';
 import { ANALYTICS_TOOLS } from './analytics.js';
@@ -15,6 +15,7 @@ import { REFERENCE_TOOLS } from './reference.js';
 import { STATEMENT_TOOLS } from './statements.js';
 import type { ToolDef } from './tool.js';
 import { TRANSACTION_TOOLS } from './transactions.js';
+import { TRANSFER_TOOLS } from './transfers.js';
 import { WRITE_TOOLS } from './writes.js';
 
 export const FAMILIES: ReadonlyArray<{ name: string; tools: ToolDef[] }> = [
@@ -27,6 +28,7 @@ export const FAMILIES: ReadonlyArray<{ name: string; tools: ToolDef[] }> = [
   { name: 'statements', tools: STATEMENT_TOOLS },
   { name: 'previews', tools: PREVIEW_TOOLS },
   { name: 'writes', tools: WRITE_TOOLS },
+  { name: 'transfers', tools: TRANSFER_TOOLS },
 ];
 
 export const TOOLS: readonly ToolDef[] = Object.freeze(FAMILIES.flatMap(f => f.tools));

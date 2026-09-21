@@ -42,7 +42,7 @@ chose.
   no mail server. Run `just reset-password <username>` instead. It asks for the new password twice
   and does not echo it. Then log in. Your data is untouched.
 - **Nothing in the database worth keeping?** You can start over instead. Stop `just run`
-  (Ctrl+C), delete `data/ezbookkeeping.db`, then `just run` again. You are back at "Create an
+  (Ctrl+C), delete `~/T/_ezbookkeeping/data/ezbookkeeping.db`, then `just run` again. You are back at "Create an
   account".
 
 After the first login, the CLI (`ezbk`) and the MCP act as that same user automatically (§5).
@@ -141,7 +141,7 @@ This document is the only place where the bare word means the first.
 ## 2. The direct answer — what to type on the login page
 
 - **Username** (or email): what you typed on **Create an account**. To read it without logging in,
-  run `just users`. It queries the local `data/ezbookkeeping.db` and prints username, email and
+  run `just users`. It queries the local `~/T/_ezbookkeeping/data/ezbookkeeping.db` and prints username, email and
   `disabled` for every user. Once the plane is up, `ezbk whoami` also prints the bound username.
 - **Password**: whatever was typed at sign-up (6 to 128 characters). It exists nowhere but the hash
   in the database. Nothing else can tell you what it is: not the `.ini`, not the credentials file,
@@ -163,7 +163,7 @@ the lookup is `~/BGit/Bryan_git/ezbookkeeping/pkg/services/users.go`, `UserServi
 ezBookkeeping has no seeded admin account, no default password and no setup wizard. On a fresh
 database:
 
-1. `just run` starts the server. The binary creates or migrates `data/ezbookkeeping.db`. The `user`
+1. `just run` starts the server. The binary creates or migrates `~/T/_ezbookkeeping/data/ezbookkeeping.db`. The `user`
    table is empty.
 2. The first visit to http://localhost:8080/ shows the **normal login page**. Unlike Firefly III,
    upstream does not redirect to sign-up when there are zero users. Below the form it says
@@ -221,7 +221,7 @@ Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/services/forget_passwords.go`, `Forget
 ### 4.3 Start over — only if the books are empty
 
 If the database holds nothing worth keeping (a first sign-up with a typo, say): stop `just run`,
-delete `data/ezbookkeeping.db`, and run `just run` again. You are back at "Create an account".
+delete `~/T/_ezbookkeeping/data/ezbookkeeping.db`, and run `just run` again. You are back at "Create an account".
 This destroys every transaction and the machine plane's import records. Do not do this to recover a
 password on real books. §4.1 always works.
 
@@ -359,7 +359,7 @@ talk to `127.0.0.1` directly. That is an API detail, not a URL anyone types.
 
 ## 11. Security and open-source safety (LOCKED)
 
-- Your username and email are personal data. They live in `data/ezbookkeeping.db` (git-ignored) and
+- Your username and email are personal data. They live in `~/T/_ezbookkeeping/data/ezbookkeeping.db` (outside the repo) and
   in `~/.credentials/ezbookkeeping.json` if you set `machine.username`. They go nowhere else: never in
   a spec, a test fixture, a commit message, or a committed log. Examples use `operator` and
   `you@example.com`.

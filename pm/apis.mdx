@@ -862,10 +862,13 @@ Los Angeles than in London.
 
 Admin is a separate switch and not "write plus". Write is "I intend to let a program edit my books
 this week"; admin is "I am doing surgery right now and I am watching". **The MCP is never given the
-admin tier** — mcp.mdx §9.5 exposes no admin tool, this plane refuses it anyway (the MCP identifies
-itself with `X-Ezbk-Client: ezbookkeeping-mcp/…`, and an admin route receiving that client refuses
-with `forbidden` even when the tier is on — a header is not authentication, so this is a second
-fence, not the first), and the refusal has its own test.
+admin tier** — with ONE exception the operator asked for: `DELETE /transactions/bulk`, behind
+mcp.mdx §9.5b's `ezb_delete_transactions` (ids only, previewed, confirmed, undoable). Every other admin
+route refuses the MCP (it identifies itself with `X-Ezbk-Client: ezbookkeeping-mcp/…`, and such a
+route receiving that client answers `forbidden` even when the tier is on — a header is not
+authentication, so this is a second fence, not the first), and the admin tier must be on for the
+exception too. Both have their own tests.
+The allow-list in code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/mount.go` — `mcpAdminRoutes`.
 
 The switches are read from the server's environment at boot, set by `just run`'s caller or by
 `ezbk up --allow-write`. They are **not** `.ini` keys: `conf/ezbookkeeping.ini` is upstream's file and
@@ -1040,6 +1043,11 @@ one feature this plane must **build**, and it is built narrowly and honestly:
 - **Undoing a create soft-deletes** through the same service call the UI's delete makes. That is a
   delete, and deletes are admin-tier — the single sanctioned exception: undo may delete **only rows
   its own journal created**, and a test asserts it can reach no other row.
+- **A conversion into transfers** (§10.3.2) journals one `txn.unconvert` op per request: each
+  item's transfer (id and state), its originals (full prior state) and the import records it
+  re-pointed. Undo checks every item first, then re-creates the originals (new ids), points the
+  records back at them and deletes the transfers; no redo is recorded.
+  In code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_transfers.go` — `xferExecUnconvert`.
 - Undo is **write**-tier, built in the same phase as the first write (P5), never later — the most
   valuable route on this plane for an operator who has just let an agent write.
 
@@ -1164,7 +1172,11 @@ Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_reconcile.go` — `txnR
 | `/transactions/export`          | GET    | R     | same filters, `format=csv\|tsv`                                                                                                                                                                                       | —       |
 | `/transactions`                 | POST   | W     | `transactions[]` of `{type, time, account_id, amount, destination_account_id, destination_amount, category_id\|category_name, tag_ids[], comment, hide_amount, geo}`, `dry_run`                                        | resolve |
 | `/transactions/:id`             | PATCH  | W     | any field upstream's `TransactionModifyHandler` accepts                                                                                                                                                               | resolve |
-| `/transactions/set-category`    | POST   | W     | `ids[]` \| `filter{}`, `category_id`, `max_changes`, `dry_run` — `TransactionBatchUpdateCategoriesHandler`                                                                                                           | resolve |
+| `/transactions/set-category`    | POST   | W     | `ids[]` \| `filter{}`, `category_id` \| `category_name` (a name or path), `allow_type_change`, `max_changes`, `dry_run` — `TransactionBatchUpdateCategoriesHandler`                                                  | resolve |
+| `/transactions/uncategorized`   | GET    | R     | `category_ids[]` (default: every sub-category named Uncategorized), `account_ids[]`, `start`, `end`, `group_limit`, `offset`, `ids_per_group`, `min_count` — the categorisation work queue (§10.3.1)                      | —       |
+| `/transactions/categorize`      | POST   | W     | `assignments[]` of `{ids[], category \| category_id, counter_account_id \| counter_account_name, counter_amount}`, `allow_type_change`, `skip_invalid`, `summary_only`, `max_changes`, `dry_run` (§10.3.1)            | resolve |
+| `/transactions/transfer-candidates` | POST | R | `account_ids[]` \| `account_names[]`, `start`, `end`, `window_days` (4, ≤ 31), `require_hint` (true), `limit` — own-account expense/income pairs, unambiguous apart from ambiguous (§10.3.2) | — |
+| `/transactions/convert-to-transfer` | POST | W | `items[]` of `{id, counter_id}` \| `{id, counter_account_id \| counter_account_name}`, `comment_mode` (both\|out), `transfer_category_id` \| `transfer_category_name`, `max_changes`, `dry_run` (§10.3.2) | resolve |
 | `/transactions/set-account`     | POST   | W     | `ids[]` \| `filter{}`, `account_id`, `max_changes`, `dry_run` — `TransactionBatchUpdateAccountsHandler`                                                                                                              | resolve |
 | `/transactions/tags/add`        | POST   | W     | `ids[]` \| `filter{}`, `tag_ids[]`, `max_changes`, `dry_run`                                                                                                                                                          | resolve |
 | `/transactions/tags/remove`     | POST   | W     | `ids[]` \| `filter{}`, `tag_ids[]`, `max_changes`, `dry_run`                                                                                                                                                          | resolve |
@@ -1192,7 +1204,195 @@ Notes that matter:
   `destinationAmount` in the destination's, which differ for a cross-currency transfer. Neither is
   ever reported as "the amount" without its currency.
 - **Categories must match the type.** An expense transaction takes an expense category; the resolver
-  refuses a mismatch naming the category's type, before the service does.
+  refuses a mismatch naming the category's type, before the service does — unless the caller passes
+  `allow_type_change`, which changes the row's major category with it (§10.3.1).
+
+#### 10.3.1 Categorisation: major category, group, sub-category
+
+The operator thinks in three levels, and the plane names them the same way everywhere: the **major
+category** is the category type (Income, Expense, Transfer — also the transaction's type), the
+**group** is the primary category, and the **sub-category** is the secondary category a transaction
+holds. A **category path** `Type > Group > Sub` (e.g. `Expense > Food & Drink > Food`) names all
+three and is never ambiguous; `Group > Sub` and `Sub` are accepted when they are. Every category
+name argument on the plane accepts a path (`category_name` on the transaction routes, `:id` and
+`parent_name` on the category routes).
+Path parsing and resolution against the row's own type is done in code:
+`~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_categorize.go` — `catzParsePath`, `(*txnLookup).resolveCategoryFor`.
+
+Imported rows land in a fallback category (`Imported > Uncategorized`, one per type). Three routes
+serve whoever categorises them — usually an agent through the MCP:
+
+- **`GET /transactions/uncategorized` — the work queue.** Every row in the fallback categories,
+  grouped by normalised payee (the payee leaderboard's normaliser, §12), largest group first. Each
+  group carries its ids (capped by `ids_per_group`, with `idsTruncated`), per-type counts, signed
+  per-currency totals, first and last date, accounts, up to five raw descriptions, three sample rows,
+  and a **suggestion**: what categorised rows with the same payee were given — `votes` of `of`, the
+  `basis` (`same_payee`, or `payee_prefix` on the first two words) and up to three alternatives,
+  restricted to categories the group's rows could take without a type change. A suggestion is a
+  count, not a verdict. Groups leave the queue as they are categorised, so a categoriser re-reads
+  from offset 0 after each write. Balance modifications never appear.
+  Grouping and suggestions in code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_categorize.go` — `catzHandleQueue`, `catzGroupQueue`, `(*catzHistory).suggest`.
+- **`POST /transactions/categorize` — per-row assignments.** Many categories in one previewed,
+  confirmed, journalled write of up to 5,000 rows; each id may appear in one assignment only. A path
+  without a type resolves against each row's own type first, so `Imported > Uncategorized` means the
+  expense one for an expense row. A category of another type is refused naming the row unless
+  `allow_type_change` is set; then income ↔ expense flips the direction and keeps account and amount;
+  income or expense → transfer needs `counter_account` (an expense pays into it, an income came from
+  it; `counter_amount` when the currencies differ); transfer → expense keeps the source side and
+  transfer → income the destination side. `skip_invalid` lists refused rows under `preview.skipped`
+  and changes the rest; `summary_only` drops the per-row diff and keeps `preview.byCategory`. Rows
+  that only change category go through `TransactionBatchUpdateCategoriesHandler` (one call per target
+  category); type changes go through `TransactionModifyHandler` row by row; one journal entry undoes
+  the batch.
+  The row transitions in code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_categorize.go` — `catzTargetState`; the write in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_transactions.go` — `txnApplyBulkStates`.
+- **`POST /categories/ensure` — the taxonomy.** `paths[]` of full `Type > Group > Sub` paths; only
+  the missing groups and sub-categories are created (names match ignoring case), existing ones are
+  returned with their ids, a new sub-category takes its group's colour and icon. One journal entry
+  deletes what it created.
+  In code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_categorize.go` — `catzPlanEnsure`, `catzHandleEnsure`.
+
+A category's own type cannot change (upstream forbids it); moving a group to another major category
+is `categories/ensure` under the new type followed by `transactions/categorize`.
+
+#### 10.3.2 Own-account moves as transfers
+
+A statement import writes one income/expense row per statement line, per account (§14). Two kinds of
+rows then inflate every income and expense total — the home page, the statistics, `/analytics/*`:
+
+- **A move between two of the operator's own accounts** (a card payment from checking, checking →
+  savings) arrives as an EXPENSE in one account and an INCOME in the other. It is ONE move and
+  becomes ONE ezBookkeeping transfer, which upstream's statistics already leave out.
+- **A row that is not income or spending at all** — an investment account's monthly change in
+  printed market value, or a one-sided move whose other side is not a ledger in these books —
+  becomes a transfer against a named counterpart account (typically a hidden one), so it stops
+  counting while the operator's account balance stays exactly the same.
+
+Two routes serve this. Both work on rows that already exist, so they apply equally to imported and
+hand-entered rows.
+
+**`POST /transactions/transfer-candidates` (read, composed).** Finds pair items for the conversion
+without writing anything.
+
+Request body (every field optional):
+
+```json
+{ "account_ids": ["…"], "account_names": ["Northbank Checking ••4021"], "start": "2026-03-01", "end": "2026-03-31",
+  "window_days": 4, "require_hint": true, "limit": 1000 }
+```
+
+- `account_ids` / `account_names`: the accounts to search (a parent expands to its sub-accounts);
+  default every visible leaf account. Both rows of a candidate must be in this set.
+- `start` / `end`: a candidate needs at least one side inside the range; the scan reaches
+  `window_days` beyond each end so a counterpart just outside still counts.
+- `window_days`: default 4, 0–31. `require_hint`: default true. `limit`: how many `pairs` (and,
+  separately, `ambiguous` groups) come back, default 1000, at most 5000; `counts` always cover
+  everything found.
+
+A **candidate** is an EXPENSE row in account A and an INCOME row in account B ≠ A, same currency, same
+absolute amount, at most `window_days` calendar days apart. A **hint** (required unless
+`require_hint: false`) is either
+- a comment carrying the OTHER account's last four digits as their own number — the last four are
+  the trailing run of at least four digits of the account NAME (`Checking ••4021`, `Card x4021`,
+  `…4021`, `*4021`, `Savings 99994021` → `4021`); the comment may write them `x4021`, `...4021`,
+  `*4021`, `••4021` or `#4021`, but never inside a longer number; or
+- a comment containing a word of the documented transfer vocabulary, matched ignoring case on word
+  boundaries: `PAYMENT`, `AUTOPAY`, `AUTO PAY`, `TRANSFER`, `XFER`, `EPAY`, `THANK YOU`, `CRD`,
+  `CREDIT CARD`, `ONLINE PMT`, `FROM CHK`, `TO CHK`, `FROM SAV`, `TO SAV`, `DEPOSIT TRANSFER`.
+
+Only **unambiguous** candidates — the expense has exactly one candidate AND the income has exactly
+one — come back as `pairs`. Every other candidate belongs to an `ambiguous` group (a connected set
+of rows and their candidates), listed whole, for a human to choose. Output order is deterministic
+(expense date, then ids).
+
+Response `data`:
+
+```json
+{ "pairs": [ { "expense": {…row}, "income": {…row}, "dayGap": 2,
+               "hints": [ {"kind": "last_four", "digits": "7788", "comment": "expense", "account": "Meridian Card ••7788"},
+                          {"kind": "vocabulary", "term": "THANK YOU", "comment": "income"} ],
+               "item": { "id": "<expense id>", "counter_id": "<income id>" } } ],
+  "ambiguous": [ { "expenses": [{…row}], "incomes": [{…row}],
+                   "candidates": [ {"expenseId": "…", "incomeId": "…", "dayGap": 0, "hints": […]} ] } ],
+  "counts": { "pairs": 1, "ambiguousGroups": 0, "ambiguousCandidates": 0, "candidates": 1,
+              "scannedExpenses": 212, "scannedIncomes": 64, "pairsReturned": 1, "ambiguousGroupsReturned": 0 },
+  "scanTruncated": false,
+  "filter": { "accountIds": ["…"], "start": "2026-03-01", "end": "2026-03-31", "windowDays": 4, "requireHint": true, "timezone": "America/Los_Angeles" } }
+```
+
+A row is `{id, date, typeName, accountId, accountName, amount, currency, comment, categoryId,
+categoryName}`. Rows are walked through the same upstream list `GET /transactions` walks, one scan
+per type capped at 5000 rows; past it `scanTruncated` is true and `meta.truncated` is set — narrow
+with `start`/`end` or accounts.
+Detection in code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_transfers.go` — `xferHandleCandidates`, `xferFindCandidates`, `xferLastFour`, `XferTransferVocabulary`.
+
+**`POST /transactions/convert-to-transfer` (write, dry-runnable, composed).** The write protocol of
+§9 exactly: `dry_run` (default true), `confirm_token`, `max_changes`.
+
+```json
+{ "items": [ { "id": "3844…0384", "counter_id": "3844…0385" },
+             { "id": "3844…0391", "counter_account_name": "Market Value" },
+             { "id": "3844…0392", "counter_account_id": "3844…0660" } ],
+  "comment_mode": "both",
+  "transfer_category_id": "…", "transfer_category_name": "Moves > Internal",
+  "dry_run": true, "confirm_token": "cf_…", "max_changes": 200 }
+```
+
+- **Pair item `{id, counter_id}`.** Both rows are INCOME or EXPENSE (never a transfer or balance
+  modification), one expense and one income, in different accounts, with equal amounts when the
+  currencies agree (when they differ each side keeps its own amount as `sourceAmount` /
+  `destinationAmount`). Result: ONE transfer, source = the expense's account, destination = the
+  income's account, time and utc offset = the expense's. The destination account's running balance
+  therefore moves from the income's posting day to the expense's for the days between
+  (`preview.items[].destinationDateShift` says so); its final balance is unchanged. Comment = the
+  expense's comment, plus ` ⇄ ` and the income's when `comment_mode` is `both` (the default) and they
+  differ (`out`: the expense's alone; cut to 255 characters with a warning). Tags = the union (at most
+  10). Geo = the expense's, else the income's.
+- **Single item `{id, counter_account_id | counter_account_name}`.** An expense row in account A
+  becomes a transfer A → counter; an income row in A becomes counter → A. Same amount, time, comment
+  and tags. The counter is a different, leaf, same-currency account (resolved like every account
+  argument); it may be hidden.
+- **The transfer category.** A transfer needs a transfer-type sub-category. `transfer_category_id` /
+  `transfer_category_name` name one; otherwise the plane takes the first visible transfer
+  sub-category in display order. When the operator has none the call fails `not_found` with a hint
+  naming `POST /categories` (type transfer) — it never creates one silently.
+- **Refused, all problems at once** (`details.problems[]` of `{index, id, code, problem}`; the call is
+  `not_found` when every problem is a missing row, else `invalid_input`): a row that does not exist
+  (deleted since), a row that is already a transfer (a TRANSFER_IN id counts), a balance
+  modification, two rows of the same type, the same account, unequal same-currency amounts, a
+  single's counter in another currency or the row's own account, rows with pictures (a conversion
+  would not carry them), more than 10 merged tags. An id named twice anywhere in one request is
+  refused up front with `details.duplicates`, and so is an item with both or neither of `counter_id`
+  and `counter_account_*`.
+
+The **preview** (`preview.items[]`, one per item) shows `kind` (`pair` | `single`), `before` (the
+rows as they are: account, type, amount, date, comment, category), `after` (the transfer), `dayGap`,
+`importRecords` (how many statement import records follow the conversion) and `balanceEffect`: per
+account, its `before` and `after` effect and `netChange`. The plan asserts `netChange` is 0 for every
+account — except a single item's counter account, whose row is marked `counterpart: true` because
+taking the other side of the move is its purpose — and refuses the item otherwise.
+`preview.hiddenAccounts` lists hidden accounts the conversion touches, `preview.transferCategoryId`
+/ `transferCategoryPath` the category used. `changes` is `{convert, create, delete}`; the ceiling
+(`max_changes`) counts the ORIGINAL rows converted (a pair is 2, a single 1).
+
+The **apply**, item by item: create the transfer through upstream's `TransactionCreateHandler`,
+delete the originals through `TransactionDeleteHandler`, then re-point every `machine_import_record`
+row (§14.6) whose `transaction_id` named an original at the transfer's id — so a later statement
+re-plan still reports those statement rows as `already_present`, never `new`. A failure part way
+through an item rolls that item back (the originals are re-created with new ids and their records
+follow them) and the call fails naming `failedIndex`; items before it stand and are journaled.
+Upstream refuses to add a transaction to, or delete one from, a **hidden account**, so a hidden
+account an item touches is made visible for the moment of that item and hidden again afterwards.
+
+Response `result`: `{ "converted": 2, "ids": ["<transfer id>", …], "items": [ {"index": 0, "kind":
+"pair", "transferId": "…", "deletedIds": ["…", "…"], "recordsRepointed": 2} ] }`, plus
+`journal_id` beside it.
+
+**Undo** (`POST /undo`, `ezb_undo`, `ezbk undo`): the whole conversion is one journal entry with one
+inverse op, `txn.unconvert` (§9.6). It checks every item first — each transfer unchanged since the
+conversion, each original still deleted — so a refusal changes nothing; then, newest item first, it
+re-creates the originals (new ids, same fields; pictures were refused up front), re-points the import
+records at them, and deletes the transfer. Redo is not recorded: re-run the conversion instead.
+In code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_transfers.go` — `xferHandleConvert` (resolve and plan), `xferBuildPair` / `xferBuildSingle` (the transfer), `xferBalanceRows` (the assertion), `xferApplyItem` (create, delete, re-point), `xferExecUnconvert` / `xferRestore` (undo).
 
 ### 10.4 Categories
 
@@ -1202,7 +1402,8 @@ Notes that matter:
 | `/categories/:id`     | GET    | R     | —                                                                            |
 | `/categories`         | POST   | W     | `name`, `type`, `parent_id` (omit for a primary category), `color`, `icon`, `comment` |
 | `/categories/batch`   | POST   | W     | `categories[]` — `CategoryCreateBatchHandler` (the "default categories" preset) |
-| `/categories/:id`     | PATCH  | W     | `name`, `parent_id`, `color`, `icon`, `comment`                              |
+| `/categories/:id`     | PATCH  | W     | `name`, `parent_id` \| `parent_name`, `color`, `icon`, `comment`; `:id` may be a path (§10.3.1) |
+| `/categories/ensure`  | POST   | W     | `paths[]` (`Type > Group > Sub`), `color`, `icon` — creates only what is missing (§10.3.1) |
 | `/categories/:id/hide`| POST   | W     | `hidden`                                                                     |
 | `/categories/:id/move`| POST   | W     | `to_index`                                                                   |
 | `/categories/:id`     | DELETE | **A** | `confirm_token` — refused while transactions use it, naming the count        |
@@ -1560,6 +1761,21 @@ could not find rather than guessing**:
 | `path`                                        | ✅       | the account's directory, relative to the tree root                             |
 | `transactions`, `statements`, `first`, `last` | —        | counts and coverage, used for the plan's preview                               |
 | `reconciled`, `recon_na`                      | —        | how many statements balanced; surfaced as a warning                            |
+| `name`                                        | —        | the account name `/ingest/accounts/plan` proposes instead of the template (§15.2) |
+| `file`                                        | —        | the account's **one** importable file, relative to the root. When set, the account's shelf is exactly that file and `path` is not walked — so several accounts may share one directory (a statement pipeline writes `{Institution}/{Type}_ALL_…ofx` for every account of an institution side by side). Code: `ingScanFileShelf()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_manifest.go` |
+| `opening_balance`, `opening_date`             | —        | the balance before the first imported row (signed decimal; a liability is negative) and the first day it applies (`YYYY-MM-DD`). Both or neither; a value that is not whole hundredths is refused with a row warning, never rounded. Set on the account at creation (§15.4). Spec: import_formats.mdx §9.3 |
+| `type`, `source_kind`, `mode`, `import_group`, `last_printed_balance`, `last_printed_date` | — | informational: known, not reported as unknown, never read by the plane |
+
+`kind` also accepts other pipelines' vocabulary and reads it aloud as a row warning: `retirement`,
+`education`, `investment`, `cash_management` → `brokerage`; `mortgage`, `debt` → `loan`; `credit_card` →
+`card`. Code: `ingKindAliases` in `ingest_manifest.go`.
+
+**Which manifest (LOCKED).** With no `manifest_path`, the plane tries, in order,
+`import/personal/manifest_ezbookkeeping.csv`, `import/manifest_ezbookkeeping.csv`, `manifest_ezbookkeeping.csv`, then the generic names
+(`import/accounts.csv`, …). A manifest written for this app wins, so a statements root that also holds
+another app's manifest — which may list accounts that must never be imported here — never has the
+foreign one picked by default. Callers that import should pass `manifest_path` anyway. The file layout a
+statement pipeline writes for this app is import_formats.mdx §11.2.
 
 ```jsonc
 // GET /ingest/manifest?root=…   (read)
@@ -1756,6 +1972,11 @@ operator may have edited it, and an import that overwrites a note a human typed 
 data in the row a human authored. A test writes a comment, re-runs, and asserts it survives byte for
 byte.
 
+**An empty statement is a statement.** A file whose converter answers "not found transaction data" (an
+OFX with an empty `BANKTRANLIST` — a month with no activity, a dormant account) counts as a primary
+statement with zero rows and a warning, never as an `unreadable_file` conflict.
+Code: `ingIsEmptyFile()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_plan.go`.
+
 ### 14.9 What ingest never does
 
 - Never writes, moves, renames or deletes anything under `{ROOT}` outside the staging directory.
@@ -1806,6 +2027,11 @@ It **creates nothing**.
 }
 ```
 
+A manifest row with `opening_balance`/`opening_date` adds `"opening_balance": 123456, "opening_date": "2026-01-01",
+"opening_time": 1767268799` to its `proposed` block and `balance`/`balance_time` to its change-set entry,
+so the confirm token covers the opening balance too. A positive opening on a liability is warned about
+(money owed is negative).
+
 `action` is one of `create` · `link` · `skip` · `ambiguous`. **`ambiguous` never becomes a create** —
 two accounts sharing a last4 across two entities is the normal case in a real archive.
 
@@ -1842,9 +2068,20 @@ every `create` row and flags any row whose currency was defaulted rather than st
 
 ### 15.4 `POST /ingest/accounts/apply` (write)
 
-Takes the token, creates the `create` rows through `/accounts/batch`, links the `link` rows, and
-**writes the map** beside the statements, so the next `/ingest/plan` has a complete mapping and the
-operator never hand-writes a file of 27 account ids. `dry_run` defaults true.
+Takes the token, creates the `create` rows through upstream's own account-create handler (one call per
+account, journalled as one undoable batch), links the `link` rows, and **writes the map** beside the
+statements, so the next `/ingest/plan` has a complete mapping and the operator never hand-writes a file of
+27 account ids. `dry_run` defaults true.
+
+**The opening balance (LOCKED).** A created account whose manifest row carries an opening balance is
+created with `balance` = that amount and `balanceTime` = **11:59:59 UTC on `opening_date`**: upstream then
+inserts the account's one Balance Modification transaction in the same database transaction.
+ezBookkeeping refuses any transaction dated at or before an account's Balance Modification, and a
+statement pipeline dates its rows at noon UTC, so the opening sorts strictly first while still showing on
+its own date from UTC−11 to UTC+11. An account that is linked, not created, is never given an opening
+balance — a Balance Modification can only be the first transaction an account ever has.
+Code: `ingApplyAccounts()` and `ingOpeningTime()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_accounts.go`.
+Spec: import_formats.mdx §9.3.
 
 ---
 
@@ -2211,6 +2448,8 @@ books. P7 is what makes the first evening useful.
 ## 26. Related specs
 
 - [cli.mdx](./cli.mdx) — `ezbk`, the terminal client of this plane.
+- [import_formats.mdx](./import_formats.mdx) — what every file format the ingest plane reads looks like, what the
+  converters do with it, and what our statement pipeline writes (the manifest of §14.2 in full, §11.2 there).
 - [mcp.mdx](./mcp.mdx) — `ezbookkeeping`, the agent client of this plane.
 - [error_err.mdx](./error_err.mdx) — the error file, `~/T/ezbookkeeping/error.err`: where every
   `internal` and `upstream_error` fault's detail goes (§7.2), written by `pkg/errfile`.

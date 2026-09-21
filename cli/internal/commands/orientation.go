@@ -2036,7 +2036,7 @@ func orCheckSecretKey(root string) orCheck {
 		return ch
 	}
 
-	path := filepath.Join(root, "data", ".secret_key")
+	path := filepath.Join(logger.StateDir(), "data", ".secret_key")
 	data, err := os.ReadFile(path)
 	val := strings.TrimSpace(string(data))
 

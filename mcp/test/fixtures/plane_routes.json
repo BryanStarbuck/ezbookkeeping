@@ -290,6 +290,12 @@
       "status": "live"
     },
     {
+      "method": "POST",
+      "path": "/categories/ensure",
+      "tier": "write",
+      "status": "live"
+    },
+    {
       "method": "GET",
       "path": "/data/export",
       "tier": "read",
@@ -674,6 +680,18 @@
       "status": "live"
     },
     {
+      "method": "POST",
+      "path": "/transactions/categorize",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/transactions/convert-to-transfer",
+      "tier": "write",
+      "status": "live"
+    },
+    {
       "method": "GET",
       "path": "/transactions/count",
       "tier": "read",
@@ -731,6 +749,18 @@
       "method": "POST",
       "path": "/transactions/tags/remove",
       "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/transactions/transfer-candidates",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/transactions/uncategorized",
+      "tier": "read",
       "status": "live"
     },
     {

@@ -20,7 +20,7 @@ Our fork adds seven things:
 1. **Machine-plane API** at `/machine/v1`, inside the same Go server. It only answers loopback callers, and every call needs the API secret key (below). It calls the same `pkg/services` the browser's API uses, so the browser, the CLI and the agent never disagree about a number. Spec: `pm/apis.mdx`.
 2. **CLI `ezbk`**: a thin Go client of the machine plane. It starts the app if it is down. Its flagship job is importing years of bank statements exactly once. Spec: `pm/cli.mdx`.
 3. **MCP server `ezbookkeeping`** (tools prefixed `ezb_`): a thin Node + TypeScript stdio client of the machine plane, for Claude Code.
-   * 65 tools: 47 read, 18 write. Writes are off by default, and no tool deletes anything.
+   * 72 tools: 49 read, 23 write. Writes are off by default. One tool deletes (`ezb_delete_transactions`, by id only), and it also needs the admin tier on both sides (`EZBKMCP_ALLOW_ADMIN=1`, `ezbk up --allow-admin`).
    * Spec: `pm/mcp.mdx`.
    * Its instructions to the model: `ai/mcp_prompt_ezbookkeeping.md`.
 4. **More APIs, and more charting.** Upstream's statistics page groups categories and converts currencies in the browser (`src/stores/statistics.ts`). We move that work into Go analytics routes (`/machine/v1/analytics/*`) so every total is computed once. Future charts must read those same routes, never re-add numbers in new TypeScript (`pm/apis.mdx` §12.4).
@@ -62,6 +62,7 @@ The directory below holds the product management specification files on how ever
 * apis.mdx — the machine-plane API: the contract both clients use. Written first among equals.
 * cli.mdx — `ezbk`
 * mcp.mdx — the `ezbookkeeping` MCP server
+* import_formats.mdx — the statement file formats, the converters, and what our pipeline writes
 pm/ holds no code, ever.
 
 The directory below is where the source code goes for a CLI (command-line interface), so we can interface with this web app from the command line.
@@ -80,8 +81,16 @@ The machine-plane API goes in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/`, a s
 ## Running it locally
 
 * `just build` builds the Go binary `./ezbookkeeping`, the Vue front end in `./dist`, the CLI `./cli/bin/ezbk` and the MCP `./mcp/dist/index.js`, after syncing the vendored errfile copies. `just lint` runs go vet (plus the errfile analyzer) for both Go modules and the two ESLint runs; `just test` runs every suite; `just check-errors` runs the error-file coverage script; `just install-mcp yes` registers the MCP with Claude Code.
-* `just run` serves http://localhost:8080/ in the foreground, bound to 127.0.0.1. Set `EBK_PORT` to change the port.
-* `just dev` runs the Vite hot-reload server on :8081. It needs `just run` running in another terminal.
+* `just run` (re)starts the server in the background at http://localhost:8080/, bound to 127.0.0.1, so `just build && just run` always serves the latest build.
+  * It stops whichever ezBookkeeping server is running first, whether `just run`, `ezbk up` or a foreground run started it.
+  * It waits until the server is healthy and checks that the machine plane is armed.
+  * It shares `server.pid` and `server.log` with `ezbk up`/`ezbk stop`, so the two interoperate.
+  * It refuses to kill a foreign process on the port, and refuses to start a second server on the same state dir.
+  * Writes are on by default (`EZBK_MACHINE_ALLOW_WRITE=0 just run` turns them off); admin is off.
+  * `just run-fg` runs in the foreground; `just stop`, `just status` and `just logs` do what they say.
+  * The logic lives in `scripts/server.sh`.
+  * Set `EBK_PORT` to change the port.
+* `just dev` runs the Vite hot-reload server on :8081. It needs the server up (`just run`).
 * Config lives in `conf/ezbookkeeping.ini`, which is upstream's file and is checked in.
   * Upstream overrides any key with `EBK_<SECTION>_<KEY>`.
   * `EBKCFP_<SECTION>_<KEY>` also works; it gives the path of a file holding the value.
@@ -150,12 +159,17 @@ HARD REQUIREMENT: Bryan's personal data must never end up anywhere in the ~/BGit
 
 ### Runtime state location (watch this)
 
-By default ezBookkeeping keeps its runtime state inside this repo, all git-ignored (`/data/`, `/log/`, `/storage/` in `.gitignore`):
-* `data/ezbookkeeping.db` — sqlite database (`db_path` in `conf/ezbookkeeping.ini`)
-* `log/ezbookkeeping.log` — logs, which can contain transaction details
-* `storage/` — uploaded files (transaction pictures, avatars)
+Upstream's `.ini` keeps runtime state inside this repo (`data/`, `log/`, `storage/`, all git-ignored). This fork does not use those paths: `just run` and `ezbk up` point the server at **`~/T/_ezbookkeeping/`** (`EZBK_STATE_DIR` overrides) through `EBK_DATABASE_DB_PATH`, `EBK_LOG_LOG_PATH`, `EBK_STORAGE_LOCAL_FILESYSTEM_PATH` and `EBKCFP_SECURITY_SECRET_KEY`:
+* `~/T/_ezbookkeeping/data/ezbookkeeping.db` — the sqlite database (real financial data once statements are imported)
+* `~/T/_ezbookkeeping/data/.secret_key` — upstream's `[security] secret_key` (not the API key)
+* `~/T/_ezbookkeeping/log/ezbookkeeping.log` — logs, which can contain transaction details
+* `~/T/_ezbookkeeping/storage/` — uploaded files (transaction pictures, avatars)
 
-Once real financial data is imported, those paths hold private data inside the repo hierarchy. Never remove those `.gitignore` entries, never `git add -f` anything under them, and prefer pointing `db_path`, `log_path`, and the storage root at a directory outside this repo (for example under ~/T/) before importing real statements.
+On first start both move a database or `.secret_key` an older version left in `./data/` out of the repo (never overwriting). Keep the `.gitignore` entries for `/data/`, `/log/`, `/storage/` anyway, never `git add -f` anything under them, and never start the server another way (a bare `./ezbookkeeping server run` would use the in-repo paths).
+
+## Statement import formats
+
+What a statement file must look like for this app, what each converter does with it, and what our pipeline writes (`*_ezbookkeeping.ofx` + a TSV companion + `manifest_ezbookkeeping.csv` with `file`, `opening_balance`, `opening_date`): `pm/import_formats.mdx`. The pipeline lives in the private archive at `~/BGit/Bryan_git/Bryan_Arindom/bank_statements/import/_tools/` and is driven by `~/BGit/Bryan_git/Bryan_Arindom/finances/prompts/p_ezbookkeeping_*.md`.
 
 ## Git
 

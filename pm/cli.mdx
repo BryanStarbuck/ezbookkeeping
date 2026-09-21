@@ -71,7 +71,8 @@ description: >
 
 ezBookkeeping is a self-hosted personal-finance app: a Go server, a Vue 3 web UI in desktop and
 mobile editions, and a SQLite database that, on this machine, lives at
-`~/BGit/Bryan_git/ezbookkeeping/data/ezbookkeeping.db`. Nobody else holds the books. That is the
+`~/T/_ezbookkeeping/data/ezbookkeeping.db` — outside the repo, because once real statements are
+imported it is private financial data and this repo is public. Nobody else holds the books. That is the
 proposition, and it is why this repo is a working copy rather than a subscription.
 
 This repo — `~/BGit/Bryan_git/ezbookkeeping/`, forked from `mayswind/ezbookkeeping` to
@@ -213,7 +214,7 @@ This section is first because the mistake is first.
 
 ### 1.3 What `ezbk` must never do
 
-- **Never open `data/ezbookkeeping.db`.** Not to read, not "just to check a count". A second process
+- **Never open the database file (`~/T/_ezbookkeeping/data/ezbookkeeping.db`).** Not to read, not "just to check a count". A second process
   with the SQLite file open is how a write gets `database is locked`, and a CLI that reads the file
   directly is a CLI whose answers bypass the services the browser uses — the exact disagreement §5.4
   exists to prevent.
@@ -323,8 +324,15 @@ Every `ezbk` invocation that needs the machine plane begins with a liveness pref
    `just` is present:
    - build if needed (the Go binary `./ezbookkeeping` and `./dist/index.html` both exist and are newer
      than their sources, or `just build` runs);
-   - ensure `data/`, `log/`, `storage/` exist and `data/.secret_key` exists (upstream's `[security]
-     secret_key` — **not** the API secret key, apis.mdx §5.2);
+   - ensure the **runtime state directories outside the repo** exist — `{STATE}/data`, `{STATE}/log`,
+     `{STATE}/storage`, where `{STATE}` is `~/T/_ezbookkeeping` (`EZBK_STATE_DIR` overrides) — and move a
+     database or `.secret_key` an older version left in the repo's `data/` there, once, never
+     overwriting; ensure `{STATE}/data/.secret_key` exists (upstream's `[security] secret_key` — **not**
+     the API secret key, apis.mdx §5.2);
+   - point the server at them with `EBK_DATABASE_DB_PATH`, `EBK_LOG_LOG_PATH`,
+     `EBK_STORAGE_LOCAL_FILESYSTEM_PATH` and `EBKCFP_SECURITY_SECRET_KEY` (the checked-in `.ini` keeps
+     upstream's in-repo defaults; `just run` sets the same four). Code: `RuntimeDirs()` in
+     `~/BGit/Bryan_git/ezbookkeeping/cli/internal/bringup/bringup.go`;
    - **refuse, loudly, if a foreign process holds the port** — never blanket-kill a port, because the
      pid on 8080 might be something the operator cares about (8080 is a popular port);
    - start `./ezbookkeeping --conf-path conf/ezbookkeeping.ini server run` **detached**, with exactly
@@ -506,7 +514,7 @@ own key; the CLI never falls back from one target's key to another's.
 ### 4.6 What the key is NOT
 
 - Not an encryption key, and not `[security] secret_key` (which encrypts 2FA secrets and lives in
-  `data/.secret_key`).
+  `~/T/_ezbookkeeping/data/.secret_key`).
 - Not a session. It does not expire and carries no claims; it never appears in the Security Settings
   session list, because the plane never creates an upstream token.
 - Not transferable. Copying it to another computer gets that computer a `404`.
@@ -597,6 +605,7 @@ READING THE BOOKS
   ezbk transactions show <id>
   ezbk transactions count [same filters]
   ezbk transactions export [same filters] --format csv|tsv
+  ezbk transactions transfer-candidates [--account A]... [--start D] [--end D] [--window-days 4] [--no-hint] [--limit N]
   ezbk categories list [--type income|expense|transfer] [--include-hidden]
   ezbk tags list | ezbk tag-groups list
   ezbk templates list [--scheduled]
@@ -636,6 +645,8 @@ WRITING  (each needs --write, and the server's write tier; each dry-runs without
   ezbk transactions set-category (<id>… | --filter …) --category C
   ezbk transactions set-account  (<id>… | --filter …) --account A
   ezbk transactions tag add|remove|clear (<id>… | --filter …) [--tag T]…
+  ezbk transactions convert-to-transfer [--pair ID:COUNTER_ID]... [--counter ID=ACCOUNT]... [--items JSON|@file|-]
+                                        [--comment-mode both|out] [--transfer-category C]
   ezbk accounts add --name N --category checking --currency USD [--initial-balance 0 --initial-date D]
   ezbk accounts edit <id|name> [--name …] [--comment …] | hide | unhide
   ezbk accounts reconcile <id|name> --balance 421108 --as-of D [--adjust-into C]
@@ -847,6 +858,12 @@ setting.
 copy. If the operator shares a statements tree with the Actual Budget fork, the two staging
 directories (`.actual-staging/`, `.ezbk-staging/`) sit side by side and never touch each other.
 
+**The file shapes** a statement pipeline writes for this app — one `*_ALL_ezbookkeeping.ofx` per
+account, a manifest naming each account's `file` and `opening_balance`, the noon-UTC date rule, sign-only
+`TRNTYPE` — are [import_formats.mdx](./import_formats.mdx) §11. Pass `--manifest-path` whenever the root
+holds more than one app's manifest; with none, a manifest named `…manifest_ezbookkeeping.csv` is found
+first (apis.mdx §14.2).
+
 ### 10.2 Stage 0 — which kind of archive is it? (`ezbk statements manifest`)
 
 **Run this first.** A **prepared** archive already holds importable files (OFX, QFX, QIF, CAMT, MT940,
@@ -964,6 +981,32 @@ supposed to be deliberate. `apply` then prints the per-account created counts, t
 same plan and apply, scoped to one file and one account, with `--type` naming the converter when the
 extension is not enough, and `--column-map` for a custom CSV.
 
+### 10.9a After an import — own-account moves as transfers
+
+A move between two of the operator's own accounts (a card payment from checking, checking → savings)
+arrives from the two statements as an expense in one account and an income in the other, and both
+count as spending and earning. Two thin verbs pair them into transfers (apis.mdx §10.3.2):
+
+```
+ezbk transactions transfer-candidates --start 2026-03-01 --end 2026-03-31
+ezbk transactions transfer-candidates --format json > pairs.json      # pairs[].item is ready to convert
+ezbk transactions convert-to-transfer --pair 3844…0384:3844…0385       # dry run: the preview
+ezbk transactions convert-to-transfer --items @items.json --write --yes
+ezbk transactions convert-to-transfer --counter 3844…0391="Market Value" --write --yes
+```
+
+- **`transfer-candidates`** reads only: `--account` (repeatable; default every visible account),
+  `--start`/`--end`, `--window-days` (default 4, ≤ 31), `--no-hint` (also same-amount rows without a
+  last-four or transfer-word hint), `--limit`. The table lists the unambiguous pairs; the counts
+  (including ambiguous groups) go to stderr; `--format json` has everything, each pair's `item` ready
+  for the next verb.
+- **`convert-to-transfer`** is a write like any other (dry run unless `--write`, `--yes` past
+  `--max-changes`, which counts original rows): `--pair ID:COUNTER_ID` (either order), `--counter
+  ID=ACCOUNT` (a row against an account id or name, e.g. a hidden counterpart), `--items` (the JSON
+  array), `--comment-mode both|out`, `--transfer-category C`. Balances are unchanged, the statement
+  import records follow the transfer (a re-plan stays at 0 new), and `ezbk undo` reverses it.
+The verbs in code: `~/BGit/Bryan_git/ezbookkeeping/cli/internal/commands/transfers.go` — `xfRunCandidates`, `xfRunConvert`, `xfItems`.
+
 ### 10.10 What the pipeline never does
 
 - Never writes, moves, renames or deletes anything under `{ROOT}` outside `.ezbk-staging/`.
@@ -1022,7 +1065,7 @@ Prints a report and exits `1` if any REQUIRED check failed:
 | A user is bindable                                             | no        | 0 users → register one; 2+ → set `ezbookkeeping.machine.username`                      |
 | Upstream `enable_api_token` / `enable_mcp` off                 | no        | **warns loudly if on** — a full-access bearer door is open (apis.mdx §2.2)            |
 | Server listening on loopback only                              | no        | warns if `http_addr` is `0.0.0.0` — the browser API is then reachable from the network |
-| `data/.secret_key` set (upstream's `secret_key` not the default `"ezbookkeeping"`) | no | 2FA secrets would be encrypted with a public default                          |
+| `{STATE}/data/.secret_key` set (upstream's `secret_key` not the default `"ezbookkeeping"`) | no | 2FA secrets would be encrypted with a public default                          |
 | Statements root configured and readable                        | no        | only the `statements` family needs it                                                 |
 | `ezbk` on `PATH` and pointing at this checkout                 | no        | catches the second-checkout confusion                                                 |
 
@@ -1304,6 +1347,7 @@ worth using** — every question answered, nothing changeable.
 - **[apis.mdx](./apis.mdx) — the machine plane this CLI is a client of.** The authority on every route,
   argument and error code.
 - [mcp.mdx](./mcp.mdx) — the MCP server. Same key, same plane, same services.
+- [import_formats.mdx](./import_formats.mdx) — the statement file formats the `statements` verbs read.
 - [error_err.mdx](./error_err.mdx) — the error file, `~/T/ezbookkeeping/error.err`: where every fault
   `ezbk` sees, and every panic's stack, is written (§16).
 - [../CLAUDE.md](../CLAUDE.md) — what this fork is, where things live, the open-source rule.

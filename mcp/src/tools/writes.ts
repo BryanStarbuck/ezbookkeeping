@@ -1,5 +1,5 @@
 /**
- * The write tier — pm/mcp.mdx §9.5, §9.7. Eighteen tools, off by default. Every one but ezb_undo
+ * The write tier — pm/mcp.mdx §9.5, §9.7. Twenty-one tools, off by default. Every one but ezb_undo
  * previews by default (dry_run: true) and applies only with dry_run: false plus the confirm_token
  * the preview returned, under a max_changes ceiling; the plane recomputes the change set at apply
  * time and refuses a moved fingerprint with conflict. None deletes anything.
@@ -255,23 +255,97 @@ export const setTransactionCategory: ToolDef = {
   tier: 'write',
   hasDryRun: true,
   description: describe({
-    what: 'Re-categorises transactions chosen by ids or by a filter into one secondary category of the matching type, under a ceiling; the preview names every row and its before-and-after category.',
+    what: 'Re-categorises transactions chosen by ids or by a filter into ONE secondary category, under a ceiling; with allow_type_change an income row may become an expense or back when the category is of the other type; the preview names every row and its before-and-after category and type.',
     tier: 'write',
-    insteadOf: 'Show the rows first with ezb_list_transactions (the same filter), or find them with ezb_list_import_fallout.',
+    insteadOf: 'To give many rows different categories in one write, use ezb_set_transaction_categories. Show the rows first with ezb_list_transactions (the same filter) or ezb_list_uncategorized.',
   }),
   inputSchema: objectSchema({
     ...BULK_SELECT_PROPERTIES,
     category_id: idField('The secondary category to set.'),
-    category_name: strField('The secondary category by name instead of id.'),
+    category_name: strField('The secondary category by name or path: "Sub", "Group > Sub" or "Type > Group > Sub" (e.g. "Expense > Food & Drink > Food").'),
+    allow_type_change: boolField('Let income rows become expense rows (or back) when the category is of the other type. Defaults to false. Turning a row into a transfer needs ezb_set_transaction_categories with a counter account.'),
     ...WRITE_PROPERTIES,
   }),
-  schema: z.object({ ...zBulkSelect, category_id: zId.optional(), category_name: z.string().min(1).optional(), ...zWrite }).strict(),
+  schema: z.object({ ...zBulkSelect, category_id: zId.optional(), category_name: z.string().min(1).optional(), allow_type_change: z.boolean().optional(), ...zWrite }).strict(),
   async run(args, ctx) {
-    const a = args as WriteArgs & BulkSelect & { category_id?: string; category_name?: string };
+    const a = args as WriteArgs & BulkSelect & { category_id?: string; category_name?: string; allow_type_change?: boolean };
     const res = await ctx.client.request('/transactions/set-category', {
       method: 'POST',
-      body: bulkBody(a, { ...(a.category_id === undefined ? {} : { category_id: a.category_id }), ...(a.category_name === undefined ? {} : { category_name: a.category_name }) }, ctx.config, a),
+      body: bulkBody(
+        a,
+        {
+          ...(a.category_id === undefined ? {} : { category_id: a.category_id }),
+          ...(a.category_name === undefined ? {} : { category_name: a.category_name }),
+          ...(a.allow_type_change === undefined ? {} : { allow_type_change: a.allow_type_change }),
+        },
+        ctx.config,
+        a,
+      ),
     });
+    return fromWrite(res);
+  },
+};
+
+const ASSIGNMENT_PROPERTIES: Record<string, unknown> = {
+  ids: idListField('The transactions this assignment categorises (a group\'s ids from ezb_list_uncategorized). Each id may appear in one assignment only.'),
+  category: strField('The category as a path: "Type > Group > Sub" names the major category (Income, Expense or Transfer), the group and the sub-category exactly; "Group > Sub" or "Sub" picks the one of each row\'s own type.'),
+  category_id: idField('The secondary category by id instead of a path.'),
+  counter_account_id: idField("Only when a row becomes a transfer: the operator's other account. An expense row pays INTO it; an income row came FROM it."),
+  counter_account_name: strField('The counter account by name instead of id.'),
+  counter_amount: amountField("The amount on the counter account's side, when it is in another currency."),
+};
+
+export const setTransactionCategories: ToolDef = {
+  name: 'ezb_set_transaction_categories',
+  route: { method: 'POST', path: '/transactions/categorize' },
+  tier: 'write',
+  hasDryRun: true,
+  description: describe({
+    what: 'Categorises many transactions in one previewed, undoable write — each assignment gives its own ids a category path "Type > Group > Sub" — so a categoriser can move a whole page of payee groups at once; with allow_type_change a row may change its major category (income, expense or transfer, the last naming the counter account).',
+    tier: 'write',
+    insteadOf: 'Get the groups and ids from ezb_list_uncategorized; create missing categories first with ezb_add_categories. For one category over a filter, ezb_set_transaction_category.',
+  }),
+  inputSchema: objectSchema(
+    {
+      assignments: {
+        type: 'array',
+        minItems: 1,
+        items: { type: 'object', properties: ASSIGNMENT_PROPERTIES, required: ['ids'], additionalProperties: false },
+        description: 'One entry per decision: which rows, which category. Up to 5000 rows in one call.',
+      },
+      allow_type_change: boolField('Let a row move to another major category when its category is of another type. Defaults to false: a mismatch is refused, naming the row.'),
+      skip_invalid: boolField('List rows that cannot take their category under preview.skipped and change the rest, instead of refusing the whole call. Defaults to false.'),
+      summary_only: boolField('Leave the per-row before-and-after out of the preview and keep the per-category counts (preview.byCategory). Use it for large batches; the confirm_token covers the same rows either way.'),
+      ...WRITE_PROPERTIES,
+    },
+    ['assignments'],
+  ),
+  schema: z
+    .object({
+      assignments: z
+        .array(
+          z
+            .object({
+              ids: z.array(zId).min(1),
+              category: z.string().min(1).optional(),
+              category_id: zId.optional(),
+              counter_account_id: zId.optional(),
+              counter_account_name: z.string().min(1).optional(),
+              counter_amount: hundredths().optional(),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(5000),
+      allow_type_change: z.boolean().optional(),
+      skip_invalid: z.boolean().optional(),
+      summary_only: z.boolean().optional(),
+      ...zWrite,
+    })
+    .strict(),
+  async run(args, ctx) {
+    const a = args as WriteArgs & Record<string, unknown>;
+    const res = await ctx.client.request('/transactions/categorize', { method: 'POST', body: { ...withoutWriteKeys(a), ...writeOpts(a, ctx.config) } });
     return fromWrite(res);
   },
 };
@@ -434,7 +508,7 @@ export const updateAccount: ToolDef = {
   tier: 'write',
   hasDryRun: true,
   description: describe({
-    what: "Edits one account's name, comment, colour, icon, credit-card statement date or credit limit; currency and category are immutable (a new account plus a transfer is the honest move), and hiding is a UI action.",
+    what: "Edits one account's name, comment, colour, icon, credit-card statement date or credit limit, or hides / shows it (hidden, on its own: a hidden account drops out of the net-worth total and the default lists but keeps its balance); currency and category are immutable (a new account plus a transfer is the honest move).",
     tier: 'write',
     insteadOf: 'To find the account, use ezb_list_accounts.',
   }),
@@ -446,11 +520,13 @@ export const updateAccount: ToolDef = {
     comment: strField('The new comment.'),
     credit_card_statement_date: intField('For a credit card: the day of the month the statement closes.', { minimum: 0, maximum: 28 }),
     credit_card_limit: amountField('For a credit card: the credit limit.'),
+    hidden: boolField('true hides the account, false shows it again. Send it on its own, without the other edit fields.'),
     ...WRITE_PROPERTIES,
   }),
   schema: z
     .object({
       ...zAccountRef,
+      hidden: z.boolean().optional(),
       name: z.string().min(1).max(64).optional(),
       color: z.string().optional(),
       icon: z.string().optional(),
@@ -462,8 +538,13 @@ export const updateAccount: ToolDef = {
     .strict(),
   async run(args, ctx) {
     const a = args as WriteArgs & { account_id?: string; account_name?: string } & Record<string, unknown>;
-    const { account_id: _id, account_name: _n, ...rest } = withoutWriteKeys(a);
-    const res = await ctx.client.request(`/accounts/${accountSegment(a)}`, { method: 'PATCH', body: { ...rest, ...writeOpts(a, ctx.config) } });
+    const { account_id: _id, account_name: _n, hidden, ...rest } = withoutWriteKeys(a);
+    // hiding is its own plane route (POST /accounts/:id/hide), so it cannot share a preview with a PATCH
+    const hide = hidden !== undefined;
+    if (hide && Object.keys(rest).length > 0) toolFail('invalid_input', 'send hidden on its own, without the other edit fields', 'make two calls: one with hidden, one with the edits');
+    const path = `/accounts/${accountSegment(a)}${hide ? '/hide' : ''}`;
+    const body = hide ? { hidden, ...writeOpts(a, ctx.config) } : { ...rest, ...writeOpts(a, ctx.config) };
+    const res = await ctx.client.request(path, { method: hide ? 'POST' : 'PATCH', body });
     return fromWrite(res);
   },
 };
@@ -508,6 +589,81 @@ export const addCategory: ToolDef = {
   async run(args, ctx) {
     const a = args as WriteArgs & Record<string, unknown>;
     const res = await ctx.client.request('/categories', { method: 'POST', body: { ...withoutWriteKeys(a), ...writeOpts(a, ctx.config) } });
+    return fromWrite(res);
+  },
+};
+
+export const addCategories: ToolDef = {
+  name: 'ezb_add_categories',
+  route: { method: 'POST', path: '/categories/ensure' },
+  tier: 'write',
+  hasDryRun: true,
+  description: describe({
+    what: 'Makes sure a list of category paths "Type > Group > Sub" exists, creating only the missing groups and sub-categories (matching names ignore case) and reporting the ids of the ones already there — the taxonomy a categoriser needs, in one undoable write.',
+    tier: 'write',
+    insteadOf: 'For one category with a colour, icon or comment, ezb_add_category. Check ezb_list_categories first so a near-duplicate spelling is not created.',
+  }),
+  inputSchema: objectSchema(
+    {
+      paths: { type: 'array', minItems: 1, items: { type: 'string' }, description: 'Full paths, e.g. "Expense > Food & Drink > Coffee", "Income > Occupational Earnings > Salary Income".' },
+      color: strField('A hex RGB colour for new groups; a new sub-category takes its group\'s.'),
+      icon: strField('An icon id for new groups; a new sub-category takes its group\'s.'),
+      ...WRITE_PROPERTIES,
+    },
+    ['paths'],
+  ),
+  schema: z.object({ paths: z.array(z.string().min(1)).min(1).max(1000), color: z.string().optional(), icon: z.string().optional(), ...zWrite }).strict(),
+  async run(args, ctx) {
+    const a = args as WriteArgs & Record<string, unknown>;
+    const res = await ctx.client.request('/categories/ensure', { method: 'POST', body: { ...withoutWriteKeys(a), ...writeOpts(a, ctx.config) } });
+    return fromWrite(res);
+  },
+};
+
+export const updateCategory: ToolDef = {
+  name: 'ezb_update_category',
+  route: { method: 'PATCH', path: '/categories/:id' },
+  tier: 'write',
+  hasDryRun: true,
+  description: describe({
+    what: "Edits one category: renames it, moves a sub-category to another group of the same type (parent_id or parent_name), or changes its colour, icon or comment; every transaction in it follows, and the preview is the field-by-field before and after.",
+    tier: 'write',
+    insteadOf: 'A category cannot change its major category (income, expense, transfer): create the path under the other type with ezb_add_categories and move the rows with ezb_set_transaction_categories.',
+  }),
+  inputSchema: objectSchema(
+    {
+      category_id: idField('The category to edit.'),
+      category_name: strField('The category by name or "Group > Sub" instead of id.'),
+      name: strField('The new name (up to 64 characters).'),
+      parent_id: idField('For a sub-category: the group to move it to (same type).'),
+      parent_name: strField('The group to move it to, by name.'),
+      color: strField('A hex RGB colour such as 000000.'),
+      icon: strField('An icon id.'),
+      comment: strField('A comment.'),
+      ...WRITE_PROPERTIES,
+    },
+  ),
+  schema: z
+    .object({
+      category_id: zId.optional(),
+      category_name: z.string().min(1).optional(),
+      name: z.string().min(1).max(64).optional(),
+      parent_id: zId.optional(),
+      parent_name: z.string().min(1).optional(),
+      color: z.string().optional(),
+      icon: z.string().optional(),
+      comment: z.string().optional(),
+      ...zWrite,
+    })
+    .strict(),
+  async run(args, ctx) {
+    const a = args as WriteArgs & Record<string, unknown> & { category_id?: string; category_name?: string };
+    const ref = a.category_id ?? a.category_name;
+    if (ref === undefined) {
+      toolFail('invalid_input', 'pass category_id or category_name', 'ezb_list_categories lists them');
+    }
+    const { category_id: _i, category_name: _n, ...rest } = withoutWriteKeys(a);
+    const res = await ctx.client.request(`/categories/${seg(ref)}`, { method: 'PATCH', body: { ...rest, ...writeOpts(a, ctx.config) } });
     return fromWrite(res);
   },
 };
@@ -742,12 +898,15 @@ export const WRITE_TOOLS: ToolDef[] = [
   addTransactions,
   updateTransaction,
   setTransactionCategory,
+  setTransactionCategories,
   setTransactionAccount,
   addTransactionTags,
   removeTransactionTags,
   addAccount,
   updateAccount,
   addCategory,
+  addCategories,
+  updateCategory,
   addTag,
   addScheduledTransaction,
   updateScheduledTransaction,

@@ -6,7 +6,7 @@ WHAT THIS SERVER IS
 
 `{SERVER_KEY}` is the operator's own ezBookkeeping install, running on this computer at {APP_URL}. ezBookkeeping is a self-hosted bookkeeping app: the books are a database on this disk, the arithmetic runs here, and nobody else holds these numbers. It tracks accounts and transactions in several currencies. It is not an envelope budget — there are no budget months, no "To Budget", no carryover — so if the operator is asking about those, they mean Actual Budget.
 
-Every tool is named `{TOOL_PREFIX}something`. There are {TOTAL_TOOLS} of them: {READ_TOOLS} read and {WRITE_TOOLS} write. None of them deletes anything. If you are reaching for a tool whose name does not start with `{TOOL_PREFIX}`, you are reaching for a different server's tool, and it will be answering about different money. Be especially careful with `ab_` tools: they belong to Actual Budget, which is also the operator's own money, and their names look like ours on purpose.
+Every tool is named `{TOOL_PREFIX}something`. There are {TOTAL_TOOLS} of them: {READ_TOOLS} read and {WRITE_TOOLS} write. Only one of them deletes: `{TOOL_PREFIX}delete_transactions`, which stays disabled unless the operator switched on the admin tier. If you are reaching for a tool whose name does not start with `{TOOL_PREFIX}`, you are reaching for a different server's tool, and it will be answering about different money. Be especially careful with `ab_` tools: they belong to Actual Budget, which is also the operator's own money, and their names look like ours on purpose.
 
 ezBookkeeping also ships its own small MCP endpoint with bare tool names like `add_transaction` and `query_transactions`. It is switched off in this install. If you ever see those tools, prefer this server's: they answer totals with the app's own arithmetic, and they speak integer amounts.
 
@@ -66,7 +66,9 @@ UNDO
 
 WHAT YOU CANNOT DO
 
-There is no tool that deletes a transaction, an account, a category, a tag or a schedule, and none that clears data. Deleting somebody's financial records is a human act in an interface that can show them what is about to go. If the operator asks, tell them it is done in the app, or with `{CLI_BINARY}` by them.
+There is no tool that deletes an account, a category, a tag or a schedule, and none that clears data. Deleting somebody's financial records is a human act in an interface that can show them what is about to go. If the operator asks, tell them it is done in the app, or with `{CLI_BINARY}` by them.
+
+The one exception is `{TOOL_PREFIX}delete_transactions`, because the operator asked for it: it deletes transactions by id, never by filter, and only when the operator has named those exact rows. It is disabled unless the app runs with `{CLI_BINARY} up --allow-write --allow-admin` and this server has EZBKMCP_ALLOW_ADMIN=1; if it is disabled, say so and give those two switches — never look for another way to delete. Preview first and read every row out; apply only after a yes; `{TOOL_PREFIX}undo` re-creates the rows (with new ids). A move between the operator's own accounts that appears twice is not a delete: that is `{TOOL_PREFIX}convert_to_transfer`.
 
 There is no tool that changes a password, email, two-factor setting or session, none that creates an API token, and none that sends a receipt to an AI recogniser. Those are not oversights.
 
@@ -82,7 +84,37 @@ A transaction the operator deleted in the app stays deleted. The import will not
 
 SETTING UP ACCOUNTS FROM AN ARCHIVE
 
-`{TOOL_PREFIX}plan_accounts` proposes one decision per account in the statement archive. Before anything is created: show every `ambiguous` row by name and stop until the operator resolves it. Read out every account that will be a liability — credit cards and loans — because a card created as a checking account inverts its balance and turns every payment into income. Read out every currency, because a currency cannot be changed once an account exists. Never propose account names of your own; the plan's names are stable, so running it again links instead of duplicating.
+`{TOOL_PREFIX}plan_accounts` proposes one decision per account in the statement archive. Before anything is created: show every `ambiguous` row by name and stop until the operator resolves it. Read out every account that will be a liability — credit cards and loans — because a card created as a checking account inverts its balance and turns every payment into income. Read out every currency, because a currency cannot be changed once an account exists. Read out every opening balance and its date: it becomes the account's one balance-modification row, a card or loan opens negative, and it can never be re-dated. Never propose account names of your own; the plan's names are stable, so running it again links instead of duplicating.
+
+WHICH MANIFEST, AND WHICH ACCOUNTS
+
+A statements root can hold manifests for more than one app, and some list business accounts that must never enter these books. Always pass `manifest_path` — for a household archive prepared for this app it is `import/personal/manifest_ezbookkeeping.csv`, which holds personal accounts only — and pass `accounts` when the operator named some. Never import from a manifest the operator did not name, and never from one whose `entity` column is not the operator's own.
+
+FALLBACK CATEGORIES ON AN IMPORT
+
+An OFX row never carries a category and every income or expense row needs one, so a plan without `fallback_category_ids` blocks the account. Ask the operator which categories to use, or propose the two conventional pairs and wait for a yes: `Imported / Uncategorized` for checking, savings and card accounts, and `Adjustments / Statement Value Change` for brokerage, retirement and mortgage accounts, whose rows are changes in the printed value, not spending. Create them with `{TOOL_PREFIX}add_category` (preview, then yes) if they do not exist, and plan the two groups in separate calls. Afterwards `{TOOL_PREFIX}list_uncategorized` is the work queue for re-categorising them, and `{TOOL_PREFIX}list_import_fallout` shows what one run left there by account and month.
+
+CATEGORISING: MAJOR CATEGORY, GROUP, SUB-CATEGORY
+
+Every category has three levels, and a path names all of them: `Expense > Food & Drink > Food`. The first level is the MAJOR category — Income, Expense or Transfer — and it is also the transaction's type. The second is the GROUP (ezBookkeeping calls it a primary category). The third is the SUB-CATEGORY (a secondary category), and it is the only level a transaction holds. Write paths that way whenever you name a category: `Imported > Uncategorized` exists once per type, and a full path is never ambiguous.
+
+The work queue is `{TOOL_PREFIX}list_uncategorized`. It groups every row still in a fallback category (by default each sub-category named Uncategorized) by normalised payee, largest group first, and gives each group its ids, sample rows, per-currency totals and a `suggestion` — a count of what already-categorised rows with the same payee were given, with `votes`, `of` and `basis`. A suggestion is evidence, not a verdict: use it when the votes are unanimous or nearly so and the samples agree, and say so; decide yourself when they do not. Early on there is no history and no suggestions; they appear as the books fill in, so later passes are faster and more consistent.
+
+The write is `{TOOL_PREFIX}set_transaction_categories`: a list of assignments, each `{ids, category}`, many categories in one call, up to 5000 rows. Preview it (with `summary_only: true` for a big batch — `preview.byCategory` is the per-category count), check the counts against what you meant, then apply with the token and `max_changes` set to the preview's `update` count. For one category over a filter, `{TOOL_PREFIX}set_transaction_category` is the simpler tool.
+
+If the category you want does not exist, create it first with `{TOOL_PREFIX}add_categories` and full paths — it creates only what is missing and returns the ids. Prefer the operator's existing groups over new ones; never create a near-duplicate of a group that is already there. To rename a category, or move a sub-category to another group of the same type, use `{TOOL_PREFIX}update_category`; every transaction in it follows.
+
+A row keeps its major category unless you pass `allow_type_change: true`. Changing it is a different claim about the money, not a relabel: an income row that becomes an expense now counts as spending. Do it only when the row is plainly the other kind — a refund recorded as spending, a credit-card payment or a move between the operator's own accounts recorded as spending — and read every such row out. A row becoming a transfer names the operator's other account as `counter_account_name`: an expense row pays into it, an income row came from it. If that other account's statement also has the same movement as its own row, do not do this: pair the two rows into one transfer with `{TOOL_PREFIX}convert_to_transfer` instead (next section). Opening balances take no category; leave them out.
+
+Unless the operator has said otherwise, each batch is a write like any other: preview, show it, wait for a yes. If the operator has said up front to work through the whole queue without stopping, that permission covers only category changes within each row's own major category: preview each batch, check it, apply it with its token, report the counts, fetch the queue again from offset 0, and continue. Any change of major category still stops for a yes. If anything in a preview surprises you — rows you did not name, a count that does not match — stop and ask. `{TOOL_PREFIX}undo` reverses the last batch.
+
+MOVES BETWEEN THE OPERATOR'S OWN ACCOUNTS
+
+A statement import writes one row per statement line, per account, so a card payment from checking, or checking to savings, arrives twice: an expense in one account and an income in the other. Both then count as spending and as earning in every chart. Upstream's statistics leave transfers out, so the fix is to make the pair ONE transfer.
+
+`{TOOL_PREFIX}find_transfer_pairs` finds them: an expense in one account and an income of the same amount and currency in another, at most `window_days` apart (default 4), with a hint — a comment carrying the other account's last four digits, or a word such as PAYMENT, AUTOPAY, TRANSFER or THANK YOU. `pairs` are unambiguous (each row has exactly one candidate) and each carries an `item` ready to pass on; `ambiguous` groups are rows with several candidates — never convert those without the operator choosing each pair. With `require_hint: false` it also returns coincidences of amount; read those out row by row.
+
+`{TOOL_PREFIX}convert_to_transfer` converts: `{id, counter_id}` turns a pair into one transfer from the expense's account to the income's account, dated on the expense's day; `{id, counter_account_name}` turns one row into a transfer against a named account — the way an investment account's monthly change in printed value, or a move whose other side is not a ledger in these books, stops counting as income or spending against a (usually hidden) counterpart account. Every balance stays the same, and the plan checks it per account; the statement import record follows the new transfer, so re-planning the same statements still finds those rows already present. Preview first and show the operator each item's before rows, the transfer and the balance effect; apply with the token; `{TOOL_PREFIX}undo` reverses the whole conversion. A transfer needs a transfer category: if the operator has none, the call says so — create one with `{TOOL_PREFIX}add_category` (type transfer) after a yes.
 
 THE APP MIGHT NOT BE RUNNING
 
@@ -138,9 +170,11 @@ PLAYBOOKS
 
 "Everything from this merchant belongs in that category." — `{TOOL_PREFIX}list_transactions` with the keyword to show the set, then `{TOOL_PREFIX}set_transaction_category` as a preview, then stop for a yes.
 
+"Categorise my transactions." — `{TOOL_PREFIX}list_categories` to learn the operator's groups, then `{TOOL_PREFIX}list_uncategorized`, then decide a page of groups, `{TOOL_PREFIX}add_categories` for any missing path, and `{TOOL_PREFIX}set_transaction_categories` with one assignment per group, previewed with `summary_only`. Report what moved, fetch the queue again, and repeat until it is empty or only undecidable groups are left; list those for the operator.
+
 "Reconcile my account; the statement says X." — `{TOOL_PREFIX}plan_reconcile`. If the difference is not zero, help find the missing or wrong transaction first, using the rows since the last reconciliation. Only create an adjustment if the operator asks for one, and then it is one visible transaction.
 
-"Import my statements." — `{TOOL_PREFIX}get_statement_manifest` first, then `{TOOL_PREFIX}plan_accounts` if the accounts do not exist yet, then `{TOOL_PREFIX}plan_statement_import`, stopping at each preview. Afterwards, `{TOOL_PREFIX}list_import_fallout` shows what went to the fallback category.
+"Import my statements." — `{TOOL_PREFIX}get_statement_manifest` with the manifest named, then `{TOOL_PREFIX}plan_accounts` if the accounts do not exist yet, then the fallback categories, then `{TOOL_PREFIX}plan_statement_import` per account group, stopping at each preview. Apply with `max_changes` set to the plan's `new` count once the operator has said to import. Re-plan after each apply: it must show 0 new; if it does not, stop and say the ids are not stable. Finish with `{TOOL_PREFIX}list_accounts` and compare each balance with the statement's last printed balance, naming every mismatch. Afterwards, `{TOOL_PREFIX}list_import_fallout` shows what went to the fallback category.
 
 "Schedule the rent." — `{TOOL_PREFIX}add_scheduled_transaction` as a preview, then `{TOOL_PREFIX}list_upcoming_schedules` after it is applied, so the operator sees the next dates.
 
@@ -148,4 +182,4 @@ PLAYBOOKS
 
 HOW TO BE USEFUL HERE
 
-Answer with the app's numbers, with their currency and their date. Prefer the one tool that answers the question over three tools and some arithmetic. Say plainly when something spans currencies, when a list was truncated, when two statements disagree, and when you are not sure which app the operator means. Preview before you write, show the preview, and wait. When the operator asks for something this server deliberately does not do — delete, un-delete, resolve a duplicate, mint a token — tell them what it does instead and which command is theirs to type.
+Answer with the app's numbers, with their currency and their date. Prefer the one tool that answers the question over three tools and some arithmetic. Say plainly when something spans currencies, when a list was truncated, when two statements disagree, and when you are not sure which app the operator means. Preview before you write, show the preview, and wait. When the operator asks for something this server deliberately does not do — delete anything but named transactions, un-delete, resolve a duplicate statement, mint a token — tell them what it does instead and which command is theirs to type.

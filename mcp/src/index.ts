@@ -104,9 +104,9 @@ export class Main {
 
     // One line, stderr, naming the target — so a transcript shows which install answered (§7.3).
     logger.banner(
-      `${SERVER_NAME} ${SERVER_VERSION} -> ${config.apiUrl} (${config.target}) key ${keyFingerprint} writes ${config.allowWrite ? 'ENABLED' : 'off'} tz ${timezone ?? 'server'} log ${config.logDir}`,
+      `${SERVER_NAME} ${SERVER_VERSION} -> ${config.apiUrl} (${config.target}) key ${keyFingerprint} writes ${config.allowWrite ? 'ENABLED' : 'off'}${config.allowAdmin ? ' admin ENABLED' : ''} tz ${timezone ?? 'server'} log ${config.logDir}`,
     );
-    logger.info(`start target=${config.target} url=${config.apiUrl} writes=${String(config.allowWrite)} key=${keyFingerprint} maxRows=${String(config.maxRows)} maxChanges=${String(config.maxChanges)} timeoutMs=${String(config.timeoutMs)}`);
+    logger.info(`start target=${config.target} url=${config.apiUrl} writes=${String(config.allowWrite)} admin=${String(config.allowAdmin)} key=${keyFingerprint} maxRows=${String(config.maxRows)} maxChanges=${String(config.maxChanges)} timeoutMs=${String(config.timeoutMs)}`);
 
     const transport = new StdioServerTransport();
     await host.server.connect(transport);

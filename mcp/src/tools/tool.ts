@@ -51,14 +51,39 @@ export type ToolDef = {
   schema: z.ZodType;
   /** Write tools only: whether the tool has a dry_run (every write but ezb_undo, §9.6). */
   hasDryRun?: boolean;
+  /**
+   * The route is admin tier on the plane (§9.5b). Only ADMIN_TOOLS may set it; the tool is then
+   * gated by a third switch, EZBKMCP_ALLOW_ADMIN=1, on top of EZBKMCP_ALLOW_WRITE=1.
+   */
+  admin?: boolean;
   /** Exempt from the per-call timeout (§14). */
   noTimeout?: boolean;
   run(args: unknown, ctx: ToolContext): Promise<ToolResult>;
 };
 
 /** The closed verb set of §9.1. `add_ update_ set_ remove_ apply_` write; the rest read. */
-export const READ_VERBS = ['list_', 'get_', 'count_', 'export_', 'convert_', 'scan_', 'extract_', 'plan_', 'describe_'] as const;
-export const WRITE_VERBS = ['add_', 'update_', 'set_', 'remove_', 'apply_'] as const;
+export const READ_VERBS = ['list_', 'get_', 'count_', 'export_', 'convert_', 'scan_', 'extract_', 'plan_', 'describe_', 'find_'] as const;
+/** `convert_to_` writes (ezb_convert_to_transfer) although `convert_` reads (ezb_convert_amount): the longest verb wins. `delete_` is ADMIN_TOOLS only. */
+export const WRITE_VERBS = ['add_', 'update_', 'set_', 'remove_', 'apply_', 'convert_to_', 'delete_'] as const;
+/** The one sanctioned admin-tier tool (§9.5b): the operator asked for a removal tool. */
+export const ADMIN_TOOLS = ['ezb_delete_transactions'] as const;
+
+/** The tier a tool's verb implies — the LONGEST matching verb decides — or undefined for a bare/analytics name. */
+export function verbTier(name: string): 'read' | 'write' | undefined {
+  const rest = name.startsWith('ezb_') ? name.slice('ezb_'.length) : name;
+  let best: { len: number; tier: 'read' | 'write' } | undefined;
+  for (const v of READ_VERBS) {
+    if (rest.startsWith(v) && (best === undefined || v.length > best.len)) {
+      best = { len: v.length, tier: 'read' };
+    }
+  }
+  for (const v of WRITE_VERBS) {
+    if (rest.startsWith(v) && (best === undefined || v.length > best.len)) {
+      best = { len: v.length, tier: 'write' };
+    }
+  }
+  return best?.tier;
+}
 /** Analytics tools named for the question, plus the three bare names. */
 export const BARE_NAMES = ['ezb_whoami', 'ezb_health', 'ezb_capabilities', 'ezb_undo'] as const;
 
@@ -71,15 +96,15 @@ export const WHICH_SERVER =
   "This server is the operator's OWN ezBookkeeping install on this computer. " +
   'It is not Actual Budget (`actual_budget`), not company bookkeeping (`quickbooks`), and not a film project (`act3`).';
 
-/** The second clause, for the 47 tools that only read. */
+/** The second clause, for the tools that only read. */
 export const READS_ONLY = 'Reads only.';
 
-/** The second clause, for the 18 that do not. */
+/** The second clause, for the tools that do not. */
 export const WRITES = "WRITES to the operator's real ezBookkeeping books. Previews by default; applying needs a confirm token from the preview.";
 
 /**
  * Assemble a description from its mandatory clauses. Going through one function is what lets a
- * test assert all four are present on all 65 tools, rather than hoping nobody pasted one by hand.
+ * test assert all four are present on every tool, rather than hoping nobody pasted one by hand.
  */
 export function describe(opts: {
   /** Clause 1 — what it does, in domain language, one sentence. */

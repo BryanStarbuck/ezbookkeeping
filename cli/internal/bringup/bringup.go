@@ -264,11 +264,16 @@ func Up(opts Options) error {
 		}
 	}
 
-	for _, d := range []string{"data", "log", "storage"} {
-		_ = os.MkdirAll(filepath.Join(root, d), 0o755)
+	// The runtime state lives OUTSIDE the repo (CLAUDE.md "Runtime state location"): once real
+	// statements are imported the database, the log and the uploads are private financial data,
+	// and this repo is public. One-time migration: a database still in the repo's data/ moves.
+	rt, err := RuntimeDirs(root)
+
+	if err != nil {
+		return &Error{Msg: err.Error(), Hint: "check ~/T/_ezbookkeeping is writable (EZBK_STATE_DIR overrides it)"}
 	}
 
-	secretPath := filepath.Join(root, "data", ".secret_key")
+	secretPath := filepath.Join(rt.Data, ".secret_key")
 
 	if info, err := os.Stat(secretPath); err != nil || info.Size() == 0 {
 		errfile.Expected("probing for the existing data/.secret_key", err)
@@ -302,6 +307,9 @@ func Up(opts Options) error {
 		"EBK_SERVER_DOMAIN=localhost",
 		"EBK_SERVER_STATIC_ROOT_PATH=dist",
 		"EBKCFP_SECURITY_SECRET_KEY="+secretPath,
+		"EBK_DATABASE_DB_PATH="+filepath.Join(rt.Data, "ezbookkeeping.db"),
+		"EBK_LOG_LOG_PATH="+filepath.Join(rt.Log, "ezbookkeeping.log"),
+		"EBK_STORAGE_LOCAL_FILESYSTEM_PATH="+rt.Storage+string(filepath.Separator),
 	)
 
 	cmd.Env = setEnv(cmd.Env, "EZBK_MACHINE_ALLOW_WRITE", boolEnv(opts.AllowWrite))
@@ -415,4 +423,42 @@ func tail(path string, n int) string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// Runtime is where the server keeps its state: {StateDir}/data (the sqlite database and upstream's
+// secret_key), {StateDir}/log and {StateDir}/storage — never inside the repo
+type Runtime struct{ Data, Log, Storage string }
+
+// RuntimeDirs creates the runtime directories and moves a database (and its secret_key) left in
+// the repo's data/ by an earlier version, so no user or book is lost in the move
+func RuntimeDirs(root string) (*Runtime, error) {
+	base := logger.StateDir()
+	rt := &Runtime{Data: filepath.Join(base, "data"), Log: filepath.Join(base, "log"), Storage: filepath.Join(base, "storage")}
+
+	for _, d := range []string{rt.Data, rt.Log, rt.Storage} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			return nil, err
+		}
+	}
+
+	for _, name := range []string{"ezbookkeeping.db", ".secret_key"} {
+		old, dst := filepath.Join(root, "data", name), filepath.Join(rt.Data, name)
+
+		if _, err := os.Stat(dst); err == nil {
+			continue
+		}
+
+		if _, err := os.Stat(old); err != nil {
+			errfile.Expected("looking for runtime state left in the repo", err)
+			continue
+		}
+
+		if err := os.Rename(old, dst); err != nil {
+			return nil, err
+		}
+
+		logger.Info("bring-up moved %s out of the repo to %s", name, dst)
+	}
+
+	return rt, nil
 }

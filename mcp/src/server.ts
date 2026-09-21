@@ -49,6 +49,9 @@ export function describeForListing(tool: ToolDef, config: Config): string {
   if (!config.allowWrite) {
     return `${tool.description} CURRENTLY DISABLED: the write tier is off. To enable it the operator must start the app with \`ezbk up --allow-write\` (EZBK_MACHINE_ALLOW_WRITE=1) and set EZBKMCP_ALLOW_WRITE=1 for this server, then restart Claude Code.`;
   }
+  if (tool.admin === true && !config.allowAdmin) {
+    return `${tool.description} CURRENTLY DISABLED: the admin tier is off. To enable it the operator must start the app with \`ezbk up --allow-write --allow-admin\` (EZBK_MACHINE_ALLOW_ADMIN=1) and set EZBKMCP_ALLOW_ADMIN=1 for this server, then restart Claude Code.`;
+  }
   return tool.description;
 }
 

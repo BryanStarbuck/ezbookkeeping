@@ -1069,6 +1069,18 @@ func refCategoryParentOf(all []*models.TransactionCategory) func(c *models.Trans
 }
 
 func refResolveCategory(mc *Ctx, all []*models.TransactionCategory, ref string) (*models.TransactionCategory, error) {
+	// a path — "Group > Sub", "Type > Group" or "Type > Group > Sub" — names one category exactly
+	if strings.Contains(ref, ">") && !strings.HasPrefix(strings.TrimSpace(ref), "id:") {
+		lk := txnNewLookup(nil, all, nil)
+		id, err := txnResolveName("category", "category", strings.TrimPrefix(strings.TrimSpace(ref), "name:"), lk.categoryCandidates(false, 0), "GET /machine/v1/categories?include_hidden=true lists them; a path is \"Type > Group > Sub\"")
+
+		if err != nil {
+			return nil, err
+		}
+
+		return lk.catMap[id], nil
+	}
+
 	return refResolveOne("category", ref, all, refCategoryId, refCategoryName, refCategoryParentOf(all), "GET /machine/v1/categories?include_hidden=true lists them")
 }
 

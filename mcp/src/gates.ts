@@ -4,7 +4,8 @@
  *   1. Transport — stdio only; this process binds no port (index.ts).
  *   2. Key — read at startup from a 0600, correctly-owned file, or the server did not start (index.ts).
  *   3. Target — the base URL is loopback, or the §7.3 tripwire was armed deliberately (config.ts).
- *   4. Mode — read tools always; write tools only with EZBKMCP_ALLOW_WRITE=1 (and the server's tier).
+ *   4. Mode — read tools always; write tools only with EZBKMCP_ALLOW_WRITE=1 (and the server's tier);
+ *      the one admin tool (ezb_delete_transactions) also needs EZBKMCP_ALLOW_ADMIN=1.
  *   5. Input — the tool's Zod schema; unknown keys refused, limits clamped, decimals named.
  *   6. The machine plane's own ladder, which trusts none of 1–5.
  *
@@ -39,6 +40,15 @@ export function checkMode(tool: ToolDef, config: Config): void {
       'write_disabled',
       'The write tier is off.',
       'Restart the app with `ezbk stop && ezbk up --allow-write` (EZBK_MACHINE_ALLOW_WRITE=1) and set EZBKMCP_ALLOW_WRITE=1 for this server, then retry.',
+    );
+  }
+
+  if (tool.admin === true && !config.allowAdmin) {
+    // The one admin-tier tool (§9.5b) needs a third switch here and the admin tier on the app.
+    throw fail(
+      'write_disabled',
+      `${tool.name} deletes, and the admin tier is off.`,
+      'Restart the app with `ezbk stop && ezbk up --allow-write --allow-admin` (EZBK_MACHINE_ALLOW_ADMIN=1) and set EZBKMCP_ALLOW_ADMIN=1 (with EZBKMCP_ALLOW_WRITE=1) for this server, then retry.',
     );
   }
 }

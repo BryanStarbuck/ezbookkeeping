@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -1614,6 +1615,8 @@ func ingPreparedInputs(mc *Ctx, ctx *ingContext, filter []string, prefer map[str
 		in.Converter = shelf.FileType
 
 		switch {
+		case !shelf.Exists && row.File != "":
+			in.PreBlocked = append(in.PreBlocked, "the account file "+row.File+" does not exist under the root")
 		case !shelf.Exists:
 			in.PreBlocked = append(in.PreBlocked, "the account directory "+row.Path+" does not exist under the root")
 		case len(shelf.Chosen) == 0:
@@ -1646,6 +1649,15 @@ func ingPreparedInputs(mc *Ctx, ctx *ingContext, filter []string, prefer map[str
 			}
 
 			items, perr := ingParseUpstream(mc, data, filepath.Base(f.Rel), f.FileType, nil)
+
+			if perr != nil && ingIsEmptyFile(perr) {
+				// a statement with no activity is a real statement, not an unreadable file
+				// (pm/import_formats.mdx §13: upstream answers "not found transaction data")
+				errfile.Expected("parsing a statement file with no transactions", perr)
+				in.Warnings = append(in.Warnings, f.Rel+": the file holds no transactions")
+				in.Statements = append(in.Statements, &ingStatement{File: f.Rel, FileType: f.FileType, Sha: ingSha256(data), ModTime: f.ModTime, Preferred: prefer[f.Rel]})
+				continue
+			}
 
 			if perr != nil {
 				fl := toFail(perr)
@@ -1854,4 +1866,10 @@ func ingAttachRows(res *ingPlanResult, include bool, limit int) {
 func ingFileExists(p string) bool {
 	info, err := os.Stat(p)
 	return err == nil && !info.IsDir()
+}
+
+// ingIsEmptyFile reports upstream's "this file has no transactions" verdict, which an empty
+// statement legitimately earns
+func ingIsEmptyFile(err error) bool {
+	return toFail(err).UpstreamCode == errs.ErrNotFoundTransactionDataInFile.Code()
 }

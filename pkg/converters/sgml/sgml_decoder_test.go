@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -356,4 +357,25 @@ func TestDecoderDecode_WithEmbeddedNotSupportedField(t *testing.T) {
 	err := sgmlDecoder.Decode(&testStruct)
 
 	assert.EqualError(t, err, errs.ErrInvalidSGMLFile.Message)
+}
+
+func TestSGMLDecoderDecode_BareAmpersandReturnsErrorInsteadOfLooping(t *testing.T) {
+	for _, body := range []string{
+		"<Root><Text1>AT&T WIRELESS\n<Text2>b\n</Root>",
+		"<Root><Text1>a < b\n</Root>",
+	} {
+		done := make(chan error, 1)
+
+		go func() {
+			v := &TestSimpleStruct{}
+			done <- NewDecoder(strings.NewReader(body)).Decode(&v)
+		}()
+
+		select {
+		case err := <-done:
+			assert.EqualError(t, err, errs.ErrInvalidSGMLFile.Message)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("Decode did not return for %q (the decoder loops on a tokenizer error)", body)
+		}
+	}
 }

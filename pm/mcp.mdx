@@ -161,9 +161,10 @@ accident.**
 - _Without inventing a number_ — every figure is computed behind the plane and returned verbatim. The
   ANALYTICS family exists so a total is always a tool call and never a model's addition, and so a
   multi-currency total always arrives with its rates named.
-- _Cannot change it by accident_ — 47 of 65 tools are read-only; the 18 that write need the server's
+- _Cannot change it by accident_ — 49 of 72 tools are read-only; the 23 that write need the server's
   write tier **and** this server's **and** `dry_run: false` **and** a `confirm_token` only the matching
-  plan produces, under a ceiling that refuses and reports the real count (§9.7). None deletes.
+  plan produces, under a ceiling that refuses and reports the real count (§9.7). One deletes
+  (`ezb_delete_transactions`, ids only), and it needs a third switch, the admin tier (§9.5b).
 
 ---
 
@@ -180,8 +181,8 @@ accident.**
 | **Authenticates with** | `X-Ezbk-Api-Key`, from `~/.credentials/ezbookkeeping.json` (0600)                                      |
 | **Env prefix**         | `EZBKMCP_`                                                                                             |
 | **Logs**               | `~/T/_ezbookkeeping/mcp.info` and `mcp.err`                                                            |
-| **Writes?**            | **off by default.** 47 of 65 read; the 18 that write need two switches, a dry run and a token          |
-| **Deletes?**           | **never.** No tool deletes anything; this server is never given the admin tier                         |
+| **Writes?**            | **off by default.** 49 of 72 read; the 23 that write need two switches, a dry run and a token          |
+| **Deletes?**           | **one tool, by id only**: `ezb_delete_transactions`, behind a third switch (admin tier, §9.5b)         |
 | **Computes?**          | nothing                                                                                                |
 | **Instructions**       | `ai/mcp_prompt_ezbookkeeping.md`, generated into `src/instructions.ts` at build time (§8.3)            |
 
@@ -189,7 +190,7 @@ accident.**
 
 ## 1. What this is, in one paragraph
 
-`ezbookkeeping` is a stdio MCP server that exposes this install's books to Claude Code as sixty-five
+`ezbookkeeping` is a stdio MCP server that exposes this install's books to Claude Code as seventy-two
 typed tools. It holds no bookkeeping logic, no database connection and no copy of the ledger: each tool
 validates its arguments, makes one authenticated call to the machine plane described by
 [apis.mdx](./apis.mdx), and returns the app's own answer inside a fixed envelope. It shares its
@@ -220,9 +221,9 @@ this section prevents.
 | Enabled by         | `[mcp] enable_mcp = true` — **off by default, and off in this fork**                              | registering it (§5)                                                          |
 | Authenticates with | an upstream **MCP token** (JWT type 5) the operator generates with their password                | **the API secret key, nothing to generate**                                  |
 | Reachable from     | anywhere `mcp_allowed_remote_ips` permits (blank = everywhere)                                   | **nowhere but this machine**                                                 |
-| Tools              | 7, bare names: `add_transaction`, `query_transactions`, `query_all_accounts`, `query_all_accounts_balance`, `query_all_transaction_categories`, `query_all_transaction_tags`, `query_latest_exchange_rates` | **65, all `ezb_`**                           |
+| Tools              | 7, bare names: `add_transaction`, `query_transactions`, `query_all_accounts`, `query_all_accounts_balance`, `query_all_transaction_categories`, `query_all_transaction_tags`, `query_latest_exchange_rates` | **72, all `ezb_`**                           |
 | Money on the wire  | **decimal strings** (`"12.34"`)                                                                  | **integer hundredths with a currency**                                      |
-| Writes             | `add_transaction` (with its own `dry_run`), no tier, no ceiling                                  | 18 tools behind two switches, a token and a ceiling                           |
+| Writes             | `add_transaction` (with its own `dry_run`), no tier, no ceiling                                  | 23 tools behind two switches, a token and a ceiling                           |
 | Totals / analytics | none — the model sums `query_transactions` pages                                                 | the analytics family                                                          |
 
 ### 2.2 The routing test, and the rule (LOCKED)
@@ -303,7 +304,7 @@ Budget in its first sentence.
 | --- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | 1   | Distinct server key `ezbookkeeping`                                                                       | registration-level collision                                              |
 | 2   | `serverInfo.name` agreeing with the key                                                                   | two names for one server in a transcript                                  |
-| 3   | `ezb_` prefix on all 65 tools                                                                             | the model losing the server segment                                       |
+| 3   | `ezb_` prefix on all 72 tools                                                                             | the model losing the server segment                                       |
 | 4   | A fourth mandatory description clause naming the app (§9.2)                                              | a model reading a description and still not knowing whose tool it is      |
 | 5   | An `instructions` block with routing FIRST, naming Actual Budget explicitly                               | the model choosing before it has read any tool                            |
 | 6   | Refuse-with-redirect on a foreign-shaped argument                                                         | the model that has already chosen wrong                                   |
@@ -420,7 +421,7 @@ project; its dependency list and lockfile are regenerated by upstream. `mcp/` ha
 explicitly by `just build-mcp`. Upstream's `npm install` never sees it, and an upstream merge cannot
 conflict with it. The MCP imports **nothing** from the repo's Go or Vue code — the boundary is HTTP.
 
-**Why not extend upstream's `pkg/mcp`.** Growing seven tools to sixty-five inside upstream's package is
+**Why not extend upstream's `pkg/mcp`.** Growing seven tools to seventy-two inside upstream's package is
 hundreds of lines of merge conflict per upstream release, inside a server whose transport (HTTP, JWT,
 IP allowlist) is the wrong trust model for us (§2).
 
@@ -568,7 +569,7 @@ persuasive string reaches a tool handler."_
 3. **Target gate** — the base URL is loopback. A non-loopback target needs `EZBKMCP_ALLOW_REMOTE=1`
    **and** `https:`, and disables the write tier outright.
 4. **Mode gate** — read tools always; write tools only when **both** `EZBKMCP_ALLOW_WRITE=1` here and the
-   server's write tier are on. A write tool the mode gate rejects is still **listed**, its description
+   server's write tier are on; the one admin tool also needs `EZBKMCP_ALLOW_ADMIN=1` (§9.5b). A write tool the mode gate rejects is still **listed**, its description
    saying it is disabled and how to enable it — a tool that vanishes teaches the model nothing.
 5. **Input gate** — the tool's Zod schema, parsed after the hand-authored JSON Schema the model saw.
    Unknown keys refused. Limits **clamped, not rejected**. An amount with a decimal point is rejected with
@@ -712,7 +713,7 @@ Code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/instructions.ts` — `INSTRUCTIONS
 
 ## 9. The tool catalogue
 
-**Sixty-five tools in ten families. Forty-seven are read-only. None deletes.**
+**Sixty-nine tools in ten families. Forty-eight are read-only. None deletes.**
 
 Every one is one route in [apis.mdx](./apis.mdx) §10, §12 or §14. The mapping is one-to-one and a test
 asserts it both ways: a tool with no route cannot work, and a ✅ route with no tool must appear in
@@ -733,13 +734,17 @@ asserts it both ways: a tool with no route cannot work, and a ✅ route with no 
 | `extract_`                                              | read-tier; writes **only** the staging directory (apis.mdx R8) | no (books) |
 | `plan_`                                                 | compute what a write would do, change nothing                  | no      |
 | `describe_`                                             | read a shape — a map file, its gaps                            | no      |
+| `find_`                                                 | read candidates for a later write (`ezb_find_transfer_pairs`)  | no      |
 | `add_` / `update_` / `set_` / `remove_` / `apply_`      | change something                                               | **yes** |
+| `convert_to_`                                           | change a row's kind (`ezb_convert_to_transfer`); the longest verb wins over `convert_` | **yes** |
+| `delete_`                                               | admin tier, `ADMIN_TOOLS` only (`ezb_delete_transactions`, §9.5b) | **yes** |
 
 Plus analytics tools named for the **question** (`ezb_net_worth`, `ezb_spending_by_category`,
 `ezb_period_summary`…), all read-only; and three bare names: **`ezb_whoami`**, **`ezb_health`**,
 **`ezb_undo`** (write).
 
-There is **no `delete_` verb** — not disabled, absent (§9.5). There is **no `query_` or `search_`**,
+`delete_` exists on exactly one tool, `ezb_delete_transactions`, at the admin tier (§9.5b); nothing
+else deletes. There is **no `query_` or `search_`**,
 because `query_` is upstream ezBookkeeping MCP's verb and `search_` is QuickBooks' (§3.3). There is **no
 `generate_`**: this server calls no model and spends no credits.
 
@@ -790,7 +795,7 @@ tool seems to need computation, the computation becomes a route first.
 | `ezb_get_account_properties`       | transaction count, first/last transaction, last reconciled, card statement date and limit   |
 | `ezb_get_reconciliation_statement` | the app's reconciliation statement: opening, inflows, outflows, closing, running balances   |
 
-**Transactions (4, read)**
+**Transactions (5, read)**
 
 | Tool                      | Answers                                                                                                                                                           |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -798,6 +803,7 @@ tool seems to need computation, the computation becomes a route first.
 | `ezb_get_transaction`     | one transaction, with tags and the transfer's other side                                                                                                          |
 | `ezb_count_transactions`  | the app's count for the same filters — never the length of a page                                                                                                 |
 | `ezb_export_transactions` | the same filters as CSV, for a spreadsheet                                                                                                                        |
+| `ezb_list_uncategorized`  | the categorisation work queue: rows still in the fallback categories grouped by normalised payee, largest first, each with its ids, samples, per-currency totals and a suggestion counted from already-categorised rows with the same payee (apis.mdx §10.3.1) |
 
 **Reference data (6, read)**
 
@@ -874,7 +880,7 @@ Code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/tools/analytics.ts` — `commonQue
 | `ezb_plan_reconcile` | the app's balance vs the operator's figure, the difference, and the rows since last reconciled. **It takes the apply's arguments** (`target_balance`, `as_of`, `create_adjustment`, `adjustment_category_id` / `_name`, `adjustment_comment`, `mark_reconciled`) because the plane's plan and apply take the same ones and the token is issued for the apply route over that exact change set. `mark_reconciled` defaults to true; with the bound user's "use last reconciled time" setting off, the plane answers `forbidden` unless `mark_reconciled: false` |
 | `ezb_list_journal`   | recent machine-plane writes — what `ezb_undo` would reverse next                             |
 
-**The write tier (18, off by default)**
+**The write tier (21, off by default)**
 
 | Tool                               | Changes                                                                                     |
 | ---------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -883,13 +889,16 @@ Code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/tools/analytics.ts` — `commonQue
 | `ezb_apply_file_import`            | imports one file into one account                                                           |
 | `ezb_add_transactions`             | adds transactions (income, expense, transfer)                                               |
 | `ezb_update_transaction`           | one transaction's fields                                                                    |
-| `ezb_set_transaction_category`     | a category on named ids or a filter, under a ceiling                                        |
+| `ezb_set_transaction_category`     | one category on named ids or a filter, under a ceiling; `allow_type_change` flips income ↔ expense |
+| `ezb_set_transaction_categories`   | many categories in one write — `assignments[]` of `{ids, category: "Type > Group > Sub"}`; `allow_type_change` moves a row to another major category (a transfer names its `counter_account`); `summary_only` for big batches |
 | `ezb_set_transaction_account`      | moves named ids or a filter to another account (same currency)                              |
 | `ezb_add_transaction_tags`         | adds tags to named ids or a filter                                                          |
 | `ezb_remove_transaction_tags`      | removes tags from named ids or a filter                                                     |
 | `ezb_add_account`                  | one account — its category, side and currency shown in the preview                          |
-| `ezb_update_account`               | name, comment, colour, icon, card statement date / limit. **Not `hidden`** — the plane's `PATCH /accounts/:id` refuses it; hiding is `/accounts/:id/hide`, which this server does not expose (a UI action) |
+| `ezb_update_account`               | name, comment, colour, icon, card statement date / limit, **or `hidden` on its own** — `hidden` routes to the plane's `POST /accounts/:id/hide` (same dry run / token), because `PATCH /accounts/:id` refuses it; combining `hidden` with other edits is `invalid_input`. A hidden account keeps its balance and drops out of net worth — the home for a transfer counterpart such as a market-value account (import_formats.mdx §8.6). Implemented in ~/BGit/Bryan_git/ezbookkeeping/mcp/src/tools/writes.ts `updateAccount.run` |
 | `ezb_add_category`                 | a primary or secondary category                                                             |
+| `ezb_add_categories`               | makes sure full paths `Type > Group > Sub` exist, creating only the missing groups and sub-categories |
+| `ezb_update_category`              | renames a category or moves a sub-category to another group of its type; colour, icon, comment |
 | `ezb_add_tag`                      | a tag                                                                                       |
 | `ezb_add_scheduled_transaction`    | a scheduled template — rent on the 1st                                                      |
 | `ezb_update_scheduled_transaction` | edit, pause or resume a schedule — pausing is `frequency: "disabled"`, resuming is a real frequency. Hiding a template does **not** pause it: upstream's cron ignores `hidden`, and `/templates/:id/hide` is not exposed here |
@@ -906,7 +915,7 @@ a row the operator has since edited. It ships in the same phase as the first wri
 
 | Not here                                                     | Because                                                                                                             |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| Any `delete_` tool, of anything                              | Deleting financial records is a human act in a UI that shows what is about to go. The plane has admin routes; this server never gets that tier |
+| Any `delete_` tool but `ezb_delete_transactions`             | Deleting financial records is a human act in a UI that shows what is about to go. The one exception (§9.5b) deletes transactions by id only, behind the admin tier, because the operator asked for it; accounts, categories, tags, schedules and data stay the UI's or `ezbk`'s |
 | Clearing data                                                | The same, with a blast radius of everything                                                                          |
 | Anything touching password, email, 2FA, OAuth links, sessions | Identity changes can lock the operator out                                                                          |
 | Generating an upstream API or MCP token                      | It would mint a full-access bearer credential that travels (apis.mdx §2.2)                                          |
@@ -920,28 +929,65 @@ a row the operator has since edited. It ships in the same phase as the first wri
 
 ### 9.5a The catalogue is large, and that has a cost
 
-Sixty-five definitions is real context. It stays affordable because descriptions are one sentence plus
+Seventy-two definitions is real context. It stays affordable because descriptions are one sentence plus
 §9.2's four clauses and nothing else (the schema carries argument prose); because family names are in
 tool names; and because the instructions route **by family** ("totals come from the analytics family")
 rather than listing tools. Mega-tools with a `mode` argument were rejected: they make a call's tier
 depend on an argument, and a tool that sometimes writes cannot honestly say what it costs.
 
+### 9.5b Own-account moves as transfers, and the one delete
+
+**Transfers (3: 1 read, 2 write)** — a statement import records a move between two of the operator's own
+accounts twice, as an expense in one and an income in the other, so both count as spending and
+earning. This family turns them into transfers, which upstream's statistics already leave out
+(apis.mdx §10.3.2).
+
+| Tool                      | Tier  | Route                                      | Does                                                                                                                  |
+| ------------------------- | ----- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `ezb_find_transfer_pairs` | read  | `POST /transactions/transfer-candidates`   | expense/income pairs one move apart — same currency and amount, ≤ `window_days`, with a last-four or transfer-word hint; `pairs` (each with a ready `item`) apart from `ambiguous` groups |
+| `ezb_convert_to_transfer` | write | `POST /transactions/convert-to-transfer`   | `items[]` of `{id, counter_id}` (a pair → one transfer) or `{id, counter_account_id \| counter_account_name}` (a row → a transfer against that account); balances unchanged, import records follow, `ezb_undo` reverses it |
+| `ezb_delete_transactions` | write (**admin**) | `DELETE /transactions/bulk`      | deletes transactions by id — ids only, never a filter; previewed, confirmed, undoable (undo re-creates them with new ids) |
+
+Arguments, exactly as the plane takes them:
+- `ezb_find_transfer_pairs`: `account_ids[]`, `account_names[]`, `start`, `end`, `window_days` (0–31,
+  default 4), `require_hint` (default true), `limit` (default 1000).
+- `ezb_convert_to_transfer`: `items[]` (required), `comment_mode` (`both` default \| `out`),
+  `transfer_category_id` \| `transfer_category_name`, plus the write protocol's `dry_run`,
+  `confirm_token` (alias `confirm`), `max_changes` (it counts the original rows: a pair is 2).
+- `ezb_delete_transactions`: `ids[]` (required), plus `dry_run`, `confirm_token`, `max_changes`.
+The tools in code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/tools/transfers.ts` — `findTransferPairs`, `convertToTransfer`, `deleteTransactions`.
+
+**The one delete.** This catalogue had no delete at all; the operator asked for a removal tool, and
+`ezb_delete_transactions` is it — the only tool with `admin: true` (and so the only `delete_` verb and
+the only `DELETE` route), listed in `ADMIN_TOOLS`. It needs **three** switches, not two: the app
+started with `ezbk up --allow-write --allow-admin` (`EZBK_MACHINE_ALLOW_ADMIN=1`), and here both
+`EZBKMCP_ALLOW_WRITE=1` **and** `EZBKMCP_ALLOW_ADMIN=1`. Without the last it is listed with
+"CURRENTLY DISABLED: the admin tier is off" and refused `write_disabled` before any request. The plane
+lets the MCP client reach exactly this one admin route (apis.mdx §8.1); every other admin route still
+answers it `forbidden`. A duplicate own-account move is never a delete: that is
+`ezb_convert_to_transfer`.
+The gate in code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/gates.ts` — `checkMode()`; the listing in `~/BGit/Bryan_git/ezbookkeeping/mcp/src/server.ts` — `describeForListing()`.
+
+**Verbs.** `find_` is a read verb. `convert_to_` is a write verb although `convert_` reads
+(`ezb_convert_amount`): the LONGEST matching verb decides a tool's tier, and a test asserts it.
+In code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/tools/tool.ts` — `verbTier()`, `READ_VERBS`, `WRITE_VERBS`, `ADMIN_TOOLS`.
+
 ### 9.6 Permutation matrix — every call shape that exists
 
 | Dimension    | Values                                                                                                                  |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| Tier         | read (47) · write (18) — 65 total. **`admin` is not a value**; no argument or configuration produces an admin call       |
+| Tier         | read (49) · write (23) — 72 total. One write, `ezb_delete_transactions`, is admin on the plane; no ARGUMENT produces an admin call |
 | Target       | local (default) · remote (read-only, `https:`, `EZBKMCP_ALLOW_REMOTE=1`)                                                |
-| Write tier   | server off (default) · server on (`ezbk up --allow-write`) + `EZBKMCP_ALLOW_WRITE=1`                                    |
+| Write tier   | server off (default) · server on (`ezbk up --allow-write`) + `EZBKMCP_ALLOW_WRITE=1`; the admin tool also `--allow-admin` + `EZBKMCP_ALLOW_ADMIN=1` |
 | Confirmation | none (read) · `confirm_token` echo of the preview's token (write; `confirm` is accepted as an alias and sent as `confirm_token`) |
 | Ceiling      | `max_changes` (write; default 200; exceeding refuses and reports the count)                                             |
-| Dry run      | `dry_run: true` **is the default on 17 of the 18 write tools**. **`ezb_undo` has none** — its preview is the thing itself, and it reports what it reversed |
+| Dry run      | `dry_run: true` **is the default on 22 of the 23 write tools**. **`ezb_undo` has none** — its preview is the thing itself, and it reports what it reversed |
 | Currency     | per-currency (default) · converted with `convert_to` (rates named)                                                      |
 | Truncation   | `truncated: true` + `limitApplied` (+ `nextCursor` for transactions) whenever a cap bound the result                    |
 | Result       | `ok: true` + `data` · `ok: false` + `error` with `isError: true`                                                        |
 
 A shape not in this table does not exist: no write without a confirm token, no write against a remote
-target, no unlimited result, no delete.
+target, no unlimited result, no delete but `ezb_delete_transactions`'s ids-only one.
 
 ### 9.7 The write tier — two switches and an echo (LOCKED)
 
@@ -1120,6 +1166,31 @@ Three things the model must do with the plan, and the description says all three
 3. **Never propose a name of its own.** The plane's template carries entity and last-four and is stable,
    so a re-run yields `link`, not duplicates.
 
+### 11.5a Importing a statement tree, end to end (the sequence a model follows)
+
+The file shapes are [import_formats.mdx](./import_formats.mdx); this is the order of tool calls, and
+it is exactly what `import_via_mcp_ezbookkeeping.mjs` in the operator's statement pipeline scripts
+(import_formats.mdx §11.9):
+
+1. `ezb_get_statement_manifest` with an explicit `manifest_path` — a statements root often holds more
+   than one app's manifest (import_formats.mdx §11.2), and a manifest can list accounts that must never
+   be imported into these books. The model names the manifest; it never lets a default pick one when the
+   operator has said which.
+2. `ezb_plan_accounts` → show every liability, every currency **and every opening balance** (a card or
+   a loan opens negative), stop on any `ambiguous` → `ezb_apply_accounts` with the token.
+3. Fallback categories. An OFX row never carries a category, and every income and expense row needs one,
+   so the operator names the fallback per row mode — e.g. `Imported / Uncategorized` for cash accounts and
+   `Adjustments / Statement Value Change` for brokerage, retirement and mortgage value rows. If they do
+   not exist, `ezb_add_category` creates them (a preview, then a yes). The model never invents the names.
+4. Per account, or per group sharing a fallback: `ezb_plan_statement_import` with `accounts` and
+   `fallback_category_ids` → read `new`, `already_present`, `conflicts`, `blocked_reasons`,
+   `transfer_candidates` aloud → `ezb_apply_statement_import` with the token and `max_changes` set to the
+   plan's `new` (the default ceiling is 200; a card's history is thousands — the operator's "import it"
+   is the permission to raise it to exactly that number).
+5. Re-plan: **`new` must be 0**. Anything else is a pipeline bug, reported, never "fixed" by importing again.
+6. `ezb_list_accounts`: each balance should equal the last statement's printed balance (the manifest's
+   `last_printed_balance`). Report every mismatch by account and amount.
+
 ### 11.6 The plan is recomputed at apply time
 
 `ezb_apply_statement_import` does **not** replay the plan it was given. It recomputes; if the result
@@ -1239,6 +1310,7 @@ Nothing in this table is a silent success, and nothing is a silent cap.
 | `EZBKMCP_API_KEY_FILE`     | —                                    | a path to a file holding the key                                              |
 | `EZBKMCP_CREDENTIALS_FILE` | `~/.credentials/ezbookkeeping.json`  | the credentials file                                                          |
 | `EZBKMCP_ALLOW_WRITE`      | `0`                                  | this side's write switch                                                      |
+| `EZBKMCP_ALLOW_ADMIN`      | `0`                                  | with the write switch: enables `ezb_delete_transactions`, the one admin tool (§9.5b) |
 | `EZBKMCP_ALLOW_REMOTE`     | `0`                                  | permit a non-loopback `https:` target — read-only                             |
 | `EZBKMCP_MAX_CHANGES`      | `200`                                | the default write ceiling                                                     |
 | `EZBKMCP_MAX_ROWS`         | `1000`                               | the row cap; clamped, never rejected                                          |
@@ -1472,10 +1544,10 @@ no clean sequence is a missing tool; a sentence that needs the model to compute 
    §3.4 layer 5 verbatim, naming Actual Budget.
 5. `grep -rE "console\.log\(|process\.stdout\.write\(" mcp/dist/` returns nothing.
 6. No host literal but loopback, no `child_process`.
-7. All 65 tools carry four clauses; names match `^ezb_[a-z_]+$`; no `delete_` exists; list and dispatch
+7. All 72 tools carry four clauses; names match `^ezb_[a-z_]+$`; `delete_` exists only on the admin tool (§9.5b); list and dispatch
    agree. 7a. Every tool maps to one apis.mdx route, and every ✅ route has a tool or an omission row.
    7b. Every `ezb_` name in `ai/mcp_prompt_ezbookkeeping.md` exists.
-8. With the write tier off, all 18 write tools are **listed**, and each returns `write_disabled` naming
+8. With the write tier off, all 23 write tools are **listed**, and each returns `write_disabled` naming
    both switches.
 9. With both switches on: no `confirm_token` → `confirm_required`; stale token → `conflict`; over the
    ceiling → `too_many_changes` with the real count (recoded from the plane's `conflict` +
@@ -1541,7 +1613,7 @@ question in §18.1's second group, cannot change anything, and are worth using a
    run, bounded by `max_changes`; `dry_run` is the default.
    9a. Every tool is exactly one route in apis.mdx.
    9b. This server is never granted the admin tier or the passthrough.
-10. There is no tool that deletes anything, and no argument that re-adds what the operator deleted.
+10. No tool deletes anything but `ezb_delete_transactions` (ids only, admin tier, §9.5b), and no argument re-adds what the operator deleted.
     10a. `ezb_undo` exists, ships with the first write, reverses machine-plane writes only, and reports
     what it undid.
 11. The plane's import record is the sole authority on "already imported"; the model never judges a
@@ -1559,6 +1631,8 @@ question in §18.1's second group, cannot change anything, and are worth using a
 - [ai/mcp_prompt_ezbookkeeping.md](../ai/mcp_prompt_ezbookkeeping.md) — the instructions payload: money,
   currencies, when to ask, how to plan, how to report.
 - [cli.mdx](./cli.mdx) — the CLI. Same key, same plane, same services.
+- [import_formats.mdx](./import_formats.mdx) — what the statement files look like, what the converters do
+  with them, and the import sequence of §11.5a in full.
 - [error_err.mdx](./error_err.mdx) — the error file, `~/T/ezbookkeeping/error.err`: where every fault
   this server sees is written (§16.3), and the vendored library under `src/errfile/`.
 - [../CLAUDE.md](../CLAUDE.md) — what this fork is and how it extends upstream.

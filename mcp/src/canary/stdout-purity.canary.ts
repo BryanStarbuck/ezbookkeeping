@@ -50,7 +50,7 @@ describe('canary: stdout-purity', () => {
       expect(result.instructions.startsWith("Is this about the operator's own money kept in **ezBookkeeping** on THIS computer")).toBe(true);
 
       const tools = await client.listTools();
-      expect(tools.length).toBe(65);
+      expect(tools.length).toBe(72);
 
       const health = await client.call('ezb_health', {});
       expect(health.raw.isError).toBe(true);

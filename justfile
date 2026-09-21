@@ -2,7 +2,12 @@
 #
 #   just build   -> Go backend binary (./ezbookkeeping) + Vue frontend (./dist) + ezbk CLI (./cli/bin/ezbk)
 #                   + the MCP server (./mcp/dist), after syncing the vendored errfile copies
-#   just run     -> serves both at http://localhost:8080/ (prints the full URL)
+#   just run     -> (re)starts the server in the background at http://localhost:8080/: stops whatever
+#                   ezBookkeeping server is running (just run, ezbk up, a foreground run), starts the
+#                   current build, waits until it is healthy and checks the machine plane is armed.
+#                   So `just build && just run` always serves your latest build.
+#   just run-fg  -> the same restart, but in the foreground with logs in the terminal (Ctrl+C stops)
+#   just stop / just status / just logs -> stop it, one-line status, follow the server log
 #   just url     -> prints the full URL to open in the browser
 #   just users   -> lists the sign-in users (username, email) in the local database
 #   just reset-password NAME -> sets a new password for NAME (prompted, never echoed)
@@ -10,17 +15,27 @@
 #   just test    -> every suite: root Go, cli Go, vitest, mcp vitest
 #   just check-errors -> builds bin/errfilecheck and runs the error-file coverage script (pm/error_err.mdx §13.3)
 #
-# Runtime state stays in the repo root, all git-ignored:
-#   data/    sqlite db (data/ezbookkeeping.db) + generated secret key
-#   log/     log/ezbookkeeping.log
-#   storage/ uploaded files (avatars, pictures)
+# Runtime state lives OUTSIDE the repo (it holds real financial data once statements are imported):
+#   ~/T/_ezbookkeeping/data/     sqlite db (ezbookkeeping.db) + upstream's secret_key
+#   ~/T/_ezbookkeeping/log/      ezbookkeeping.log
+#   ~/T/_ezbookkeeping/storage/  uploaded files (avatars, pictures)
+# EZBK_STATE_DIR overrides the base. `just run` and `ezbk up` move a db left in ./data/ on first start.
 # Every fault from every runtime goes to ~/T/ezbookkeeping/error.err (pm/error_err.mdx).
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
 port := env_var_or_default("EBK_PORT", "8080")
+# the machine plane's tiers at boot (apis.mdx §9.1): writes on by default so ezbk and the MCP can
+# categorise and import (every write still needs a dry run and a confirm token); admin off.
+# Override per run: EZBK_MACHINE_ALLOW_WRITE=0 just run
+allow_write := env_var_or_default("EZBK_MACHINE_ALLOW_WRITE", "1")
+allow_admin := env_var_or_default("EZBK_MACHINE_ALLOW_ADMIN", "0")
+# runtime state (database, logs, uploads) lives OUTSIDE the repo — CLAUDE.md "Runtime state location"
+state := env_var_or_default("EZBK_STATE_DIR", env_var("HOME") + "/T/_ezbookkeeping")
+db := state + "/data/ezbookkeeping.db"
 bin := "ezbookkeeping"
 url := "http://localhost:" + port + "/"
+server := "ROOT=\"" + justfile_directory() + "\" PORT=" + port + " STATE=\"" + state + "\" ALLOW_WRITE=" + allow_write + " ALLOW_ADMIN=" + allow_admin + " bash scripts/server.sh"
 
 # Print the URL, then list recipes
 default:
@@ -37,8 +52,9 @@ url:
 # Build backend + frontend + the ezbk CLI + the MCP server (after syncing the vendored errfile copies)
 build: sync-errfile build-backend build-frontend build-cli build-mcp
     @echo ""
-    @echo "Build complete. Start it with: just run"
-    @echo "Then open: {{url}}"
+    @echo "Build complete. (Re)start the server on it with: just run"
+    @if curl -fsS -m 2 "http://127.0.0.1:{{port}}/healthz.json" >/dev/null 2>&1; then echo "Note: a server is running the PREVIOUS build right now — 'just run' restarts it on this one."; fi
+    @echo "Then open: {{url}}   (restart Claude Code to load a new MCP build)"
 
 # Regenerate cli/internal/errfile and mcp/src/errfile from pkg/errfile and src/lib/errfile (pm/error_err.mdx §4.1, §5.5)
 sync-errfile:
@@ -119,32 +135,37 @@ install-cli:
     @[ -x ./cli/bin/ezbk ] || { echo "Error: ezbk not built. Run: just build-cli"; exit 1; }
     @echo 'export PATH="{{justfile_directory()}}/cli/bin:$PATH"'
 
-# Run the server on localhost (foreground; Ctrl+C to stop)
+# (Re)start the server in the background on the current build, wait until healthy, verify the plane
 run:
-    @[ -x ./{{bin}} ] || { echo "Error: backend not built. Run: just build"; exit 1; }
-    @[ -f ./dist/index.html ] || { echo "Error: frontend not built. Run: just build"; exit 1; }
-    @mkdir -p data log storage
-    @[ -s data/.secret_key ] || { openssl rand -hex 24 | tr -d '\n' > data/.secret_key; echo "Generated data/.secret_key"; }
-    @echo ""
-    @echo "=============================================="
-    @echo "  ezBookkeeping: {{url}}"
-    @echo "=============================================="
-    @echo ""
-    EBK_WORK_DIR="$PWD" \
-    EBK_SERVER_HTTP_ADDR=127.0.0.1 \
-    EBK_SERVER_HTTP_PORT={{port}} \
-    EBK_SERVER_DOMAIN=localhost \
-    EBK_SERVER_STATIC_ROOT_PATH=dist \
-    EBKCFP_SECURITY_SECRET_KEY="$PWD/data/.secret_key" \
-    ./{{bin}} --conf-path conf/ezbookkeeping.ini server run
+    @{{server}} start
+
+# Same as run
+restart:
+    @{{server}} start
+
+# Stop any running server, then run in the foreground with logs in the terminal (Ctrl+C stops)
+run-fg:
+    @{{server}} fg
+
+# Stop the server (whether just run or ezbk up started it)
+stop:
+    @{{server}} stop
+
+# Is it up? pid, URL and the machine plane's tiers
+status:
+    @{{server}} status
+
+# Follow the server log (~/T/_ezbookkeeping/server.log)
+logs:
+    @{{server}} logs
 
 # List the sign-in users in the local database (username, email, disabled?) — pm/accounts.mdx §2
 users:
-    @[ -f data/ezbookkeeping.db ] || { echo "No database yet (data/ezbookkeeping.db). Run: just run, then create an account at {{url}}"; exit 0; }
+    @[ -f "{{db}}" ] || { echo "No database yet ({{db}}). Run: just run, then create an account at {{url}}"; exit 0; }
     @command -v sqlite3 >/dev/null || { echo "Error: sqlite3 is required"; exit 127; }
-    @n=$(sqlite3 data/ezbookkeeping.db "select count(*) from user where deleted=0"); \
+    @n=$(sqlite3 "{{db}}" "select count(*) from user where deleted=0"); \
      if [ "$n" = "0" ]; then echo "No users yet. Open {{url}} and click 'Create an account'."; \
-     else sqlite3 -header -column data/ezbookkeeping.db "select username, email, disabled from user where deleted=0 order by uid"; fi
+     else sqlite3 -header -column "{{db}}" "select username, email, disabled from user where deleted=0 order by uid"; fi
 
 # Set a new password for USERNAME without email (prompted, never echoed or kept in history) — pm/accounts.mdx §4
 reset-password USERNAME:
@@ -152,11 +173,11 @@ reset-password USERNAME:
     @read -r -s -p "New password for {{USERNAME}} (6-128 chars): " p1; echo; \
      read -r -s -p "Repeat it: " p2; echo; \
      [ "$p1" = "$p2" ] || { echo "Error: the two passwords differ; nothing changed"; exit 1; }; \
-     EBK_WORK_DIR="$PWD" EBKCFP_SECURITY_SECRET_KEY="$PWD/data/.secret_key" \
+     EBK_WORK_DIR="$PWD" EBKCFP_SECURITY_SECRET_KEY="{{state}}/data/.secret_key" EBK_DATABASE_DB_PATH="{{db}}" \
      ./{{bin}} --conf-path conf/ezbookkeeping.ini userdata user-modify-password --username "{{USERNAME}}" --password "$p1"; \
      echo "Done. Log in at {{url}} as {{USERNAME}}."
 
-# Run the Vite dev server (hot reload, :8081) — needs `just run` in another terminal
+# Run the Vite dev server (hot reload, :8081) — needs the server up (just run)
 dev:
     npm run serve
 

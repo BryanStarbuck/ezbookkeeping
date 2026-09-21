@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ERROR_CODES, MCP_ONLY_CODES, PLANE_CODES } from '../src/envelope.js';
 import { FAMILIES, findTool, READ_TOOLS, TOOLS, TOTAL_TOOLS, WRITE_TOOL_COUNT } from '../src/tools/registry.js';
-import { BARE_NAMES, READ_VERBS, READS_ONLY, WHICH_SERVER, WRITE_VERBS, WRITES } from '../src/tools/tool.js';
+import { ADMIN_TOOLS, BARE_NAMES, READS_ONLY, verbTier, WHICH_SERVER, WRITES } from '../src/tools/tool.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -38,7 +38,6 @@ const OMISSIONS: Record<string, string> = {
   'POST /transactions/move-all': 'moving every transaction of an account is `ezbk transactions move-all`; ezb_set_transaction_account moves a chosen set',
   'GET /categories/:id': 'ezb_list_categories with name or parent_id answers it',
   'POST /categories/batch': 'the default-categories preset is a first-run UI action',
-  'PATCH /categories/:id': 'renaming and re-parenting categories is a UI action',
   'POST /categories/:id/hide': 'hiding is a UI action',
   'POST /categories/:id/move': 'display order is a UI action',
   'GET /tags/:id': 'ezb_list_tags with name answers it',
@@ -71,24 +70,25 @@ const OMISSIONS: Record<string, string> = {
 };
 
 describe('the catalogue', () => {
-  it('is sixty-five tools: forty-seven read, eighteen write', () => {
-    expect(TOTAL_TOOLS).toBe(65);
-    expect(READ_TOOLS).toBe(47);
-    expect(WRITE_TOOL_COUNT).toBe(18);
-    expect(TOOLS.length).toBe(65);
+  it('is seventy-two tools: forty-nine read, twenty-three write', () => {
+    expect(TOTAL_TOOLS).toBe(72);
+    expect(READ_TOOLS).toBe(49);
+    expect(WRITE_TOOL_COUNT).toBe(23);
+    expect(TOOLS.length).toBe(72);
   });
 
   it('has the families of §9.5 with their sizes', () => {
     const sizes = Object.fromEntries(FAMILIES.map(f => [f.name, f.tools.length]));
-    expect(sizes).toEqual({ orientation: 4, accounts: 5, transactions: 4, reference: 6, currency: 2, analytics: 13, statements: 11, previews: 2, writes: 18 });
+    expect(sizes).toEqual({ orientation: 4, accounts: 5, transactions: 5, reference: 6, currency: 2, analytics: 13, statements: 11, previews: 2, writes: 21, transfers: 3 });
   });
 
   it('names every tool ^ezb_[a-z_]+$ with a verb from the closed set (or a sanctioned bare name)', () => {
     for (const tool of TOOLS) {
       expect(tool.name).toMatch(/^ezb_[a-z_]+$/);
-      const rest = tool.name.slice('ezb_'.length);
-      const readVerb = READ_VERBS.some(v => rest.startsWith(v));
-      const writeVerb = WRITE_VERBS.some(v => rest.startsWith(v));
+      // the longest verb decides: convert_to_ (write) beats convert_ (read)
+      const implied = verbTier(tool.name);
+      const readVerb = implied === 'read';
+      const writeVerb = implied === 'write';
       const bare = (BARE_NAMES as readonly string[]).includes(tool.name);
       const analyticsName = FAMILIES.find(f => f.name === 'analytics')?.tools.includes(tool) === true;
       expect(readVerb || writeVerb || bare || analyticsName, `${tool.name} uses a verb outside the closed set`).toBe(true);
@@ -101,10 +101,14 @@ describe('the catalogue', () => {
     }
   });
 
-  it('has no delete_, query_, search_ or generate_ verb', () => {
+  it('has no query_, search_ or generate_ verb, and delete_ only on the sanctioned admin tool (§9.5b)', () => {
     for (const tool of TOOLS) {
-      expect(tool.name).not.toMatch(/^ezb_(delete|query|search|generate)_/);
+      expect(tool.name).not.toMatch(/^ezb_(query|search|generate)_/);
+      const sanctioned = (ADMIN_TOOLS as readonly string[]).includes(tool.name);
+      expect(tool.name.startsWith('ezb_delete_') === sanctioned, `${tool.name}: delete_ is for ADMIN_TOOLS only`).toBe(true);
+      expect(tool.admin === true, `${tool.name}: admin is set exactly on ADMIN_TOOLS`).toBe(sanctioned);
     }
+    expect(TOOLS.filter(t => t.admin === true).map(t => t.name)).toEqual([...ADMIN_TOOLS]);
   });
 
   it('has unique names, and list and dispatch agree', () => {
@@ -203,23 +207,30 @@ describe('the catalogue', () => {
 describe('route parity with the machine plane (§9, AC 7a)', () => {
   const planeKeys = new Set(PLANE.routes.map(r => `${r.method} ${r.path}`));
 
-  it('maps every tool to exactly one live plane route that is not admin', () => {
+  it('maps every tool to exactly one live plane route that is not admin (but the sanctioned admin tool)', () => {
     for (const tool of TOOLS) {
       const key = `${tool.route.method} ${tool.route.path}`;
       const route = PLANE.routes.find(r => `${r.method} ${r.path}` === key);
       expect(route, `${tool.name} names ${key}, which the plane does not publish`).toBeDefined();
       expect(route?.status, `${tool.name}: ${key} is not live`).toBe('live');
+      if (tool.admin === true) {
+        expect(route?.tier, `${tool.name}: an admin tool names an admin route`).toBe('admin');
+        continue;
+      }
       expect(route?.tier, `${tool.name}: ${key} is admin tier`).not.toBe('admin');
       expect(route?.tier, `${tool.name}: tool tier disagrees with the plane's`).toBe(tool.route.path === '/ingest/extract' ? 'read' : tool.tier);
     }
   });
 
-  it('never names the passthrough or an admin route', () => {
+  it('never names the passthrough or an /admin/ route, and DELETE only for the sanctioned admin tool', () => {
     for (const tool of TOOLS) {
       expect(tool.route.path.startsWith('/api/')).toBe(false);
       expect(tool.route.path.startsWith('/admin/')).toBe(false);
-      expect(tool.route.method).not.toBe('DELETE');
+      if (tool.admin !== true) {
+        expect(tool.route.method).not.toBe('DELETE');
+      }
     }
+    expect(findTool('ezb_delete_transactions')?.route).toEqual({ method: 'DELETE', path: '/transactions/bulk' });
   });
 
   it('covers every live non-admin plane route with a tool or an omission row', () => {

@@ -14,6 +14,7 @@ import (
 	"github.com/mayswind/ezbookkeeping/pkg/converters"
 	"github.com/mayswind/ezbookkeeping/pkg/converters/converter"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 )
 
@@ -980,5 +981,102 @@ func TestIngRunIdAndReports(t *testing.T) {
 
 	if info, err := os.Stat(filepath.Join(os.Getenv("EZBK_STATE_DIR"), "ingest-runs", "7", id+".json")); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("report file %v", err)
+	}
+}
+
+// pm/import_formats.mdx §11.2: a manifest written for this app names each account's one file,
+// carries its opening balance, and may use another pipeline's kinds
+func TestIngManifestFileOpeningAndKindAliases(t *testing.T) {
+	ingTestEnv(t)
+	root, err := ingResolveRoot(ingCopyTree(t, filepath.Join("testdata", "ingest", "prepared")))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// two accounts sharing ONE directory, each naming its own file (synthetic data)
+	dir := filepath.Join(root.Real, "import", "personal", "Northbank")
+	_ = os.MkdirAll(dir, 0o755)
+	ofx := func(acct, amt string) []byte {
+		return []byte("OFXHEADER:100\nDATA:OFXSGML\nVERSION:102\nSECURITY:NONE\nENCODING:UTF-8\nCHARSET:NONE\nCOMPRESSION:NONE\nOLDFILEUID:NONE\nNEWFILEUID:NONE\n\n<OFX>\n<BANKMSGSRSV1><STMTTRNRS><TRNUID>1\n<STMTRS><CURDEF>USD\n<BANKACCTFROM><BANKID>000000000<ACCTID>" + acct + "<ACCTTYPE>CHECKING</BANKACCTFROM>\n<BANKTRANLIST><DTSTART>20260101<DTEND>20260131\n<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260105120000<TRNAMT>" + amt + "<FITID>" + acct + "-1<NAME>Corner Cafe<MEMO>CORNER CAFE &amp; BAKERY</STMTTRN>\n</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1>\n</OFX>\n")
+	}
+	_ = os.WriteFile(filepath.Join(dir, "Checking_x4021_ALL_ezbookkeeping.ofx"), ofx("4021", "-4.50"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "Retirement_x7710_ALL_ezbookkeeping.ofx"), ofx("7710", "-1.00"), 0o644)
+	manifest := "entity,institution,label,last4,kind,currency,name,path,file,opening_balance,opening_date\n" +
+		"household,Northbank,Checking_x4021,4021,checking,USD,Northbank Checking ••4021,import/personal/Northbank,import/personal/Northbank/Checking_x4021_ALL_ezbookkeeping.ofx,1234.56,2026-01-01\n" +
+		"household,Northbank,Retirement_x7710,7710,retirement,USD,Northbank IRA ••7710,import/personal/Northbank,import/personal/Northbank/Retirement_x7710_ALL_ezbookkeeping.ofx,-10.5,2026-01-01\n" +
+		"household,Northbank,Mortgage_x5190,5190,mortgage,USD,,import/personal/Northbank,import/personal/Northbank/missing.ofx,12.345,2026-01-01\n"
+	_ = os.WriteFile(filepath.Join(root.Real, "import", "personal", "manifest_ezbookkeeping.csv"), []byte(manifest), 0o644)
+
+	// this app's manifest is found before another app's import/accounts.csv
+	real, err := ingFindManifest(root, "")
+
+	if err != nil || root.Rel(real) != "import/personal/manifest_ezbookkeeping.csv" {
+		t.Fatalf("candidate order: %q %v", real, err)
+	}
+
+	m, err := ingReadManifest(root, real, "USD")
+
+	if err != nil || len(m.Rows) != 3 || len(m.UnknownColumns) != 0 {
+		t.Fatalf("manifest %+v %v", m, err)
+	}
+
+	chk, ira, mort := m.Rows[0], m.Rows[1], m.Rows[2]
+
+	if chk.File == "" || chk.OpeningBalance == nil || *chk.OpeningBalance != 123456 || chk.OpeningDate != "2026-01-01" {
+		t.Fatalf("checking row %+v", chk)
+	}
+
+	if ira.Kind != "brokerage" || ira.OpeningBalance == nil || *ira.OpeningBalance != -1050 || !strings.Contains(strings.Join(ira.Warnings, ";"), `"retirement" read as brokerage`) {
+		t.Fatalf("kind alias %+v", ira)
+	}
+
+	if mort.Kind != "loan" || mort.OpeningBalance != nil || !strings.Contains(strings.Join(mort.Warnings, ";"), "not a plain decimal") {
+		t.Fatalf("a non-hundredths opening is refused, never rounded: %+v", mort)
+	}
+
+	// the shelf is exactly the named file, never its neighbour in the shared directory
+	for i, want := range []string{"Checking_x4021_ALL_ezbookkeeping.ofx", "Retirement_x7710_ALL_ezbookkeeping.ofx"} {
+		shelf, err := ingScanAccountShelf(root, m.Rows[i], "")
+
+		if err != nil || !shelf.Exists || len(shelf.Chosen) != 1 || filepath.Base(shelf.Chosen[0].Rel) != want || shelf.FileType != "ofx" || shelf.Combined != want {
+			t.Fatalf("shelf %d %+v %v", i, shelf, err)
+		}
+	}
+
+	if shelf, err := ingScanAccountShelf(root, mort, ""); err != nil || shelf.Exists || len(shelf.Chosen) != 0 {
+		t.Fatalf("a missing file is not an empty shelf that exists: %+v %v", shelf, err)
+	}
+}
+
+// the opening balance sorts strictly before noon-UTC statement rows and stays on its own date
+func TestIngOpeningTime(t *testing.T) {
+	day, _ := time.Parse("2006-01-02", "2026-01-01")
+	got := ingOpeningTime(day)
+	noon := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC).Unix()
+
+	if got != noon-1 {
+		t.Fatalf("opening time %d, want %d", got, noon-1)
+	}
+
+	for _, zone := range []int{-11, -8, 0, 11} {
+		if d := time.Unix(got, 0).In(time.FixedZone("z", zone*3600)).Format("2006-01-02"); d != "2026-01-01" {
+			t.Fatalf("UTC%+d shows the opening on %s", zone, d)
+		}
+	}
+}
+
+// a statement with no activity is an empty statement, not an unreadable file
+func TestIngEmptyOfxIsNotAConflict(t *testing.T) {
+	data := []byte("OFXHEADER:100\nDATA:OFXSGML\nVERSION:102\nSECURITY:NONE\nENCODING:UTF-8\nCHARSET:NONE\nCOMPRESSION:NONE\nOLDFILEUID:NONE\nNEWFILEUID:NONE\n\n<OFX>\n<BANKMSGSRSV1><STMTTRNRS><TRNUID>1\n<STMTRS><CURDEF>USD\n<BANKACCTFROM><BANKID>000000000<ACCTID>7710<ACCTTYPE>CHECKING</BANKACCTFROM>\n<BANKTRANLIST><DTSTART>20260101<DTEND>20260131\n</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1>\n</OFX>\n")
+	imp, _ := converters.GetTransactionDataImporter("ofx")
+	_, _, _, _, _, _, err := imp.ParseImportedData(core.NewNullContext(), &models.User{Uid: 7, DefaultCurrency: "USD"}, data, time.UTC, converter.TransactionDataImporterOptions{}, nil, nil, nil, nil, nil)
+
+	if err == nil || !ingIsEmptyFile(err) {
+		t.Fatalf("upstream's verdict on an empty statement: %v", err)
+	}
+
+	if ingIsEmptyFile(errs.ErrInvalidOFXFile) {
+		t.Fatal("an invalid file must stay a conflict")
 	}
 }

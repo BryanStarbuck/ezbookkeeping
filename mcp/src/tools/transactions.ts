@@ -189,4 +189,42 @@ export const exportTransactions: ToolDef = {
   },
 };
 
-export const TRANSACTION_TOOLS: ToolDef[] = [listTransactions, getTransaction, countTransactions, exportTransactions];
+export const listUncategorized: ToolDef = {
+  name: 'ezb_list_uncategorized',
+  route: { method: 'GET', path: '/transactions/uncategorized' },
+  tier: 'read',
+  description: describe({
+    what: "Lists the categorisation work queue: rows still in the fallback categories (by default every sub-category named Uncategorized), grouped by normalised payee with the largest group first — each group with its row ids, types, per-currency totals, sample rows, and a suggestion counted from rows with the same payee that are already categorised.",
+    tier: 'read',
+    insteadOf: 'Categorise a group with ezb_set_transaction_categories using its ids; for one import run\'s fallout by account and month use ezb_list_import_fallout.',
+  }),
+  inputSchema: objectSchema({
+    category_ids: idListField('The fallback categories whose rows form the queue (a group includes its sub-categories). Defaults to every sub-category named Uncategorized.'),
+    account_ids: idListField('Only rows on these accounts.'),
+    start: dateField('First day, inclusive.'),
+    end: dateField('Last day, inclusive.'),
+    group_limit: intField('Payee groups to return. Defaults to 50.', { minimum: 1, maximum: 1000 }),
+    offset: intField('Skip this many groups (meta.nextOffset pages on). Categorised groups leave the queue, so after a write start again at 0.', { minimum: 0 }),
+    ids_per_group: intField('Row ids listed per group. Defaults to 100; idsTruncated says when a group has more.', { minimum: 1, maximum: 5000 }),
+    min_count: intField('Only groups with at least this many rows. Defaults to 1.', { minimum: 1 }),
+  }),
+  schema: z
+    .object({
+      category_ids: z.array(zId).optional(),
+      account_ids: z.array(zId).optional(),
+      start: zDate.optional(),
+      end: zDate.optional(),
+      group_limit: z.number().int().min(1).max(1000).optional(),
+      offset: z.number().int().min(0).optional(),
+      ids_per_group: z.number().int().min(1).max(5000).optional(),
+      min_count: z.number().int().min(1).optional(),
+    })
+    .strict(),
+  async run(args, ctx) {
+    const a = args as Record<string, string | number | string[] | undefined>;
+    const res = await ctx.client.request('/transactions/uncategorized', { query: a });
+    return fromPlane(res, ['payee', 'variants', 'comment', 'accountNames', 'account']);
+  },
+};
+
+export const TRANSACTION_TOOLS: ToolDef[] = [listTransactions, getTransaction, countTransactions, exportTransactions, listUncategorized];

@@ -1,0 +1,1060 @@
+---
+title: ezBookkeeping — the import file formats
+description: >
+  What a file has to look like for THIS install of ezBookkeeping to import it, read straight out of the
+  converters' source rather than from the manual, and what our statement pipeline therefore writes.
+  ezBookkeeping's converter shelf is wide — OFX/QFX, its own CSV/TSV/JSON, QIF, CAMT.052/.053, MT940,
+  IIF, GnuCash, Beancount, Firefly III CSV, custom delimited and Excel files, several regional app
+  exports — but upstream imports with NO duplicate detection at all: an OFX FITID is parsed and thrown
+  away, and re-importing a statement doubles it. On this fork the machine plane (apis.mdx §14) is the
+  duplicate authority: it recovers the bank's FITID beside the converter, keys it into its own
+  machine_import_record table, and so an OFX with stable FITIDs imports exactly once no matter how many
+  times it is offered. That decides what the pipeline generates: OFX for the import (through the plane,
+  never the browser), ezBookkeeping's own TSV beside it for humans. This spec documents each format's
+  exact parse (which tags and columns are read, how amounts, dates and types are decided, what is
+  silently ignored, what throws), the transaction contract every door ends in, both de-duplication
+  layers, the account and opening-balance model an importer provisions into, the conventions our
+  pipeline follows (one tree per institution, year, month and statement type, every file suffixed
+  _ezbookkeeping before its extension, a manifest that names each account's one file and opening
+  balance), the validation it runs, and every upstream defect found while reading.
+---
+
+# ezBookkeeping — the import file formats
+
+`~/BGit/Bryan_git/ezbookkeeping/pm/import_formats.mdx` · the contract for every file (and every JSON
+body) that puts transactions into these books. Sister spec:
+`~/BGit/Bryan_git/actual_budget_bryan/pm/import_formats.mdx` — same sections, same pipeline, the other
+app. Where the two apps are alike, the designs are kept alike.
+
+---
+
+## Table of Contents
+
+- [Introduction](#introduction)
+- [1. The ways a transaction gets in](#1-the-ways-a-transaction-gets-in)
+- [2. The one contract underneath: the import transaction](#2-the-one-contract-underneath-the-import-transaction)
+- [3. OFX and QFX — the format to generate](#3-ofx-and-qfx--the-format-to-generate)
+- [4. ezBookkeeping's own CSV, TSV and JSON](#4-ezbookkeepings-own-csv-tsv-and-json)
+- [5. QIF](#5-qif)
+- [6. CAMT.052/.053, MT940 and the rest of the shelf](#6-camt052053-mt940-and-the-rest-of-the-shelf)
+- [7. JSON over the machine plane — what the MCP and CLI send](#7-json-over-the-machine-plane--what-the-mcp-and-cli-send)
+- [8. De-duplication — how "already there" is decided](#8-de-duplication--how-already-there-is-decided)
+- [9. Accounts — what the file lands in, and the opening balance](#9-accounts--what-the-file-lands-in-and-the-opening-balance)
+- [10. Money, dates and time](#10-money-dates-and-time)
+- [11. What our pipeline generates](#11-what-our-pipeline-generates)
+- [12. Validation before a file is called done](#12-validation-before-a-file-is-called-done)
+- [13. Known defects in the upstream importer](#13-known-defects-in-the-upstream-importer)
+- [14. Acceptance criteria](#14-acceptance-criteria)
+- [15. Related specs](#15-related-specs)
+
+---
+
+## Introduction
+
+ezBookkeeping has one importer with several front doors. A person picks a file in the browser's Import
+dialog; the browser posts it to `parse_import.json`, shows the parsed rows, lets the person map every
+account and category the file named, and posts the result to `import.json`. The machine plane behind
+the CLI and the MCP takes the **same** converters and the **same** create path, but puts two things in
+between that upstream does not have: a durable record of every row it has ever imported, and a plan
+that is read before anything is written.
+
+That second part is why this spec exists. Upstream's importer writes whatever rows it is handed. Its
+only protection is a `clientSessionId` that stops the **same submission** twice within five minutes; it
+does not stop the same transaction arriving in two files a month apart, and it does not stop a person
+importing the same statement twice. A converter that reads the bank's own transaction id (OFX
+`FITID`) discards it before the row leaves the converter. So on a plain ezBookkeeping, every re-import
+duplicates, silently, and the balance is wrong in a way nobody notices until reconciliation.
+
+This document does two jobs. It records exactly what the app does with each format — the file and
+function that does it — and it fixes what our own statement pipeline writes so that a re-run is exact
+and idempotent: every row carries a stable id the plane can key, every balance equals the paper, and
+no category, date or amount is ever invented.
+
+Everything here was read from the code, and the load-bearing claims were **probed** by running the real
+converters on crafted files and by a full rehearsal import of the pipeline's output into a throwaway
+server (§12). Where code and upstream docs disagree, the code wins and the disagreement is noted.
+
+---
+
+## 1. The ways a transaction gets in
+
+| Door                                         | Format                                        | Carries an id through?                   | Duplicate check                  | Who uses it                                   |
+| -------------------------------------------- | --------------------------------------------- | ---------------------------------------- | -------------------------------- | --------------------------------------------- |
+| Browser → Import (`parse_import.json` → `import.json`) | every converter on the shelf (§2)  | ❌ never — FITID is dropped in the converter | ❌ none (only `clientSessionId`, 5 min) | a person, one file at a time         |
+| Upstream API tokens / upstream MCP (`POST /mcp`) | the same, or single transactions         | ❌                                        | ❌                                | **off on this fork** (CLAUDE.md)              |
+| Machine plane `/ingest/plan` → `/ingest/apply` (prepared) | the files a manifest names (OFX preferred) | ✅ `FITID`/CAMT ref → `import_id`   | ✅ `machine_import_record`        | `ezbk statements …`, `ezb_plan_statement_import` |
+| Machine plane `/ingest/file/plan` → `/ingest/file/apply` | one file into one account          | ✅ same                                   | ✅ same                           | `ezbk statements import-file`, `ezb_plan_file_import` |
+| Machine plane `/ingest/extract` (raw)        | PDFs + text sidecars → ezBookkeeping CSV in staging | minted id (§8.3)                   | ✅ same                           | archives that only exist on paper             |
+| Machine plane `/transactions` (typed writes) | JSON, one row at a time                        | n/a                                      | the caller's                     | `ezb_add_transactions`, `ezbk transactions add` |
+
+Every door ends in the same place: upstream's `TransactionService.BatchCreateTransactions` (browser and
+plane imports) or `CreateTransaction` (typed writes), which run `doCreateTransaction` per row.
+
+The browser's parse handler dispatches on the `fileType` form field (never on the extension) through
+`GetTransactionDataImporter()`; an unknown type answers `ErrImportFileTypeNotSupported`.
+Done in `TransactionParseImportFileHandler()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/api/transactions.go`, via `GetTransactionDataImporter()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/converters/transaction_data_converters.go`.
+
+The plane chooses the `fileType` itself, by extension and sniffed content, and echoes the choice so a
+wrong guess is visible (a `.qif` needs a stated date order; a `.csv` is `ezbookkeeping_csv` only when its
+header starts `Time,Timezone,Type,`).
+Done in `ingClassifyName()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_manifest.go`.
+
+The import routes exist only when `[data] enable_import = true` (the checked-in `.ini` sets it; the
+code default is false), and the bound user's import feature restriction makes them `forbidden`.
+Registered in `~/BGit/Bryan_git/ezbookkeeping/cmd/webserver.go`; the plane's gate is `ingRequireImportAllowed()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_plan.go`.
+
+---
+
+## 2. The one contract underneath: the import transaction
+
+### 2.1 The shelf
+
+| `fileType`                                          | Converter                                                     | In the browser's list |
+| --------------------------------------------------- | ------------------------------------------------------------- | --------------------- |
+| `ezbookkeeping_csv`, `ezbookkeeping_tsv`            | native plain-text (§4)                                        | ✅                    |
+| `ezbookkeeping_json`                                | native JSON (§4.6)                                            | API only              |
+| `ofx`, `qfx`                                        | one OFX converter; QFX gets no special handling (§3)          | ✅                    |
+| `qif_ymd`, `qif_mdy`, `qif_dmy`                     | QIF, with the date order stated (§5)                          | ✅                    |
+| `camt052`, `camt053`, `mt940`                       | ISO 20022 and SWIFT statements (§6)                           | ✅                    |
+| `iif`, `gnucash`, `beancount`, `firefly_iii_csv`    | other apps' exports (§6)                                      | ✅                    |
+| `custom_csv`, `custom_tsv`, `custom_ssv`, `custom_xlsx`, `custom_xls` | any delimited or Excel file with a column map (§6) | ✅          |
+| `alipay_*`, `wechat_pay_*`, `jdcom_finance_app_csv`, `feidee_mymoney_*` | regional app bill exports                   | ✅                    |
+| `ai_txt`, `ai_image`                                | an LLM reads text or a receipt — **never used by the plane** (apis.mdx §14.9) | only with an LLM configured |
+
+There is **no exporter** except the native `csv`/`tsv` (§4.5): nothing on the shelf writes OFX, QIF or CAMT.
+
+### 2.2 The common layer every format goes through
+
+Each converter only fills a table of columns (`TIME`, `TIMEZONE`, `TYPE`, `CATEGORY`, `SUB_CATEGORY`,
+`ACCOUNT_NAME`, `ACCOUNT_CURRENCY`, `AMOUNT`, `RELATED_ACCOUNT_NAME`, `RELATED_ACCOUNT_CURRENCY`,
+`RELATED_AMOUNT`, `GEOGRAPHIC_LOCATION`, `TAGS`, `DESCRIPTION`, plus `PAYEE`/`MEMBER`/`PROJECT`/`MERCHANT`
+for tag options). One shared function turns that table into import transactions:
+
+1. Zero rows → `ErrNotFoundTransactionDataInFile` ("not found transaction data").
+2. Required columns must **exist** in the table: TIME, TYPE, SUB_CATEGORY, ACCOUNT_NAME, AMOUNT,
+   RELATED_ACCOUNT_NAME; else `ErrMissingRequiredFieldInHeaderRow`.
+3. Timezone `±HH:MM` exactly, else `ErrTransactionTimeZoneInvalid`; no timezone column → the **browser's**
+   timezone (a request header), which a headless caller must think about (§10).
+4. Time `YYYY-MM-DD HH:MM:SS` exactly, else `ErrTransactionTimeInvalid`.
+5. Type through the converter's name map → Balance Modification / Income / Expense / Transfer.
+6. Category: `categories[sub][parent]`; with no or an unknown parent, **any** sub-category of that name
+   (Go map order — nondeterministic, §13); no match → an unsaved category with id 0.
+7. Account: exact, case-sensitive name match against **visible, non-parent** accounts; no match → an
+   unsaved account with id 0. An empty name is allowed and becomes a phantom account `""` (§3.5).
+8. Amount through `ParseAmount` (§10). Transfers resolve the related account and amount the same way.
+9. Tags split on the converter's separator; unknown tags → id 0.
+10. Description → the transaction's `comment`.
+11. Sort: **every Balance Modification row first, whatever its date**, then by time, type, category,
+    account, amount, comment.
+
+**Parse creates nothing.** The handler discards the new accounts, categories and tags the converter
+returns; a name that matched nothing comes back with id `0`, and the browser marks the row invalid until
+a person maps it.
+Done in `DataTableTransactionDataImporter.ParseImportedData()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/converters/converter/data_table_transaction_data_importer.go`.
+
+### 2.3 The row the converter hands back
+
+The parse returns `ImportTransactionResponse` rows — the contract the browser and the plane both read:
+
+| Field                                   | Type                 | Meaning                                                                                 |
+| --------------------------------------- | -------------------- | --------------------------------------------------------------------------------------- |
+| `type`                                  | 1–4                  | 1 Balance Modification, 2 Income, 3 Expense, 4 Transfer                                  |
+| `time`, `utcOffset`                     | unix seconds, minutes | when, and the offset the row was written in                                             |
+| `sourceAccountId` / `originalSourceAccountName` / `originalSourceAccountCurrency` | id or 0, name, ISO | the account; id 0 means "not matched" |
+| `destinationAccountId` / `originalDestinationAccountName` / …Currency | same           | transfers only                                                                           |
+| `sourceAmount`, `destinationAmount`     | integer hundredths   | **unsigned by type** for well-formed input: Income and Expense carry a positive amount and the type carries the direction |
+| `categoryId` / `originalCategoryName`   | id or 0, name        | the secondary category                                                                   |
+| `tagIds` / `originalTagNames`           |                      |                                                                                          |
+| `comment`                               | string               | the description                                                                          |
+| `geoLocation`                           |                      |                                                                                          |
+
+Defined as `ImportTransactionResponse` in `~/BGit/Bryan_git/ezbookkeeping/pkg/models/imported_transaction.go`.
+
+**What the plane does with it.** The plane never takes the converter's account or category ids. It
+normalises each row to **the one account the file belongs to**: Income → `+sourceAmount`, Expense →
+`−sourceAmount`, a transfer with a blank or foreign source → `+destinationAmount`, a transfer out →
+`−sourceAmount`; Balance Modification rows are **skipped** (an opening balance belongs to the account,
+§9.3); rows that belong to another account in the same file are skipped with a reason. The result is a
+signed row — date, amount in hundredths (negative = money out), currency, description, the file's
+category name — that the plane can compare, key and plan. Because the plane recovers the sign from the
+type, a converter's odd type choice (§3.5) still lands with the right sign.
+Done in `ingNormalize()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_parse.go`.
+
+### 2.4 What every door enforces at create time
+
+Per row, inside ONE database transaction for the whole batch (the first failure rolls everything back,
+and the client is not told which row failed):
+
+- the accounts exist, are not hidden, and are not parent accounts;
+- Income and Expense **must have a secondary category of the matching type** (`ErrTransactionCategoryNotFound`,
+  `ErrCannotUsePrimaryCategoryForTransaction`, `ErrTransactionCategoryTypeInvalid`); a Balance
+  Modification must have none;
+- a transfer's two accounts differ, its amount is not negative, and same-currency legs are equal;
+- the Balance Modification rules of §9.3;
+- a unique time slot per user (§10.3).
+
+The browser import does **not** apply the create request's own validation to its rows (no `dive` on the
+slice): amount range, comment length and offset range are unchecked on that door (§13 item 14).
+Done in `doCreateTransaction()` and `BatchCreateTransactions()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/services/transactions.go`.
+
+---
+
+## 3. OFX and QFX — the format to generate
+
+OFX is the one format on the shelf whose rows arrive with the bank's own identity, and the plane can
+read that identity even though the converter drops it. That is why it is what our pipeline writes (§11).
+
+### 3.1 The file, top to bottom
+
+```
+OFXHEADER:100
+DATA:OFXSGML
+VERSION:102
+SECURITY:NONE
+ENCODING:UTF-8
+CHARSET:NONE
+COMPRESSION:NONE
+OLDFILEUID:NONE
+NEWFILEUID:NONE
+
+<OFX>
+<SIGNONMSGSRSV1><SONRS>
+<STATUS><CODE>0<SEVERITY>INFO</STATUS>
+<DTSERVER>20260228000000
+<LANGUAGE>ENG
+</SONRS></SIGNONMSGSRSV1>
+<BANKMSGSRSV1><STMTTRNRS>
+<TRNUID>1
+<STATUS><CODE>0<SEVERITY>INFO</STATUS>
+<STMTRS>
+<CURDEF>USD
+<BANKACCTFROM>
+<BANKID>000000000
+<ACCTID>4021
+<ACCTTYPE>CHECKING
+</BANKACCTFROM>
+<BANKTRANLIST>
+<DTSTART>20260201
+<DTEND>20260228
+<STMTTRN>
+<TRNTYPE>DEBIT
+<DTPOSTED>20260203120000
+<TRNAMT>-45.20
+<FITID>4021-20260203-4520-0-9a1f3c77
+<NAME>Corner Market 142
+<MEMO>CORNER MARKET #142 02/03 PURCHASE
+</STMTTRN>
+<STMTTRN>
+<TRNTYPE>DEP
+<DTPOSTED>20260215120000
+<TRNAMT>2500.00
+<FITID>4021-20260215-250000-1-51c0e2aa
+<NAME>Meridian Payroll
+<MEMO>MERIDIAN PAYROLL PPD
+</STMTTRN>
+</BANKTRANLIST>
+<LEDGERBAL>
+<BALAMT>1234.56
+<DTASOF>20260228120000
+</LEDGERBAL>
+</STMTRS>
+</STMTTRNRS></BANKMSGSRSV1>
+</OFX>
+```
+
+### 3.2 Detection, header and the two parsers
+
+After skipping leading CR/LF the file must start with exactly one of:
+
+| First bytes     | Reader                                                                                                      |
+| --------------- | ----------------------------------------------------------------------------------------------------------- |
+| `OFXHEADER:`    | **OFX 1.x SGML** — key:value header lines up to `<OFX>`, then the SGML decoder                               |
+| `<?xml`         | **OFX 2.x XML** — needs a `<?OFX … OFXHEADER="200" …?>` instruction                                          |
+| `<OFX>`         | the **XML** reader with no header — so a headerless SGML body (unclosed leaf tags) is refused                |
+
+- A **UTF-8 BOM or any leading space/tab** → `ErrInvalidOFXFile`.
+- 1.x header: `OFXHEADER` must be `100`; `DATA` must be `OFXSGML`; `ENCODING` must be `USASCII`
+  (then `CHARSET`, an all-digit value gaining a `cp` prefix: `1252` → Windows-1252), `UNICODE` (UTF-16LE)
+  or the non-standard `UTF-8`; anything else → `ErrInvalidOFXFile`. `VERSION`, `SECURITY`, the file UIDs
+  and `COMPRESSION` are read and never used.
+- CRLF line endings are fine.
+
+**Consequence for a generator.** Write the 1.x SGML shape. Declare `ENCODING:UTF-8` when the bytes are
+UTF-8 — declaring `USASCII`/`1252` over UTF-8 bytes decodes an accented payee as mojibake. Escape `&` as
+`&amp;` and `<` as `&lt;` in every value: `&amp;` decodes back to `&`; a **bare** `&` or `<` in an SGML
+value used to spin the decoder at 100% CPU forever (§13 item 6 — fixed on this fork, refused with
+`ErrInvalidSGMLFile` now, but still never write one). Leaf tags need no closing tag; aggregates do.
+Done in `createNewOFXFileReader()` and `readOFX1FileHeader()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/converters/ofx/ofx_data_reader.go`, and `Decoder.Decode()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/converters/sgml/sgml_decoder.go`.
+
+The SGML decoder takes a leaf's text up to the first CR or LF and **never trims it**: `<TRNAMT>-5.00 `
+with a trailing space fails as an invalid amount.
+Done in `getActualFieldValue()` in `sgml_decoder.go`.
+
+### 3.3 Where the transactions are looked for
+
+| Message set           | Path read                                                                  | "credit account"?                      |
+| --------------------- | -------------------------------------------------------------------------- | -------------------------------------- |
+| `BANKMSGSRSV1`        | `STMTTRNRS → STMTRS → {CURDEF, BANKACCTFROM, BANKTRANLIST → STMTTRN*}`      | only if `ACCTTYPE` is `CREDITLINE`     |
+| `CREDITCARDMSGSRSV1`  | `CCSTMTTRNRS → CCSTMTRS → {CURDEF, CCACCTFROM, BANKTRANLIST → STMTTRN*}`    | always                                 |
+| `INVSTMTMSGSRSV1`     | **not modelled** — an investment-only file is "not found transaction data" | —                                      |
+
+Each message set's statement is a **single pointer, not a list**. One bank statement plus one card
+statement in one file import correctly; **two `STMTTRNRS` in one file do not** — the SGML path keeps only
+the last, the XML path merges every row under the last `ACCTID` (§13 item 5). One file = one statement.
+Done in `ofxFile` and friends in `~/BGit/Bryan_git/ezbookkeeping/pkg/converters/ofx/ofx_data.go` and `createNewOFXTransactionDataTable()` in `ofx_transaction_data_table.go`.
+
+### 3.4 What is read from each `STMTTRN`
+
+| OFX                                  | Becomes                      | How                                                                                                                         |
+| ------------------------------------ | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `DTPOSTED`                           | time + timezone              | `YYYYMMDD` or `YYYYMMDDHHMMSS[.xxx][offset[:TZ]]`, the offset in decimal hours in square brackets. **No bracket → `+00:00`** (§10.2). Empty → `ErrMissingTransactionTime`; fewer than 8 characters or non-digits → `ErrTransactionTimeInvalid` |
+| `TRNTYPE`                            | the type, with the sign (§3.5) | **required** — empty → `ErrTransactionTypeInvalid` and the whole file fails                                               |
+| `TRNAMT`                             | the amount                   | `,` → `.`, trailing zeros trimmed, then `ParseAmount`: at most two decimals, no thousands separator, no parentheses          |
+| `ACCTID` (from `BANKACCTFROM`/`CCACCTFROM`) | the account **name**  | the number string becomes the account name. Empty → `ErrMissingAccountData`                                                |
+| `STMTTRN/CURRENCY`, else `STMTRS/CURDEF` | the currency             | required and must be a known ISO code (`ErrAccountCurrencyInvalid`). The spec's `CURRENCY` **aggregate** breaks this (§13 item 7) |
+| `MEMO`, else `NAME`, else `PAYEE/NAME` | the description → `comment` | **MEMO wins over NAME**; NAME is lost whenever MEMO is present                                                            |
+| `BANKACCTTO`/`CCACCTTO` `ACCTID`     | the related account          | only for `XFER` rows with a negative amount                                                                                 |
+| `FITID`                              | **discarded**                | parsed into the struct, never put in the table — upstream has no id anywhere                                               |
+
+Ignored: `LEDGERBAL`, `AVAILBAL` (**a statement balance is never imported**), `DTUSER`, `CHECKNUM`,
+`REFNUM`, `SIC`, `ORIGCURRENCY`, `DTSTART`/`DTEND` beyond parsing, the signon status. No row ever carries
+a category, so every OFX row reaches the importer **uncategorised**.
+Done in `parseTransaction()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/converters/ofx/ofx_transaction_data_table.go`.
+
+**The plane recovers `FITID`.** Beside the converter the plane reads only `<STMTTRN>` blocks' `FITID`,
+`DTPOSTED`, `TRNAMT` and `MEMO`/`NAME`, and pairs them **one-to-one** with the converter's rows on
+(date, signed amount), preferring an equal normalised description inside a tie. Every row must get
+exactly one id and every id must be used; a duplicated `FITID` in one file disqualifies the file, which
+then falls back to minted ids and says so. Nothing the converter decided — date, amount, description —
+is ever taken from this read.
+Done in `ingOfxRefs()`, `ingAlign()` and `ingAlignBankIds()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_parse.go`.
+
+### 3.5 How the type and sign are decided — and why a generator writes `TRNTYPE` from the sign
+
+Step one maps the `TRNTYPE`:
+
+| `TRNTYPE`                                              | Mapped to                                 |
+| ------------------------------------------------------ | ----------------------------------------- |
+| `CREDIT`                                               | **Expense** (sic)                         |
+| `DEBIT`, `FEE`, `SRVCHG`, `CHECK`, `PAYMENT`, `CASH`, `DIRECTDEBIT`, `REPEATPMT` | Expense      |
+| `DIV`, `DEP`, `DIRECTDEP`                              | Income                                    |
+| `XFER`                                                 | Transfer                                  |
+| `INT`, `ATM`, `POS`, `HOLD`, `OTHER`, anything unknown | not mapped → **the sign decides** (≥ 0 Income, < 0 Expense) |
+
+A mapped Income keeps the amount's sign; a mapped Expense **negates** it. Step two, for every non-transfer
+row: if the statement is a credit account (card message set, or `ACCTTYPE CREDITLINE`) **or the
+`TRNTYPE` is `CREDIT`**, a positive amount becomes a **transfer into this account from a blank account
+`""`**, and a negative one an Expense.
+
+Probed outcomes:
+
+| Row             | Bank (`CHECKING`/`SAVINGS`)            | `CREDITLINE` or card message set |
+| --------------- | -------------------------------------- | -------------------------------- |
+| `CREDIT +100`   | **transfer in from ""**, never Income  | transfer in from ""              |
+| `DEBIT −50`     | Expense 50                             | Expense 50                       |
+| `DEBIT +50`     | **Expense −50** (a negative expense)   | transfer in from ""              |
+| `DEP +7`        | Income 7                               | transfer in from ""              |
+| `DEP −7`        | **Income −7**                          | Expense 7                        |
+| `INT +1.23`     | Income 1.23                            | transfer in from ""              |
+| `XFER −20`      | transfer out to "" (no `BANKACCTTO`)   | transfer out to ""               |
+
+In the browser, a "transfer from """ cannot be imported until a person picks a source account, and a
+negative Income or Expense passes every server check while moving the balance the opposite way from its
+label. Through the plane both land with the right sign, because the plane re-derives the sign from the
+type (§2.3) — but a file should not depend on that.
+
+**Consequence for a generator:** write `TRNTYPE` from the sign only — `DEBIT` for money out, `DEP` for
+money in — and never `CREDIT`. A card statement uses the card message set, where a positive amount (a
+payment or refund) becomes a transfer-in; the plane normalises it to `+amount`.
+
+### 3.6 What a generated OFX must therefore satisfy
+
+- One statement per file, of the right message set: `BANKMSGSRSV1` for checking, savings, brokerage,
+  retirement, loan and mortgage; `CREDITCARDMSGSRSV1` for a card. Never `INVSTMTMSGSRSV1` (not read).
+- 1.x SGML header with `ENCODING:UTF-8`; no BOM, no leading whitespace.
+- `CURDEF` present (ISO 4217); no `CURRENCY` aggregate on rows.
+- Every `STMTTRN` has `TRNTYPE` (from the sign), `DTPOSTED` as `YYYYMMDD120000` (§10.2), `TRNAMT` as a
+  plain signed decimal with two places and no separators, a `FITID` **unique within the file and stable
+  across runs** (§8, §11.4), `NAME`, and `MEMO`.
+- `&` and `<` escaped in `NAME` and `MEMO`; no trailing spaces in any value.
+- `MEMO` carries the description ezBookkeeping will store (it wins over `NAME`), ≤ 255 characters.
+
+---
+
+## 4. ezBookkeeping's own CSV, TSV and JSON
+
+The native format is what ezBookkeeping exports and what a person can round-trip. It carries explicit
+types, categories, account names, per-row timezones and transfers. It carries **no id**.
+
+### 4.1 Tokenising — this is not RFC 4180
+
+The CSV and TSV readers split the file on `\n` and each line on the separator with a plain string split:
+
+- **No quoting or escaping.** `"Safeway, Inc"` becomes two cells, quotes included. A description with a
+  comma shifts every column after it.
+- **CRLF:** only the header's `\r` is removed; the last cell of every data row keeps a trailing `\r`.
+- **A UTF-8 BOM** makes the first header `﻿Time` → `ErrMissingRequiredFieldInHeaderRow`.
+- A row must have at least as many cells as there are recognised header columns
+  (`ErrFewerFieldsInDataRowThanInHeaderRow`); blank lines are skipped.
+
+**Consequence:** write **TSV** (a tab almost never occurs in a bank description, and we replace it with a
+space when it does), LF line endings, no BOM. Never write the native CSV from bank text.
+Done in `createNewDefaultPlainTextDataTable()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/converters/default/default_transaction_plain_text_data_table.go`.
+
+### 4.2 Columns
+
+```
+Time  Timezone  Type  Category  Sub Category  Account  Account Currency  Amount  Account2  Account2 Currency  Account2 Amount  Geographic Location  Tags  Description
+```
+
+- Matched **by exact English header name** — order does not matter, unknown extra columns are ignored.
+- **Required:** `Time`, `Type`, `Sub Category`, `Account`, `Amount`, `Account2`. Optional: the rest.
+Done in `ezbookkeepingDataColumnNameMapping` in `~/BGit/Bryan_git/ezbookkeeping/pkg/converters/default/default_transaction_data_plain_text_converter.go`.
+
+### 4.3 Values
+
+| Column              | Rule                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `Time`              | `YYYY-MM-DD HH:MM:SS` only                                                                                     |
+| `Timezone`          | `+HH:MM`/`-HH:MM` only; absent → the browser's timezone                                                        |
+| `Type`              | exactly `Balance Modification`, `Income`, `Expense`, `Transfer` — case-sensitive, never localised             |
+| `Amount`            | `-?\d*(\.\d{1,2})?`, no separators; **empty parses as 0**. Income/Expense positive; the Type carries direction. For Balance Modification: the **absolute balance**, not a change |
+| `Category` / `Sub Category` | the secondary category, and optionally its primary to disambiguate; ignored for Balance Modification  |
+| `Account` / `Account Currency` | the exact ezBookkeeping account name; a stated currency must match the account's                   |
+| `Account2`, `Account2 Currency`, `Account2 Amount` | transfers: destination; an absent `Account2 Amount` column equals `Amount`, an **empty cell is 0** (§13 item 13) |
+| `Tags`              | `;`-separated                                                                                                 |
+| `Geographic Location` | `"<longitude> <latitude>"`                                                                                  |
+| `Description`       | free text — no separator, no newline                                                                          |
+
+### 4.4 Balance Modification rows
+
+A Balance Modification row **is** importable, but only as an account's **first** transaction ever, and
+every other row must be dated strictly after it (§9.3). The parse sorts Balance Modification rows first
+whatever their date, so a mis-dated opening poisons the whole batch.
+
+### 4.5 The exporter, and round-tripping
+
+`GET /api/v1/data/export.csv|.tsv` writes the header above, one line per transaction, **newest first**, in
+each transaction's own stored offset. It replaces the separator and every newline with a space
+(so it never needs quoting, and it is lossy), writes a Balance Modification with the absolute balance,
+and writes only the outgoing half of a transfer. Export → import round-trips in the same install, except
+that Balance Modification rows re-import only into empty accounts.
+Done in `DataTableTransactionDataExporter.BuildExportedContent()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/converters/converter/data_table_transaction_data_exporter.go`, served by `~/BGit/Bryan_git/ezbookkeeping/pkg/api/data_managements.go`.
+
+### 4.6 Native JSON (`ezbookkeeping_json`)
+
+```json
+{"transactions":[{"time":"2026-02-03 12:00:00","utcOffset":"0","type":"Expense","categoryName":"Groceries",
+  "sourceAccountName":"Northbank Checking ••4021","sourceAmount":"45.20","comment":"CORNER MARKET #142"}]}
+```
+
+The only native format in which commas, quotes and newlines survive. API only (not in the browser's
+list). No parent-category field.
+Done in `~/BGit/Bryan_git/ezbookkeeping/pkg/converters/default/default_transaction_data_json_file_importer.go`.
+
+### 4.7 What the native formats cannot do
+
+- Carry an id. A re-import through the browser duplicates; through the plane the rows get **minted** ids
+  (§8.3), stable only while the description text is.
+- Hold two Balance Modifications for one account, or one for an account that already has transactions.
+- (CSV only) carry a comma, a quote or a newline.
+
+The right use of the native TSV is what §11 gives it: a human-readable companion beside the OFX that a
+person can also import by hand into an **empty** set of books — never both.
+
+---
+
+## 5. QIF
+
+- Sections imported: `!Type:Bank`, `!Type:Cash`, `!Type:CCard`, `!Type:Oth A`, `!Type:Oth L`, with the
+  account from the last `!Account` `N` line. **`!Type:Invst` is read and dropped silently.**
+- `D` date in the order the `fileType` states (`qif_ymd`/`qif_mdy`/`qif_dmy`) — **the plane refuses to
+  guess the order**, because a wrong guess silently swaps days and months; `T` amount (commas stripped);
+  `P` payee (a tag only with options); `M` memo → description; `L` category (`Parent:Sub`), `[Account]` a
+  transfer, `[Account]` with payee `Opening Balance` a Balance Modification. Otherwise the sign decides.
+- Split lines, cleared status and check number are ignored. No currency: the account's is used.
+- **Nothing becomes an id.**
+Done in `~/BGit/Bryan_git/ezbookkeeping/pkg/converters/qif/`. The plane's refusal is in `ingClassifyName()` in `ingest_manifest.go`.
+
+QIF is accepted, not recommended. Nothing in our pipeline writes it.
+
+---
+
+## 6. CAMT.052/.053, MT940 and the rest of the shelf
+
+**CAMT** (`camt052`, `camt053`). One row per `Ntry`, or per `TxDtls` when an entry has details; account
+from `Acct/Id/IBAN` or `Othr/Id`; currency from the amount's `Ccy`; `CdtDbtInd` `CRDT` Income, `DBIT`
+Expense; time from `BookgDt`; description from `AddtlTxInf`, `RmtInf/Ustrd` or `AddtlNtryInf`. Several
+statements in one file work. Balances are ignored. The converter surfaces no reference — the plane reads
+`AcctSvcrRef` (else `NtryRef`) itself and uses it as the bank id, except for batch entries with several
+`TxDtls`, which get minted ids.
+Done in `~/BGit/Bryan_git/ezbookkeeping/pkg/converters/camt/` and `ingCamtRefs()` in `ingest_parse.go`.
+
+**MT940.** `:25:` is the account name, `:61:` the line (value date `YYMMDD`, `C`/`RD` Income, `D`/`RC`
+Expense), `:86:` the description; balances only supply the currency. **Several messages in one file
+attribute every row to the last account** (§13 item 16).
+Done in `~/BGit/Bryan_git/ezbookkeeping/pkg/converters/mt/`.
+
+**IIF** (QuickBooks): `!TRNS`/`!SPL`; `BEGINBALCHECK` is a Balance Modification; INC/EXP accounts decide
+Income/Expense. **GnuCash**: 1- or 2-split transactions only; opening-balance equity → Balance
+Modification. **Beancount**: exactly two postings; `Equity:Opening-Balances` → Balance Modification;
+`balance`/`pad`/`price` ignored. **Firefly III CSV**: `Opening balance`/`Deposit`/`Withdrawal`/`Transfer`.
+**Custom delimited/Excel**: a real RFC 4180 reader with a column map, a type-value map and a required
+time format (a row whose type value is not in the map is **skipped silently**; month-name formats never
+parse, §13 item 18). Regional exports (Alipay, WeChat Pay, JD.com, Feidee) decide direction from their own
+status columns.
+
+None of these carries an id the plane can key except CAMT; none is written by our pipeline.
+
+---
+
+## 7. JSON over the machine plane — what the MCP and CLI send
+
+The programmatic door never posts a file to the browser handlers. The CLI and the MCP call the machine
+plane; the plane reads the file from **inside the statements root** itself (the path is root-relative
+and containment-checked), runs the converter through the same handler the browser calls, and plans.
+
+### 7.1 The calls
+
+| Step                  | Route                              | MCP tool                        | CLI                                   |
+| --------------------- | ---------------------------------- | ------------------------------- | ------------------------------------- |
+| what the archive says | `GET /ingest/manifest`             | `ezb_get_statement_manifest`    | `ezbk statements manifest`            |
+| accounts: plan        | `POST /ingest/accounts/plan`       | `ezb_plan_accounts`             | `ezbk statements accounts`            |
+| accounts: apply       | `POST /ingest/accounts/apply`      | `ezb_apply_accounts`            | `ezbk statements accounts --write --yes` |
+| import: plan          | `POST /ingest/plan`                | `ezb_plan_statement_import`     | `ezbk statements plan`                |
+| import: apply         | `POST /ingest/apply`               | `ezb_apply_statement_import`    | `ezbk statements apply --write --yes` |
+| one file: plan/apply  | `POST /ingest/file/plan` / `apply` | `ezb_plan_file_import` / `ezb_apply_file_import` | `ezbk statements import-file` |
+| what went to fallback | `GET /analytics/import-fallout`    | `ezb_list_import_fallout`       | `ezbk analytics import-fallout`       |
+
+Routes: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_ingest.go`; tools: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/tools/statements.ts` and `writes.ts`.
+
+### 7.2 The arguments that matter for an import
+
+| Argument                  | Meaning                                                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `root`                    | the statements root; defaults to `ezbookkeeping.statements.root` in the credentials file, or `EZBK_STATEMENTS_DIR` |
+| `manifest_path`           | root-relative; **always pass it** when the root holds more than one app's manifest (§11.2)                     |
+| `accounts[]`              | limit to these account keys (`{entity}/{institution}/{last4}`), labels, paths or last-fours                    |
+| `fallback_category_ids`   | `{expense, income}` secondary category ids for rows whose file named no category — **required** for OFX, whose rows never carry one (§3.4); without it the account is `blocked` |
+| `category_map`            | file category name → secondary category id                                                                     |
+| `accept_transfers[]`      | transfer candidates the operator accepted (§8.5)                                                               |
+| `accept_matches[]`        | possible matches with hand-entered rows the operator accepted                                                   |
+| `prefer[]`                | statement paths that win a conflict                                                                            |
+| `max_changes`             | the apply's ceiling (default 200); a first import of a card with years of history passes the plan's `new` count       |
+| `confirm_token`           | from the plan; fingerprints the exact change set; ten minutes                                                   |
+| `reimport_deleted`        | **CLI only** — no MCP schema accepts it (apis.mdx §14.6)                                                        |
+
+### 7.3 The result
+
+The plan returns `plan.totals` (`parsed`, `after_dedupe`, `already_present`, `already_present_deleted`,
+`new`, `to_fallback`, `unmapped`, `conflicts`, `transfer_candidates`, `possible_matches`, `blocked_rows`),
+per account `rows.with_bank_ids` / `rows.with_minted_ids`, `blocked` with `blocked_reasons`, and the
+`confirm_token`. The apply recomputes the plan, refuses with `conflict` if the fingerprint moved, creates
+the new rows in batches through the upstream import service, writes `machine_import_record` and one
+journal entry (so `ezb_undo` reverses the run), and returns the run id and counts.
+Done in `ingEvaluate()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_plan.go` and `ingApply()` in `ingest_apply.go`.
+
+### 7.4 What the plane adds over the browser door
+
+- **Identity**: the bank's id from the file, or a deterministic minted one (§8).
+- **Memory**: `machine_import_record`, so "already imported" survives restarts, months and new files.
+- **Deletions respected**: a row the operator deleted is not brought back (§8.4).
+- **A plan first**: nothing is written without reading counts and a confirm token.
+- **Account and category mapping made explicit**, never guessed; transfers across two mapped accounts
+  reported, never merged automatically.
+- **Comments written only on create** — a note the operator edits survives every re-import.
+
+---
+
+## 8. De-duplication — how "already there" is decided
+
+**Upstream decides nothing.** No converter keeps an id, no table stores one, and the import service
+inserts every row it is given (`Transaction` has no imported-id column —
+`~/BGit/Bryan_git/ezbookkeeping/pkg/models/transaction.go`). On this fork the plane is the authority,
+implemented once.
+
+### 8.1 Layer one — the statement
+
+The same statement scanned or downloaded twice is one statement. Statements of one account are compared
+by what they **contain**: identical bytes → `duplicate_identical`; in their overlapping window one's rows
+are a subset of the other's → the fuller wins, the loser `superseded`, ranked by a fixed chain (more rows,
+wider coverage, better source, newer mtime, first path); overlapping windows that share no row → both
+contribute (a cycle-dated card); each has rows the other lacks → `conflict`, which blocks that
+account-month and names both files until `prefer` picks one.
+Done in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_dedupe.go`.
+
+### 8.2 Layer two — the row's `import_id`
+
+| Source                         | `import_id`                                                                                  |
+| ------------------------------ | -------------------------------------------------------------------------------------------- |
+| OFX/QFX with a pairable FITID  | `{account_key}|FITID:{fitid}` — the bank's id **verbatim**, prefixed by the account key       |
+| CAMT                           | `{account_key}|AcctSvcrRef:{ref}` (else `NtryRef`)                                           |
+| everything else                | minted: `sha256(account_key ‖ date ‖ hundredths ‖ currency ‖ normalised description ‖ ordinal)[:32]` |
+
+`account_key` is `{entity}/{institution}/{last4}` (or the label when there is no last four) — never the
+ezBookkeeping account id, so a deleted-and-recreated account still matches. Ids longer than 255
+characters are hashed. Category, tags and comment are **not** in any id: the operator changes those after
+import.
+Done in `ingAssignIds()`, `ingBankImportId()` and `ingMintId()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_identity.go`.
+
+### 8.3 What this means for the id a file carries
+
+- **Scoped to the account key.** The same FITID in two accounts is two transactions.
+- **Stable**: the same real transaction must produce the same FITID on every run, or every run adds a
+  duplicate.
+- **Unique within the file**: a duplicated FITID disqualifies the whole file's bank ids (it falls back
+  to minted ids, with a warning) — an id that is not unique is not an id.
+- **Unique within the account across files**: two different transactions with one FITID collapse into
+  one ("a bank id that appears in two primary statements collapses to one row").
+
+A minted id's ordinal is the index within its (date, amount, currency, description) tie group **inside the
+merged account-month**, so two genuine $5.00 coffees on one day both import, and a card whose cycle
+feeds one calendar month from two statements does not merge them. It is stable only while the
+description text is — which is why the pipeline supplies FITIDs rather than relying on minting.
+
+### 8.4 The durable record, deletions and undo
+
+`machine_import_record(uid, import_id, transaction_id, account_key, source_file, run_id, created)` —
+**the plan asks this table, and only this table, "does this row already exist?"**
+
+- A row whose transaction the operator **deleted in the browser** is `already_present_deleted` and is
+  **not** re-imported (only `ezbk statements apply --reimport-deleted --yes`, typed by a human).
+- **An undo is not a deletion**: `ezb_undo` of an import run deletes what the run created **and** its
+  record rows, so the next plan counts them `new` again.
+Done in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_record.go` and `ingUndoImport()` in `ingest_apply.go`.
+
+### 8.5 Rows the plane will not decide
+
+- **Possible matches**: a statement row with no id match and an un-recorded transaction in the same
+  account, same amount and currency, within ±3 days (a hand-entered twin) — excluded, listed, linked only
+  with `accept_matches`.
+- **Transfer candidates**: equal-and-opposite amounts on one date in two mapped accounts (a card payment
+  in the checking and the card statement) — both import as ordinary rows unless `accept_transfers`
+  makes them one transfer. Unaccepted, the plan warns that spending may be double-counted.
+
+### 8.6 After the import — own-account moves and value rows become transfers
+
+An import writes one income/expense row per statement row, per account, so two kinds of row inflate
+income and spending in every chart after it:
+
+- **An own-account move** (a card payment from checking, checking → savings, often posted a day or
+  two apart, so the plan's same-day transfer candidates of §8.5 miss it) is an EXPENSE in one account
+  and an INCOME in the other. After the import, `POST /transactions/transfer-candidates`
+  (`ezb_find_transfer_pairs`, `ezbk transactions transfer-candidates`) finds such pairs — same amount
+  and currency, within `window_days`, with a last-four or transfer-word hint — and
+  `POST /transactions/convert-to-transfer` with `{id, counter_id}` turns each pair into ONE transfer.
+- **A value-mode row** (§11.6: the monthly change in a brokerage, retirement or mortgage account's
+  printed value) or a one-sided move whose other side is no ledger in these books is not income or
+  spending at all. `convert-to-transfer` with `{id, counter_account_name}` turns it into a transfer
+  against a named counterpart account — typically a hidden one such as `Market Value` — so it stops
+  counting while the account's balance, and therefore §11.6's "every balance equals the latest printed
+  statement", stays exactly the same. The counterpart's own balance absorbs the moves.
+
+Every conversion deletes the original rows and creates the transfer, so the plane **re-points each
+original's `machine_import_record` row at the transfer's id**. A later re-plan of the same statements
+therefore still finds those statement rows `already_present` — `new` stays at 0, nothing is imported
+twice — and `ezb_undo` of a conversion re-creates the rows and points the records back at them.
+The conversion and the re-pointing in code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_transfers.go` — `xferApplyItem`, `xferRepoint`; the rules in apis.mdx §10.3.2.
+
+---
+
+## 9. Accounts — what the file lands in, and the opening balance
+
+### 9.1 The account model
+
+An account is `name` (≤ 64 characters), `category`, `type` (single, or parent with sub-accounts),
+`currency` (ISO 4217, **immutable** after creation), `balance` (integer hundredths), `hidden`, and card
+extras (statement date, limit). The **category decides asset versus liability**, and so the side of net
+worth and the sign a person sees:
+
+| Category                 | Side      | Our kinds (§11.2)                              |
+| ------------------------ | --------- | ---------------------------------------------- |
+| `cash`                   | asset     | cash                                           |
+| `checking`               | asset     | checking                                       |
+| `savings`                | asset     | savings                                        |
+| `credit_card`            | liability | card                                           |
+| `debt`                   | liability | loan (mortgage)                                |
+| `investment`             | asset     | brokerage (brokerage, retirement, 529, cash management, crypto) |
+| `certificate_of_deposit` | asset     | cd                                             |
+| `virtual`, `receivables` | asset     | —                                              |
+
+**Stored balances carry the ledger sign.** An expense on a card lowers the stored balance; a card that
+owes $1,200 is stored `-1200.00`, and the browser negates a liability for display. So an opening balance
+for a card or a loan is **negative**.
+Defined in `~/BGit/Bryan_git/ezbookkeeping/pkg/models/account.go`; display negation in `getAccountBalance()` in `~/BGit/Bryan_git/ezbookkeeping/src/stores/account.ts`.
+
+A file never selects or creates an account. The browser matches the file's account **name** (for OFX
+that is the `ACCTID` string); the plane ignores it and uses the account the manifest row or the call names.
+
+### 9.2 Provisioning from a manifest
+
+`/ingest/accounts/plan` reads the manifest and the bound user's accounts and decides, per row, `create`,
+`link` (matched on last four or the map), `skip` or `ambiguous` — **ambiguous is never created**. It
+prints the proposed name, the category and side, the currency, and the **opening balance**. The apply
+creates the accounts through upstream's own account-create handler, and writes the statements→books map
+beside the statements (in staging) so later plans have every account id.
+Done in `ingPlanAccounts()` and `ingApplyAccounts()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_accounts.go`.
+
+### 9.3 The opening balance — a Balance Modification, and its two rules
+
+ezBookkeeping has one balance-setting transaction, **Balance Modification** (type 1). Creating an account
+with a non-zero `balance` requires a `balanceTime` (unix seconds) and inserts a Balance Modification at
+that instant in the same database transaction.
+Done in `AccountCreateHandler()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/api/accounts.go` and `CreateAccounts()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/services/accounts.go`.
+
+Two rules follow, and both are absolute:
+
+1. **One per account, first.** A Balance Modification can be added only to an account with **no**
+   transactions at all (`ErrBalanceModificationTransactionCannotAddWhenNotEmpty`). An account created with
+   an opening balance already has its one.
+2. **Nothing before it.** Any transaction dated **at or before** an account's Balance Modification — the
+   same second included — is refused (`ErrCannotAddTransactionBeforeBalanceModificationTransaction`), and
+   because an import is one database transaction, **the whole batch rolls back**.
+
+Its time can never be changed afterwards; its amount can. There is no second use: a Balance Modification
+cannot be a monthly checkpoint or an investment valuation.
+
+**How our pipeline uses it.** The first statement's printed **beginning** balance is the account's
+opening balance. It goes in the manifest as `opening_balance` (signed decimal) and `opening_date` (the
+first statement's period start, or the earliest row's date when a card statement lists purchases dated
+before its period opens). `/ingest/accounts/apply` creates the account with `balance` = that amount and
+`balanceTime` = **11:59:59 UTC on the opening date** — one second before the noon-UTC rows of that day
+(§10.2), so rule 2 holds, and still on the opening date for every timezone from UTC−11 to UTC+11. An
+opening balance is never an imported row: the plane skips Balance Modification rows in files.
+Done in `ingOpeningTime()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_accounts.go`; the manifest columns are read in `ingReadManifest()` in `ingest_manifest.go`.
+
+---
+
+## 10. Money, dates and time
+
+### 10.1 Money
+
+- **Integer hundredths, for every currency** (¥ included — ezBookkeeping has a fixed two-decimal scale).
+  Range ±999,999,999,999,999 hundredths, enforced on single creates only (§13 item 14).
+- In files: a plain signed decimal, at most two places, no thousands separator, no currency symbol, no
+  parentheses. `ParseAmount` refuses `1,234.56`, `(5.00)`, `1.005`, and a trailing space.
+- **Negative is money out**, in every file and every plane body, for every account kind: a card purchase
+  is negative, a card payment positive, a brokerage deposit positive, a mortgage principal reduction
+  positive (the liability shrinks toward zero).
+- Every amount carries its currency; ezBookkeeping converts only with its own latest rates, never
+  historical ones.
+Done in `ParseAmount()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/utils/converter.go`; limits in `pkg/models/transaction.go`.
+
+### 10.2 Dates and the noon rule
+
+A transaction's time is stored as **unix milliseconds** (seconds × 1000; the millisecond part is a
+uniqueness counter) plus a UTC offset in minutes. OFX dates **without a zone are fixed to `+00:00`**, so
+`20260203` is 2026-02-03 00:00 UTC — which a person in the Americas sees as **February 2nd**.
+
+**The rule (LOCKED):** every generated row is dated **noon UTC** of its day (`YYYYMMDD120000` in OFX,
+`12:00:00` + `+00:00` in TSV). Noon UTC shows the same calendar date everywhere from UTC−11 to UTC+11.
+The opening balance is 11:59:59 UTC of its date (§9.3). The plane derives each row's date string in the
+row's own offset, so its ids and plans use the statement's date.
+Done in `parseTransactionTimeAndTimeZone()` in `ofx_transaction_data_table.go`; `ingNormalize()` in `ingest_parse.go`.
+
+### 10.3 The same-second limit
+
+`UNIQUE(uid, transaction_time)` spans **all** of a user's accounts. A colliding insert takes the next
+millisecond; a second holds at most ~998 rows (`ErrTooMuchTransactionInOneSecond`), and a transfer's two
+halves must fit in the same second. With every row at noon, that is ~998 rows per calendar day across
+all accounts — far above any day in our archive, but a pipeline that ever approaches it must spread the
+seconds.
+Done in `doCreateTransaction()` in `pkg/services/transactions.go`.
+
+### 10.4 Volume
+
+A file is at most `[data] max_import_file_size` (10 MB default); an import request at most ~65k rows
+(~32k transfers). The plane batches creates and reports progress, and refuses a file over the size limit
+as a `file_too_large` conflict naming the setting.
+
+---
+
+## 11. What our pipeline generates
+
+The statement archive at `~/BGit/Bryan_git/Bryan_Arindom/bank_statements/` is audit evidence and
+read-only. The pipeline in its `import/_tools/` directory reads statement PDFs and text sidecars,
+reconciles every statement against its own printed balances, and writes import files for **two** apps
+from one parse — Actual Budget (`_actual`, the sister spec) and ezBookkeeping (`_ezbookkeeping`, this
+section). Nothing the pipeline writes ever lands in this repository.
+Done in `~/BGit/Bryan_git/Bryan_Arindom/bank_statements/import/_tools/emit_ezbookkeeping.py` (`emit_personal_ezb()`, `emit_legacy_ezb()`, `build_rows()`, `write_ofx()`, `write_tsv()`), called from `main()` in `build.py` there.
+
+### 11.1 Two formats, one purpose each
+
+| File                     | Purpose                                                                     | Imported?                                 |
+| ------------------------ | --------------------------------------------------------------------------- | ----------------------------------------- |
+| `*_ezbookkeeping.ofx`    | **the import** — carries `FITID`, the plane keys it, re-import is exact     | ✅ through the plane (MCP / `ezbk`) only  |
+| `*_ezbookkeeping.tsv`    | ezBookkeeping's own TSV: for a person, a spreadsheet, or a hand import into **empty** books | ❌ never alongside the OFX |
+
+The TSV carries the opening balance as a `Balance Modification` row dated 11:59:59 UTC, value and bridge
+rows with their categories (§11.7), and the tag `statement-import`, so a person importing it by hand gets
+the same books — without ids.
+
+### 11.2 Layout and the manifest
+
+```
+import/personal/
+  manifest_ezbookkeeping.csv                  one row per PERSONAL account (columns below)
+  {Institution}/
+    {StatementType}_ALL_ezbookkeeping.ofx     every statement, one file — THE file to import
+    {StatementType}_ALL_ezbookkeeping.tsv
+    {YYYY}/{MM}/
+      {StatementType}_ezbookkeeping.ofx       one statement period (re-import or diff one month)
+      {StatementType}_ezbookkeeping.tsv
+      {StatementType}_provenance.txt          shared with the Actual tree: source PDF, text variant, reconciliation
+import/{bank|brokerage}/{Entity}/{Institution}/{Label}/
+  {Label}_ALL_ezbookkeeping.ofx|.tsv, {YYYY}/{MM}/{Entity}_{Institution}_{Label}_{YYYY}_{MM}_ezbookkeeping.ofx|.tsv
+import/accounts_ezbookkeeping.csv             EVERY entity — audit and a future company book; never the default
+```
+
+`Institution` is the bank's directory name (`Northbank`, `Meridian_CU`, …). `StatementType` names the account by kind and
+last four (`Checking_x4021`, `Card_x8812`, `Mortgage_x5190`, `TradIRA_x3310`) or by the institution's own
+name where no number is printed (`Crypto`). `YYYY/MM` is the statement period **read from inside the
+document**. The `_ezbookkeeping` suffix is the target application; the Actual files beside them end
+`_actual`, and each app's files are pruned only by that app's emitter.
+
+**The manifest** (`manifest_ezbookkeeping.csv`, and `accounts_ezbookkeeping.csv` in the same columns):
+
+| Column                  | Read by the plane? | Meaning                                                                                   |
+| ----------------------- | ------------------ | ----------------------------------------------------------------------------------------- |
+| `entity`                | ✅                 | `personal` only in the personal manifest                                                  |
+| `institution`           | ✅                 |                                                                                           |
+| `label`                 | ✅                 | the StatementType; the account key's tail when there is no last four                      |
+| `last4`                 | ✅                 | the account key is `{entity}/{institution}/{last4}`                                       |
+| `kind`                  | ✅                 | `checking` `savings` `card` `brokerage` `loan` `cash` `cd` (§9.1)                          |
+| `currency`              | ✅                 | `USD` — stated, never defaulted, because it is immutable                                  |
+| `name`                  | ✅                 | the account name to create (`Northbank Checking ••4021`); ≤ 64 characters                 |
+| `path`                  | ✅                 | the institution directory, **relative to the statements root**                            |
+| `file`                  | ✅ **new**         | the account's **one** importable file, root-relative. When set, the plane reads exactly that file and never walks `path` — several accounts share one institution directory |
+| `opening_balance`       | ✅ **new**         | signed decimal, the first statement's printed beginning balance (liabilities negative); blank when zero |
+| `opening_date`          | ✅ **new**         | `YYYY-MM-DD` the opening applies from (§9.3)                                              |
+| `type`, `source_kind`, `mode`, `import_group`, `statements`, `transactions`, `first`, `last`, `reconciled`, `recon_na`, `last_printed_balance`, `last_printed_date` | informational | read by the operator and the import script; `transactions` is the OFX's row count, `last_printed_balance` the figure the account must show after import |
+
+The plane also accepts other pipelines' kinds and reads them aloud: `retirement`, `education`,
+`investment`, `cash_management` → `brokerage`; `mortgage`, `debt` → `loan`; `credit_card` → `card`.
+
+**Discovery (LOCKED).** With no `manifest_path`, the plane tries `import/personal/manifest_ezbookkeeping.csv`,
+`import/manifest_ezbookkeeping.csv` and `manifest_ezbookkeeping.csv` **before** any generic name, so a root that also holds Actual's
+every-entity `import/accounts.csv` — which lists business accounts — never has that one picked by default.
+The every-entity `accounts_ezbookkeeping.csv` is deliberately not a candidate. The import script passes
+`manifest_path` explicitly anyway.
+Done in `ingManifestCandidates`, `ingReadManifest()` and `ingScanFileShelf()` in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_manifest.go`.
+
+Only personal accounts are generated under `personal/`. The entity rule — which last-four digits are the
+household's and which a company's — is in `~/BGit/Bryan_git/Bryan_Arindom/CLAUDE.md`; the emitter asserts
+`entity == personal` for every manifest row before writing.
+
+### 11.3 Which OFX message set
+
+| Account kind                                      | Message set           | `ACCTTYPE` | Because                                                     |
+| ------------------------------------------------- | --------------------- | ---------- | ----------------------------------------------------------- |
+| checking                                          | `BANKMSGSRSV1`        | `CHECKING` | the bank path                                               |
+| savings                                           | `BANKMSGSRSV1`        | `SAVINGS`  |                                                             |
+| card                                              | `CREDITCARDMSGSRSV1`  | —          | purchases negative, payments positive (→ transfer-in → `+`) |
+| brokerage, retirement, 529, cash management, loan | `BANKMSGSRSV1`        | `CHECKING` | value rows (§11.6); **not** `INVSTMTMSGSRSV1` (never read), **not** `CREDITLINE` (would turn value rows into transfers) |
+
+### 11.4 The `FITID`
+
+```
+{last4}-{YYYYMMDD}-{amount_in_cents}-{ordinal}-{sha1_8(normalised description)}   statement rows
+{last4}-value-{YYYYMMDD}-{cents}                                                   value rows (§11.6)
+{last4}-gap-{YYYYMMDD}-{cents}                                                     missing-statement bridges
+```
+
+`ordinal` is the row's index within **its statement**; the id depends only on the row's content and
+position — never on the file name, the parse order or the run date — so a re-run produces identical ids
+and a re-import plans `new 0`. These are **the same ids the Actual files carry**: one real transaction has
+one id in both apps. The `_ALL` roll-up keeps one row per id, so the id is unique within the file (§8.3).
+`{last4}` is the label when there is no number (`Crypto-value-…`).
+
+### 11.5 Per-row field rules
+
+| OFX tag    | Written as                                                                                        |
+| ---------- | ------------------------------------------------------------------------------------------------- |
+| `TRNTYPE`  | `DEBIT` when money left, `DEP` when it arrived — from the sign only (§3.5)                        |
+| `DTPOSTED` | `YYYYMMDD120000` — noon, no zone = UTC (§10.2)                                                    |
+| `TRNAMT`   | signed decimal, two places, no separators                                                         |
+| `FITID`    | §11.4                                                                                             |
+| `NAME`     | the cleaned description, `&`/`<`/`>` escaped (ezBookkeeping discards it when MEMO is present)     |
+| `MEMO`     | the description as printed — this is what becomes the transaction's comment — escaped, ≤ 255      |
+
+The statement block carries `CURDEF USD`, `ACCTID` = the last four, `DTSTART`/`DTEND` = the period,
+`DTSERVER` = the period end (so an unchanged statement rewrites byte-identical), and `LEDGERBAL` = the
+printed closing balance, which ezBookkeeping ignores and a person or another tool can reconcile against.
+
+### 11.6 Row modes, by account kind
+
+| Mode    | Kinds                                                             | Rows                                                                                                                                  |
+| ------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `cash`  | checking, savings, card                                           | the statements' transaction rows, plus one **bridge** row per missing-statement gap; the opening balance is the account's, not a row |
+| `value` | brokerage, retirement, 529, cash management, mortgage             | **one row per statement**: the change in the printed account value (closing minus the previous statement's closing), dated the period end; the first statement's opening value is the account's opening balance |
+
+Every figure in both modes is one a statement printed. **Value mode** exists because ezBookkeeping has no
+holdings, prices or market-value model, and summing a brokerage statement's cash legs does not reproduce
+its balance (market movement is not a transaction). A statement whose value did not change emits no
+row; an account that never changed (a dormant account) has an empty
+`BANKTRANLIST`, which the plane accepts as an empty statement (§13 item 20).
+
+**Missing statements (cash mode).** When a statement's printed opening balance is not the previous
+statement's printed closing, the months between are not on file. One row, "Net change during missing
+statements", carries the difference of those two printed figures, dated the later statement's period
+start, memo naming the gap. No transaction is invented, and when the missing statements are found and
+imported, that row is deleted by hand (its id ends `-gap-…`).
+
+**After import every balance equals the latest printed statement**, to the cent: opening + every row =
+the last `LEDGERBAL`. The import script checks it for every account (§12.3).
+
+### 11.7 Categories and fallbacks
+
+OFX rows never carry a category (§3.4), and ezBookkeeping requires one on every Income and Expense row
+(§2.4). So the import names **fallback categories per row mode**, and the operator re-categorises later
+with `ezb_list_import_fallout` → `ezb_set_transaction_category`:
+
+| Mode    | Fallback (expense and income sides)       | Why                                                                          |
+| ------- | ------------------------------------------ | ---------------------------------------------------------------------------- |
+| `cash`  | `Imported` / `Uncategorized`              | real spending and income, waiting for the operator's categories             |
+| `value` | `Adjustments` / `Statement Value Change`  | market movement and principal changes — kept out of spending by category, so a report can exclude it |
+
+The import script creates the four secondary categories (two per type) if absent, and plans cash and
+value accounts in separate calls with their own `fallback_category_ids`. The TSV companion carries the
+same names in `Category` / `Sub Category`, and bridge rows as `Adjustments` / `Missing Statements`.
+The plane never picks a category; these are the operator's, named in the prompt.
+
+### 11.8 What is never written
+
+- A plug or balancing row. A statement that does not reconcile is still emitted, flagged `UNRECONCILED`
+  in its provenance file with the exact delta, and listed in `problems.txt`.
+- A guessed date, amount, pairing, category or currency.
+- An opening balance as a transaction row in the OFX.
+- A business account under `personal/`.
+- A bare `&` or `<` inside an OFX value; a BOM; a comma-split native CSV.
+- Anything into the statement archive itself, or into this repository.
+
+### 11.9 The import, end to end
+
+Scripted in `~/BGit/Bryan_git/Bryan_Arindom/bank_statements/import/_tools/import_via_mcp_ezbookkeeping.mjs`,
+which speaks JSON-RPC to the **same** `ezbookkeeping` MCP server Claude Code loads (spawned with
+`EZBKMCP_ALLOW_WRITE=1`; the server must also run with `EZBK_MACHINE_ALLOW_WRITE=1`):
+
+1. `ezb_plan_accounts` (manifest_path, the group's account keys) → stop on any `ambiguous` →
+   `ezb_apply_accounts` with the token. Accounts are created with their opening balances.
+2. The four fallback categories: `ezb_list_categories`, and `ezb_add_category` (preview, then apply) for
+   any missing.
+3. Per account: `ezb_plan_statement_import` with `accounts: [key]` and the mode's fallback → stop on any
+   conflict or block → `ezb_apply_statement_import` with the token and `max_changes` = the plan's `new`.
+4. Re-plan: **`new` must be 0**, or the ids are not stable — a pipeline bug.
+5. `ezb_list_accounts`: the account's balance must equal the manifest's `last_printed_balance`.
+
+---
+
+## 12. Validation before a file is called done
+
+A generated file is validated by **ezBookkeeping's own converter, through the plane**, not by a
+hand-rolled check.
+
+### 12.1 The dry run (read tier, changes nothing)
+
+`ezbk statements plan --manifest-path import/personal/manifest_ezbookkeeping.csv` (or
+`ezb_plan_statement_import`) parses every `_ALL` OFX with the real converter. Pass means, per account:
+no `conflicts`, `rows.parsed` = the manifest's `transactions`, `rows.with_bank_ids` = `rows.parsed`
+(every FITID paired one-to-one), `with_minted_ids` 0, and — before any import — `already_present` 0.
+
+### 12.2 The rehearsal (before the first import into real books)
+
+Start a **throwaway** server on another port with its own temporary database and a scratch user
+(`EBK_DATABASE_DB_PATH`, `EBK_SERVER_HTTP_PORT`, `userdata user-add`), point the import script at it with
+`EZBKMCP_API_URL`, and run the whole import. Pass means every account imports, every re-plan is `new 0`,
+every balance matches, and a second full run adds nothing. Delete the throwaway database afterwards: it
+held real data, outside every repository.
+
+### 12.3 After the real import
+
+The script prints `ALL IMPORTED ACCOUNTS MATCH` only when, for every account, the re-plan is `new 0` and
+`ezb_list_accounts` shows exactly the last printed statement balance. A row that fails any of this is a
+pipeline bug, not a warning.
+
+---
+
+## 13. Known defects in the upstream importer
+
+Recorded so nobody rediscovers them. Each names its location and the failure it causes; fixed ones say
+so. Candidates for upstream PRs are marked ↑.
+
+1. **OFX `CREDIT` maps to Expense** and then, through the `TRNTYPE == CREDIT` override, a positive
+   `CREDIT` in a checking account becomes a **transfer from a blank account**, never Income.
+   `ofx_data.go` `ofxTransactionTypeMapping`, `ofx_transaction_data_table.go` `parseTransaction()`. ↑
+   Our files never write `CREDIT` (§3.5).
+2. **OFX `DEBIT` with a positive amount becomes a negative Expense**, which raises the balance while
+   reporting spending. Same place. ↑
+3. **OFX `DIV`/`DEP`/`DIRECTDEP` with a negative amount become a negative Income.** Same place. ↑
+4. **OFX `INT`/`OTHER` in a card or `CREDITLINE` account become a transfer from ""**. Same place. ↑
+5. **Several `STMTTRNRS`/`CCSTMTTRNRS` in one OFX**: SGML keeps only the last account; XML merges every
+   row under the last `ACCTID`. `ofx_data.go` (single pointers), `sgml_decoder.go` (`field.Set`). ↑
+6. **The SGML decoder looped forever on any tokenizer error** — one bare `&` in `<NAME>AT&T` pinned a
+   server goroutine at 100% CPU and the request never returned. **Fixed on this fork 2026-09-21**:
+   `Decode()`/`unmarshal()` now stop on any non-EOF error with `ErrInvalidSGMLFile`, regression test
+   `TestSGMLDecoderDecode_BareAmpersandReturnsErrorInsteadOfLooping` in
+   `~/BGit/Bryan_git/ezbookkeeping/pkg/converters/sgml/sgml_decoder_test.go`. ↑ (its own small PR)
+7. **The OFX `CURRENCY` aggregate** is modelled as a string, so a spec-compliant row currency fails with
+   `ErrAccountCurrencyInvalid`. `ofx_data.go`. ↑
+8. **OFX dates without a zone are fixed to UTC** rather than the client timezone, so date-only rows show
+   on the previous day in the Americas. `ofxDefaultTimezoneOffset`. Our noon rule sidesteps it (§10.2).
+9. **An OFX with a BOM or leading whitespace is refused; a headerless SGML body goes to the XML parser.**
+   `createNewOFXFileReader()`. ↑
+10. **Index bug in `createNewOFXFileReader()`**: six or more newlines followed by one or two bytes panic
+    (slice out of range; recovered as a 500). ↑
+11. **FITID is parsed and discarded; no importer de-duplicates.** Re-importing any statement through the
+    browser doubles it. The plane's record is this fork's answer (§8).
+12. **Native CSV is not CSV**: no quoting, a trailing `\r` kept on CRLF rows, a BOM breaks the header.
+    `createNewDefaultPlainTextDataTable()`. ↑ Our companion is TSV (§4.1).
+13. **Native: an empty `Account2 Amount` cell is 0**, and a same-currency transfer then fails instead of
+    defaulting to `Amount`. ↑
+14. **Import items are not validated** (`TransactionImportRequest.Transactions` has no `dive`): amount
+    range, 255-character comment, offset range and time ≥ 1 are unchecked on the import door. ↑ The plane
+    clips comments to 255 itself (`ingClipComment()` in `ingest_plan.go`).
+15. **Category resolution is nondeterministic** when a sub-category name exists under several parents and
+    the file gives no parent (Go map iteration). `getTransactionCategory()`. ↑
+16. **MT940 with several messages** attributes every row to the last account and currency. ↑
+17. **MT940 value-date guard** uses `&&` where `||` is meant; a 1–5 character value date panics. ↑
+18. **Custom-format month names** (`MMM`, `MMMM`) are corrupted by a later `a → pm` replacement, so they
+    never parse. `getDateTimeFormat()`. ↑
+19. **An import error does not say which row failed**, and the whole batch rolls back. The plane plans
+    first precisely so this is rare. `BatchCreateTransactions()`.
+20. **An OFX with no transactions is an error** (`ErrNotFoundTransactionDataInFile`), so a statement with no
+    activity used to count as an `unreadable_file` conflict in the plane. **Fixed in the plane
+    2026-09-21**: it is an empty statement with a warning (`ingIsEmptyFile()` in `ingest_plan.go`, used
+    by `ingPreparedInputs()` and `ingPlanFile…` in `ingest_file.go`; test `TestIngEmptyOfxIsNotAConflict`).
+
+---
+
+## 14. Acceptance criteria
+
+- [ ] Every `*_ezbookkeeping.ofx` under `import/personal/` parses with ezBookkeeping's own converter
+      through `/ingest/plan`, and every row pairs with its `FITID` (`with_bank_ids` = `parsed`).
+- [ ] No two rows in one `_ALL` file share a `FITID`; re-running the pipeline produces byte-identical
+      files (`SKIPPED-UNCHANGED`).
+- [ ] Importing the personal tree into empty books through the MCP yields `new N` then `new 0` on every
+      re-plan, and a second full run imports nothing.
+- [ ] After import, every account's balance equals its latest printed statement to the cent.
+- [ ] No account is created `ambiguous`; every card and the mortgage are liabilities with negative
+      balances; every currency is stated.
+- [ ] A comment edited on an imported row survives a re-import byte for byte.
+- [ ] A transaction deleted in the browser is not re-imported (`already_present_deleted`).
+- [ ] No file under `import/personal/` contains a business account's last four digits.
+- [ ] The sum of every month's rows equals that statement's printed closing minus opening, or the month
+      is listed in `problems.txt` with its delta.
+- [ ] The `_ezbookkeeping.tsv` companion imports by hand into empty books with no column changed.
+
+---
+
+## 15. Related specs
+
+- `apis.mdx` — the machine plane: §9 write protocol, §14 ingest (§14.2 the manifest, including `file`,
+  `opening_balance`, `opening_date`), §15 provisioning (§15.4 the opening balance).
+- `mcp.mdx` — the `ezb_*` tools over those routes; §11 is the statements family.
+- `cli.mdx` — `ezbk statements …`, the operator's view of the same pipeline (§10).
+- `error_err.mdx` — where every fault from the importer and the plane is written.
+- `~/BGit/Bryan_git/actual_budget_bryan/pm/import_formats.mdx` — the sister app's contract; same pipeline,
+  same FITIDs.
+- `~/BGit/Bryan_git/Bryan_Arindom/finances/prompts/p_ezbookkeeping_get_statements.md` and
+  `p_ezbookkeeping_statements_to_import_csvs.md` — the prompts that run the pipeline against the real
+  archive and import it.

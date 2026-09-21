@@ -14,6 +14,8 @@ export type Config = Readonly<{
   apiUrl: string;
   target: Target;
   allowWrite: boolean;
+  /** EZBKMCP_ALLOW_ADMIN=1 on top of the write switch: the one admin-tier tool, ezb_delete_transactions (§9.5b). */
+  allowAdmin: boolean;
   allowRemote: boolean;
   maxChanges: number;
   maxRows: number;
@@ -111,6 +113,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   // A remote install is READ-ONLY from here, full stop — even with both write switches on.
   const allowWrite = env.EZBKMCP_ALLOW_WRITE === '1' && target === 'local';
+  const allowAdmin = allowWrite && env.EZBKMCP_ALLOW_ADMIN === '1';
 
   const home = os.homedir();
 
@@ -118,6 +121,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     apiUrl: url.origin,
     target,
     allowWrite,
+    allowAdmin,
     allowRemote,
     maxChanges: positiveInt(env.EZBKMCP_MAX_CHANGES, 200, 'EZBKMCP_MAX_CHANGES'),
     maxRows: positiveInt(env.EZBKMCP_MAX_ROWS, 1000, 'EZBKMCP_MAX_ROWS'),

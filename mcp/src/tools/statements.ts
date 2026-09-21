@@ -238,7 +238,7 @@ export const planAccounts: ToolDef = {
   route: { method: 'POST', path: '/ingest/accounts/plan' },
   tier: 'read',
   description: describe({
-    what: "Plans the accounts a statement archive needs, one decision per manifest row — create, link, skip or ambiguous — with the proposed name, the ezBookkeeping category and its asset-or-liability side, and the currency, and returns the confirm_token for ezb_apply_accounts; it creates nothing. Before applying: show every ambiguous row by name and stop; read out every liability (cards, loans) and every currency, because a card created as checking inverts its balance and a currency cannot be changed later; never propose names of your own.",
+    what: "Plans the accounts a statement archive needs, one decision per manifest row — create, link, skip or ambiguous — with the proposed name, the ezBookkeeping category and its asset-or-liability side, and the currency, and returns the confirm_token for ezb_apply_accounts; it creates nothing. Before applying: show every ambiguous row by name and stop; read out every liability (cards, loans), every currency and every opening balance with its date, because a card created as checking inverts its balance, a currency cannot be changed later, and an opening balance becomes the account's one balance-modification row (money owed opens negative); never propose names of your own.",
     tier: 'read',
     insteadOf: 'Then ezb_apply_accounts with the token. For the current map use ezb_describe_statement_map.',
   }),

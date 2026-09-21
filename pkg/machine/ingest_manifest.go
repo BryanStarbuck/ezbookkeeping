@@ -24,7 +24,12 @@ import (
 // are reported, never guessed.
 
 // ingManifestCandidates are tried, in order, when no manifest_path is given
+//
+// A manifest written for THIS app (…_ezbookkeeping.csv, pm/import_formats.mdx §11.2) is looked for
+// first, so a statements root that also holds another app's manifest — which may list accounts
+// this app must never import — never has the foreign one picked by default.
 var ingManifestCandidates = []string{
+	"import/personal/manifest_ezbookkeeping.csv", "import/manifest_ezbookkeeping.csv", "manifest_ezbookkeeping.csv",
 	"import/accounts.csv", "import/accounts.json",
 	"accounts.csv", "accounts.json",
 	"manifest.csv", "manifest.json",
@@ -37,12 +42,24 @@ var ingManifestKnown = map[string]bool{
 	"entity": true, "institution": true, "label": true, "last4": true, "kind": true, "currency": true, "path": true,
 	"transactions": true, "statements": true, "first": true, "last": true, "reconciled": true, "recon_na": true,
 	"qif_date_order": true, "file_type": true, "converter": true, "name": true, "skip": true, "notes": true, "note": true,
+	"file": true, "opening_balance": true, "opening_date": true,
+	// informational columns a statement pipeline writes (pm/import_formats.mdx §11.2); read by the
+	// operator and the import script, never by the plane
+	"type": true, "source_kind": true, "mode": true, "import_group": true, "last_printed_balance": true, "last_printed_date": true,
 }
 
 // ingManifestAliases are exact alternative spellings accepted for a column (echoed when used)
 var ingManifestAliases = map[string]string{
 	"bank": "institution", "account": "label", "account_label": "label", "last_4": "last4", "last_four": "last4",
 	"type": "kind", "account_kind": "kind", "dir": "path", "directory": "path", "ccy": "currency",
+	"import_file": "file", "combined_file": "file",
+}
+
+// ingKindAliases are account kinds other statement pipelines write, read as one of ingKinds and
+// echoed as a row warning so the reading is visible (pm/import_formats.mdx §9)
+var ingKindAliases = map[string]string{
+	"retirement": "brokerage", "education": "brokerage", "investment": "brokerage", "cash_management": "brokerage",
+	"mortgage": "loan", "debt": "loan", "credit_card": "card", "creditcard": "card",
 }
 
 // ingKinds are the manifest kinds (§14.2) plus cd (§15.3)
@@ -69,6 +86,14 @@ type ingManifestRow struct {
 	FileType          string `json:"file_type,omitempty"`
 	Name              string `json:"name,omitempty"`
 	Skip              bool   `json:"skip,omitempty"`
+	// File names the account's one importable file, relative to the root. When set, the account's
+	// shelf is exactly that file and path is not walked (several accounts may share one directory).
+	File string `json:"file,omitempty"`
+	// OpeningBalance is the balance before the first imported row, in signed hundredths (a liability
+	// is negative), set on the account when /ingest/accounts/apply creates it; OpeningDate is the
+	// first day the imported rows cover (YYYY-MM-DD). Both or neither.
+	OpeningBalance *int64 `json:"opening_balance,omitempty"`
+	OpeningDate    string `json:"opening_date,omitempty"`
 
 	Warnings []string `json:"warnings"`
 }
@@ -219,6 +244,29 @@ func ingReadManifest(root *ingRoot, real, defaultCurrency string) (*ingManifest,
 		}
 
 		row.Name = strings.TrimSpace(rec["name"])
+		row.File = strings.Trim(strings.TrimSpace(filepath.ToSlash(rec["file"])), "/")
+
+		if canon, ok := ingKindAliases[row.Kind]; ok {
+			row.Warnings = append(row.Warnings, "kind "+strconv.Quote(row.Kind)+" read as "+canon)
+			row.Kind = canon
+		}
+
+		if ob, od := strings.TrimSpace(rec["opening_balance"]), strings.TrimSpace(rec["opening_date"]); ob != "" || od != "" {
+			amt, ok := ingDecimalHundredths(strings.ReplaceAll(ob, ",", ""))
+			_, derr := time.Parse("2006-01-02", od)
+
+			switch {
+			case ob == "" || od == "":
+				row.Warnings = append(row.Warnings, "opening_balance and opening_date go together; both ignored")
+			case !ok:
+				row.Warnings = append(row.Warnings, "opening_balance "+strconv.Quote(ob)+" is not a plain decimal; ignored")
+			case derr != nil:
+				errfile.Expected("parsing the manifest opening_date", derr)
+				row.Warnings = append(row.Warnings, "opening_date "+strconv.Quote(od)+" is not YYYY-MM-DD; ignored")
+			default:
+				row.OpeningBalance, row.OpeningDate = &amt, od
+			}
+		}
 
 		switch strings.ToLower(strings.TrimSpace(rec["skip"])) {
 		case "1", "true", "yes", "y", "x":
@@ -619,6 +667,10 @@ type ingAccountShelf struct {
 func ingScanAccountShelf(root *ingRoot, row *ingManifestRow, qifOrder string) (*ingAccountShelf, error) {
 	shelf := &ingAccountShelf{DirRel: row.Path, Formats: []string{}}
 
+	if row.File != "" {
+		return ingScanFileShelf(root, row, qifOrder, shelf)
+	}
+
 	if row.Path == "" {
 		return shelf, nil
 	}
@@ -786,4 +838,55 @@ func ingFormatOfFileType(ft string) string {
 	}
 
 	return ft
+}
+
+// ingScanFileShelf is the shelf of a manifest row that names its one file: exactly that file,
+// classified like any other; path is not walked
+func ingScanFileShelf(root *ingRoot, row *ingManifestRow, qifOrder string, shelf *ingAccountShelf) (*ingAccountShelf, error) {
+	real, err := root.Resolve(row.File)
+
+	if err != nil {
+		return nil, err
+	}
+
+	shelf.DirRel = row.File
+	info, serr := os.Stat(real)
+
+	if serr != nil || info.IsDir() {
+		errfile.Expected("checking the manifest row's file", serr)
+		return shelf, nil
+	}
+
+	shelf.Exists = true
+
+	if row.QifDateOrder != "" {
+		qifOrder = row.QifDateOrder
+	}
+
+	format, fileType, needs := ingClassifyImportable(real, qifOrder)
+
+	if format == "" {
+		return shelf, nil
+	}
+
+	if row.FileType != "" && needs == "" && ingFormatOfFileType(row.FileType) == format {
+		fileType = row.FileType
+	} else if row.FileType != "" && strings.HasPrefix(row.FileType, "qif_") && format == "qif" {
+		fileType, needs = row.FileType, ""
+	}
+
+	sf := &ingSourceFile{Rel: root.Rel(real), Real: real, Ext: strings.ToLower(filepath.Ext(real)), Size: info.Size(), ModTime: info.ModTime(), FileType: fileType, Needs: needs, Format: format,
+		Combined: ingCombinedName.MatchString(strings.TrimSuffix(filepath.Base(real), filepath.Ext(real)))}
+	shelf.All = []*ingSourceFile{sf}
+	shelf.Chosen = []*ingSourceFile{sf}
+	shelf.Formats = []string{format}
+	shelf.Format, shelf.FileType, shelf.Needs = format, fileType, needs
+
+	if sf.Combined {
+		shelf.Combined = filepath.Base(sf.Rel)
+	} else {
+		shelf.Monthly = 1
+	}
+
+	return shelf, nil
 }

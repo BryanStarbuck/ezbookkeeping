@@ -233,6 +233,32 @@ func (lk *txnLookup) categoryPath(id int64) string {
 	return c.Name
 }
 
+// categoryFullPath is "Type > Parent > Child" — the three levels an operator thinks in: the major
+// category (income, expense or transfer), the group (primary category) and the sub-category
+func (lk *txnLookup) categoryFullPath(id int64) string {
+	c := lk.catMap[id]
+
+	if c == nil {
+		return ""
+	}
+
+	return txnCategoryTypeLabel(c.Type) + " > " + lk.categoryPath(id)
+}
+
+// txnCategoryTypeLabel is the capitalised type name used as the first segment of a full path
+func txnCategoryTypeLabel(t models.TransactionCategoryType) string {
+	switch t {
+	case models.CATEGORY_TYPE_INCOME:
+		return "Income"
+	case models.CATEGORY_TYPE_EXPENSE:
+		return "Expense"
+	case models.CATEGORY_TYPE_TRANSFER:
+		return "Transfer"
+	}
+
+	return "Unknown"
+}
+
 func (lk *txnLookup) tagNames(ids []string) []string {
 	out := make([]string, 0, len(ids))
 
@@ -268,6 +294,8 @@ type txnNamed struct {
 	Name string
 	// Alt is an alternative full name (e.g. "Parent > Child") matched like Name
 	Alt string
+	// Full is a further, fully-qualified name (e.g. "Expense > Parent > Child") matched like Name
+	Full string
 }
 
 // txnResolveName resolves a name exact-match-first, then case-insensitively; ambiguity is an error
@@ -293,11 +321,13 @@ func txnResolveName(kind, argName, name string, candidates []txnNamed, listHint 
 		return out
 	}
 
-	exact := pick(func(c txnNamed) bool { return c.Name == name || (c.Alt != "" && c.Alt == name) })
+	exact := pick(func(c txnNamed) bool {
+		return c.Name == name || (c.Alt != "" && c.Alt == name) || (c.Full != "" && c.Full == name)
+	})
 
 	if len(exact) == 0 {
 		exact = pick(func(c txnNamed) bool {
-			return strings.EqualFold(c.Name, name) || (c.Alt != "" && strings.EqualFold(c.Alt, name))
+			return strings.EqualFold(c.Name, name) || (c.Alt != "" && strings.EqualFold(c.Alt, name)) || (c.Full != "" && strings.EqualFold(c.Full, name))
 		})
 	}
 
@@ -313,7 +343,9 @@ func txnResolveName(kind, argName, name string, candidates []txnNamed, listHint 
 	for _, c := range exact {
 		label := c.Name
 
-		if c.Alt != "" {
+		if c.Full != "" {
+			label = c.Full
+		} else if c.Alt != "" {
 			label = c.Alt
 		}
 
@@ -357,7 +389,7 @@ func (lk *txnLookup) categoryCandidates(subOnly bool, ctype models.TransactionCa
 			continue
 		}
 
-		out = append(out, txnNamed{Id: c.CategoryId, Name: c.Name, Alt: lk.categoryPath(c.CategoryId)})
+		out = append(out, txnNamed{Id: c.CategoryId, Name: c.Name, Alt: lk.categoryPath(c.CategoryId), Full: lk.categoryFullPath(c.CategoryId)})
 	}
 
 	return out
@@ -2111,6 +2143,75 @@ func txnBulkFinish(mc *Ctx, st *txnBulkState, summary string) (any, error) {
 	return map[string]any{"updated": len(st.Changed), "ids": txnInt64Strings(st.Changed)}, nil
 }
 
+// txnApplyBulkStates writes a bulk plan's after-states. Rows whose only change is the category go
+// through upstream's batch category update, one call per target category; every other row (a type
+// change, a new counter account) goes through TransactionModifyHandler one by one. A failure part
+// way journals what was already written, so undo can still reverse it.
+func txnApplyBulkStates(mc *Ctx, st *txnBulkState) error {
+	byCat := map[string][]int64{}
+	var catOrder []string
+	var modify []int64
+
+	for _, id := range st.Changed {
+		before, after := st.Before[id], st.After[id]
+		onlyCat := before
+		onlyCat.CategoryId = after.CategoryId
+
+		if !txnStatesEqual(onlyCat, after) {
+			modify = append(modify, id)
+			continue
+		}
+
+		if _, ok := byCat[after.CategoryId]; !ok {
+			catOrder = append(catOrder, after.CategoryId)
+		}
+
+		byCat[after.CategoryId] = append(byCat[after.CategoryId], id)
+	}
+
+	var done []int64
+
+	fail := func(err error) error {
+		if len(done) > 0 {
+			partial := &txnBulkState{Before: st.Before, After: st.After, Changed: done}
+
+			if _, jerr := txnBulkFinish(mc, partial, fmt.Sprintf("partial re-categorisation of %d transactions (the rest failed)", len(done))); jerr != nil {
+				errfile.Caught("journaling a partially applied bulk re-categorisation", jerr)
+			}
+		}
+
+		return err
+	}
+
+	for _, catId := range catOrder {
+		ids := byCat[catId]
+
+		for start := 0; start < len(ids); start += 500 {
+			end := start + 500
+
+			if end > len(ids) {
+				end = len(ids)
+			}
+
+			if _, err := mc.CallUpstream(api.Transactions.TransactionBatchUpdateCategoriesHandler, "POST", nil, map[string]any{"transactionIds": txnInt64Strings(ids[start:end]), "categoryId": catId}); err != nil {
+				return fail(err)
+			}
+
+			done = append(done, ids[start:end]...)
+		}
+	}
+
+	for _, id := range modify {
+		if _, err := mc.CallUpstream(api.Transactions.TransactionModifyHandler, "POST", nil, txnModifyBody(st.After[id])); err != nil {
+			return fail(err)
+		}
+
+		done = append(done, id)
+	}
+
+	return nil
+}
+
 // txnBulkBody is the body shape every bulk write shares
 type txnBulkBody struct {
 	WriteOpts
@@ -2123,6 +2224,9 @@ func txnHandleSetCategory(mc *Ctx) (any, error) {
 		txnBulkBody
 		CategoryId   string `json:"category_id,omitempty"`
 		CategoryName string `json:"category_name,omitempty"`
+		// AllowTypeChange lets an income row become an expense (or back) when the category is of the
+		// other type — the major category changes with the category; transfers need /categorize
+		AllowTypeChange bool `json:"allow_type_change,omitempty"`
 	}
 
 	if err := mc.BindBody(&body); err != nil {
@@ -2180,24 +2284,53 @@ func txnHandleSetCategory(mc *Ctx) (any, error) {
 		}[cat.Type]
 
 		var mismatched []map[string]any
+		flippable := func(t models.TransactionType) bool {
+			return t == models.TRANSACTION_TYPE_INCOME || t == models.TRANSACTION_TYPE_EXPENSE
+		}
 
 		for _, id := range sel.Ids {
-			if s := sel.States[id]; models.TransactionType(s.Type) != wantType {
-				mismatched = append(mismatched, map[string]any{"id": s.Id, "typeName": txnTypeName(int64(s.Type))})
+			s := sel.States[id]
+			have := models.TransactionType(s.Type)
+
+			if have == wantType || (body.AllowTypeChange && flippable(have) && flippable(wantType)) {
+				continue
 			}
+
+			mismatched = append(mismatched, map[string]any{"id": s.Id, "typeName": txnTypeName(int64(s.Type))})
 		}
 
 		if len(mismatched) > 0 {
-			return nil, Invalid("category \""+lk.categoryPath(cat.CategoryId)+"\" is a "+txnCategoryTypeName(cat.Type)+" category; add \"type\": \""+txnTypeName(int64(wantType))+"\" to the filter, or drop the other rows", "%d selected transactions are not %s transactions", len(mismatched), txnTypeName(int64(wantType))).WithDetails(map[string]any{"mismatched": mismatched})
+			hint := "category \"" + lk.categoryFullPath(cat.CategoryId) + "\" is in the " + txnCategoryTypeName(cat.Type) + " major category; add \"type\": \"" + txnTypeName(int64(wantType)) + "\" to the filter, or drop the other rows"
+
+			if flippable(wantType) {
+				hint += ", or pass allow_type_change: true to turn income into expense (or back)"
+			} else {
+				hint += "; to turn a row into a transfer use POST /machine/v1/transactions/categorize with allow_type_change and counter_account"
+			}
+
+			return nil, Invalid(hint, "%d selected transactions are not %s transactions", len(mismatched), txnTypeName(int64(wantType))).WithDetails(map[string]any{"mismatched": mismatched})
 		}
 
 		newCat := idString(cat.CategoryId)
+		typeChanges := 0
 
-		return txnBulkPlan(mc, lk, sel, func(s txnState) (txnState, error) {
+		plan, err := txnBulkPlan(mc, lk, sel, func(s txnState) (txnState, error) {
+			if models.TransactionType(s.Type) != wantType {
+				s.Type = int(wantType)
+				typeChanges++
+			}
+
 			s.CategoryId = newCat
 			s.TagIds = append([]string{}, s.TagIds...)
 			return s, nil
-		}, map[string]any{"categoryId": newCat, "categoryName": lk.categoryPath(cat.CategoryId)})
+		}, map[string]any{"categoryId": newCat, "categoryName": lk.categoryPath(cat.CategoryId), "categoryPath": lk.categoryFullPath(cat.CategoryId)})
+
+		if err == nil && typeChanges > 0 {
+			plan.Changes["type_change"] = typeChanges
+			plan.Warnings = append(plan.Warnings, fmt.Sprintf("%d rows change their type to %s: the amount stays, the direction of the money flips", typeChanges, txnTypeName(int64(wantType))))
+		}
+
+		return plan, err
 	}
 
 	apply := func(p *Plan) (any, error) {
@@ -2207,9 +2340,7 @@ func txnHandleSetCategory(mc *Ctx) (any, error) {
 			return map[string]any{"updated": 0, "ids": []string{}}, nil
 		}
 
-		catId := st.After[st.Changed[0]].CategoryId
-
-		if _, err := mc.CallUpstream(api.Transactions.TransactionBatchUpdateCategoriesHandler, "POST", nil, map[string]any{"transactionIds": txnInt64Strings(st.Changed), "categoryId": catId}); err != nil {
+		if err := txnApplyBulkStates(mc, st); err != nil {
 			return nil, err
 		}
 

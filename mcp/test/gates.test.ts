@@ -22,7 +22,7 @@ describe('gate 4 — mode', () => {
     const { host, config } = makeHost();
     expect(config.allowWrite).toBe(false);
     const listed = host.handleListTools().tools;
-    expect(listed.length).toBe(65);
+    expect(listed.length).toBe(72);
     for (const tool of WRITE_TOOLS) {
       const entry = listed.find(t => t.name === tool.name);
       expect(entry?.description).toContain('CURRENTLY DISABLED');
@@ -46,8 +46,8 @@ describe('gate 4 — mode', () => {
     expect(plane.calls.length).toBe(0);
   });
 
-  it('lists the write tools plainly with the switch on', () => {
-    const { host } = makeHost({ env: { EZBKMCP_ALLOW_WRITE: '1' } });
+  it('lists the write tools plainly with the switch on (the admin tool with the admin switch too)', () => {
+    const { host } = makeHost({ env: { EZBKMCP_ALLOW_WRITE: '1', EZBKMCP_ALLOW_ADMIN: '1' } });
     for (const t of host.handleListTools().tools) {
       expect(t.description).not.toContain('CURRENTLY DISABLED');
     }
@@ -71,7 +71,7 @@ describe('the confirm protocol (§9.7, AC 9, 21)', () => {
   });
 
   it('mints confirm_required for dry_run: false without a token, naming the preview, before any request', async () => {
-    const { host, plane } = makeHost({ env: { EZBKMCP_ALLOW_WRITE: '1' } });
+    const { host, plane } = makeHost({ env: { EZBKMCP_ALLOW_WRITE: '1', EZBKMCP_ALLOW_ADMIN: '1' } });
     for (const tool of WRITE_TOOLS.filter(t => t.hasDryRun === true)) {
       const args = minimalArgs(tool.name);
       const { ok, envelope } = await callTool(host, tool.name, { ...args, dry_run: false });
@@ -149,7 +149,7 @@ describe('gate 5 — input', () => {
   });
 
   it('refuses unknown keys on every tool', async () => {
-    const { host, plane } = makeHost({ env: { EZBKMCP_ALLOW_WRITE: '1' } });
+    const { host, plane } = makeHost({ env: { EZBKMCP_ALLOW_WRITE: '1', EZBKMCP_ALLOW_ADMIN: '1' } });
     for (const tool of TOOLS) {
       const { envelope } = await callTool(host, tool.name, { ...minimalArgs(tool.name), start_date: '2026-01-01' });
       expect(errorOf(envelope).code, tool.name).toBe('invalid_input');
@@ -311,8 +311,18 @@ function minimalArgs(name: string): Record<string, unknown> {
       return { transaction_id: '1' };
     case 'ezb_set_transaction_category':
       return { ids: ['1'], category_id: '2' };
+    case 'ezb_set_transaction_categories':
+      return { assignments: [{ ids: ['1'], category: 'Expense > Food > Groceries' }] };
+    case 'ezb_add_categories':
+      return { paths: ['Expense > Food > Groceries'] };
+    case 'ezb_update_category':
+      return { category_id: '1', name: 'y' };
     case 'ezb_set_transaction_account':
       return { ids: ['1'], account_id: '2' };
+    case 'ezb_convert_to_transfer':
+      return { items: [{ id: '1', counter_id: '2' }] };
+    case 'ezb_delete_transactions':
+      return { ids: ['1'] };
     case 'ezb_add_transaction_tags':
     case 'ezb_remove_transaction_tags':
       return { ids: ['1'], tag_ids: ['2'] };

@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sync"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 )
 
@@ -77,6 +78,11 @@ func (d *Decoder) Decode(v any) error {
 			break
 		}
 
+		if err != nil { // a syntax error repeats forever (e.g. a bare "&" in a value): stop, never spin
+			errfile.Expected("tokenizing an SGML (OFX 1.x) file", err)
+			return errs.ErrInvalidSGMLFile
+		}
+
 		switch token := token.(type) {
 		case xml.StartElement:
 			if token.Name.Local == rootElementName {
@@ -110,6 +116,11 @@ func (d *Decoder) unmarshal(element reflect.Value, elementName string) error {
 
 		if err == io.EOF {
 			break
+		}
+
+		if err != nil { // a syntax error repeats forever (e.g. a bare "&" in a value): stop, never spin
+			errfile.Expected("tokenizing an SGML (OFX 1.x) file", err)
+			return errs.ErrInvalidSGMLFile
 		}
 
 		switch token := token.(type) {

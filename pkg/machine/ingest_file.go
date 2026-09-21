@@ -357,6 +357,12 @@ func ingPlanFile(mc *Ctx, args *ingFileArgs, data []byte, name string) (*ingPlan
 
 	items, perr := ingParseUpstream(mc, data, name, fileType, args.ColumnMap)
 
+	if perr != nil && ingIsEmptyFile(perr) {
+		errfile.Expected("parsing an import file with no transactions", perr)
+		items, perr = nil, nil
+		warnings = append(warnings, "the file holds no transactions")
+	}
+
 	if perr != nil {
 		return nil, nil, "", perr
 	}

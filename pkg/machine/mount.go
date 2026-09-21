@@ -25,6 +25,11 @@ const errorFileHint = "read ~/T/ezbookkeeping/error.err for the server-side deta
 // BasePath is where the plane is mounted
 const BasePath = "/machine/v1"
 
+// mcpAdminRoutes are the admin routes the MCP client may reach (apis.mdx §8.1): exactly one, the
+// ids-only transaction delete the operator asked the agent surface to have. Every other admin route
+// still refuses the MCP with forbidden, and the admin tier must be on either way.
+var mcpAdminRoutes = map[string]bool{"DELETE /transactions/bulk": true}
+
 // Mount registers the machine plane on the router. It is one of the two lines this fork adds to
 // upstream's cmd/webserver.go (apis.mdx §4.1). Until Arm() succeeds every route answers 404.
 func Mount(router *gin.Engine, config *settings.Config) {
@@ -135,8 +140,8 @@ func wrap(r *RouteDef, config *settings.Config) gin.HandlerFunc {
 				return
 			}
 		case TierAdmin:
-			if strings.HasPrefix(strings.ToLower(mc.Client), "ezbookkeeping-mcp") {
-				writeFail(c, NewFail(CodeForbidden, "admin routes are for the CLI only (ezbk … --write --yes)", "the MCP server is never given the admin tier"), mc, "")
+			if strings.HasPrefix(strings.ToLower(mc.Client), "ezbookkeeping-mcp") && !mcpAdminRoutes[r.Method+" "+r.Path] {
+				writeFail(c, NewFail(CodeForbidden, "admin routes are for the CLI only (ezbk … --write --yes)", "the MCP server is given no admin route but DELETE /transactions/bulk"), mc, "")
 				return
 			}
 

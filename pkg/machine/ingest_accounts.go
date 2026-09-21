@@ -90,6 +90,11 @@ type ingProposed struct {
 	Currency          string `json:"currency"`
 	CurrencyDefaulted bool   `json:"currency_defaulted,omitempty"`
 	Side              string `json:"side"`
+	// OpeningBalance (signed hundredths) and OpeningTime (unix seconds) come from the manifest's
+	// opening_balance / opening_date and become the account's own balance-modification row
+	OpeningBalance *int64 `json:"opening_balance,omitempty"`
+	OpeningDate    string `json:"opening_date,omitempty"`
+	OpeningTime    int64  `json:"opening_time,omitempty"`
 }
 
 type ingExisting struct {
@@ -139,6 +144,10 @@ type ingAccountChange struct {
 	Category   string `json:"category,omitempty"`
 	Currency   string `json:"currency,omitempty"`
 	AccountId  string `json:"account_id,omitempty"`
+	// Balance and BalanceTime are the opening balance a create sets (in the fingerprint, so a changed
+	// manifest opening invalidates the token)
+	Balance     int64 `json:"balance,omitempty"`
+	BalanceTime int64 `json:"balance_time,omitempty"`
 }
 
 // ingHumanize turns "acme_llc" into "Acme LLC"
@@ -313,7 +322,7 @@ func ingPlanAccounts(mc *Ctx, args *ingAccountsArgs) (*ingAccountsPlan, error) {
 
 		key := row.AccountKey()
 		d := &ingAccountDecision{AccountKey: key, Warnings: append([]string{}, row.Warnings...), row: row}
-		d.Manifest = map[string]any{"entity": row.Entity, "institution": row.Institution, "label": row.Label, "last4": row.Last4, "kind": row.Kind, "currency": row.Currency, "path": row.Path, "line": row.Line}
+		d.Manifest = map[string]any{"entity": row.Entity, "institution": row.Institution, "label": row.Label, "last4": row.Last4, "kind": row.Kind, "currency": row.Currency, "path": row.Path, "file": row.File, "line": row.Line}
 		plan.Plan = append(plan.Plan, d)
 		ov := args.Overrides[key]
 
@@ -333,6 +342,15 @@ func ingPlanAccounts(mc *Ctx, args *ingAccountsArgs) (*ingAccountsPlan, error) {
 			}
 
 			d.Proposed = &ingProposed{Name: name, Category: catName, Currency: row.Currency, CurrencyDefaulted: row.CurrencyDefaulted, Side: ingSide(d.category)}
+
+			if row.OpeningBalance != nil {
+				t, _ := time.Parse("2006-01-02", row.OpeningDate)
+				d.Proposed.OpeningBalance, d.Proposed.OpeningDate, d.Proposed.OpeningTime = row.OpeningBalance, row.OpeningDate, ingOpeningTime(t)
+
+				if *row.OpeningBalance > 0 && d.category.IsLiability() {
+					d.Warnings = append(d.Warnings, "a positive opening balance on a liability means the account starts in credit; check the sign (money owed is negative)")
+				}
+			}
 
 			if truncated {
 				d.Proposed.FullName, d.Proposed.Truncated = full, true
@@ -521,7 +539,13 @@ func ingAccountsChanges(plan *ingAccountsPlan) []*ingAccountChange {
 	for _, d := range plan.Plan {
 		switch d.Action {
 		case "create":
-			out = append(out, &ingAccountChange{Action: "create", AccountKey: d.AccountKey, Name: d.Proposed.Name, Category: d.Proposed.Category, Currency: d.Proposed.Currency})
+			ch := &ingAccountChange{Action: "create", AccountKey: d.AccountKey, Name: d.Proposed.Name, Category: d.Proposed.Category, Currency: d.Proposed.Currency}
+
+			if d.Proposed.OpeningBalance != nil && *d.Proposed.OpeningBalance != 0 {
+				ch.Balance, ch.BalanceTime = *d.Proposed.OpeningBalance, d.Proposed.OpeningTime
+			}
+
+			out = append(out, ch)
 		case "link":
 			if e := plan.ctx.Map.Accounts[d.AccountKey]; e == nil || e.AccountId != d.Existing.Id {
 				out = append(out, &ingAccountChange{Action: "link", AccountKey: d.AccountKey, AccountId: d.Existing.Id})
@@ -567,7 +591,7 @@ func ingApplyAccounts(mc *Ctx, plan *ingAccountsPlan, changes []*ingAccountChang
 			body := map[string]any{
 				"name": ch.Name, "category": int(d.category), "type": int(models.ACCOUNT_TYPE_SINGLE_ACCOUNT),
 				"icon": ingCategoryIcon[d.category], "iconType": 0, "color": "000000", "currency": ch.Currency,
-				"balance": "0", "balanceTime": 0, "comment": "", "creditCardStatementDate": 0, "subAccounts": []any{},
+				"balance": strconv.FormatInt(ch.Balance, 10), "balanceTime": ch.BalanceTime, "comment": "", "creditCardStatementDate": 0, "subAccounts": []any{},
 			}
 
 			var resp models.AccountInfoResponse
@@ -586,7 +610,13 @@ func ingApplyAccounts(mc *Ctx, plan *ingAccountsPlan, changes []*ingAccountChang
 
 			ops = append(ops, NewInverseOp(ingInverseAccount, map[string]any{"account_id": idString(resp.Id), "account_key": ch.AccountKey}, map[string]any{"updated_unix_time": updated}))
 			m.Accounts[ch.AccountKey] = &ingMapEntry{AccountKey: ch.AccountKey, AccountId: idString(resp.Id), Name: ch.Name, Currency: ch.Currency, Category: ch.Category, Entity: row.Entity, Institution: row.Institution, Label: row.Label, Last4: row.Last4, Path: row.Path, Source: "accounts_apply", UpdatedAt: now}
-			created = append(created, map[string]any{"account_key": ch.AccountKey, "account_id": idString(resp.Id), "name": ch.Name, "category": ch.Category, "currency": ch.Currency, "side": ingSide(d.category)})
+			item := map[string]any{"account_key": ch.AccountKey, "account_id": idString(resp.Id), "name": ch.Name, "category": ch.Category, "currency": ch.Currency, "side": ingSide(d.category)}
+
+			if ch.Balance != 0 {
+				item["opening_balance"], item["opening_time"] = ch.Balance, ch.BalanceTime
+			}
+
+			created = append(created, item)
 		case "link":
 			e := &ingMapEntry{AccountKey: ch.AccountKey, AccountId: ch.AccountId, Entity: row.Entity, Institution: row.Institution, Label: row.Label, Last4: row.Last4, Path: row.Path, Source: "accounts_apply", UpdatedAt: now}
 
@@ -993,4 +1023,13 @@ func ingInferMap(mc *Ctx, args *ingAccountsArgs) (any, error) {
 
 	return map[string]any{"root": plan.Root, "manifest_path": plan.ManifestPath, "proposals": proposals, "summary": counts, "suggested_map": suggested, "saved": false,
 		"next": "PUT /machine/v1/ingest/map with suggested_map (after review), or POST /ingest/accounts/apply to create the rest"}, nil
+}
+
+// ingOpeningTime is when an opening balance is dated: one second before noon UTC of the opening
+// date. Imported statement rows are dated at noon UTC of their day (pm/import_formats.mdx §10), and
+// upstream refuses any transaction dated before an account's balance-modification row, so the
+// opening must sort strictly first while still showing on the opening date in every timezone from
+// UTC-11 to UTC+11.
+func ingOpeningTime(day time.Time) int64 {
+	return time.Date(day.Year(), day.Month(), day.Day(), 12, 0, 0, 0, time.UTC).Unix() - 1
 }

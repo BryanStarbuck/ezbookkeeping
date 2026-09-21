@@ -290,6 +290,7 @@ func ingHandleManifest(mc *Ctx) (any, error) {
 		item := map[string]any{
 			"account_key": row.AccountKey(), "entity": row.Entity, "institution": row.Institution, "label": row.Label, "last4": row.Last4,
 			"kind": row.Kind, "currency": row.Currency, "currency_defaulted": row.CurrencyDefaulted, "path": row.Path, "line": row.Line,
+			"file": ingNilIfEmpty(row.File), "name": ingNilIfEmpty(row.Name), "opening_balance": row.OpeningBalance, "opening_date": ingNilIfEmpty(row.OpeningDate),
 			"statements": row.Statements, "transactions": row.Transactions, "first": ingNilIfEmpty(row.First), "last": ingNilIfEmpty(row.Last),
 			"reconciled": row.Reconciled, "recon_na": row.ReconNA, "skip": row.Skip, "files": files, "warnings": warnings,
 		}

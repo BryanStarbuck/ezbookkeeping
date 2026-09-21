@@ -91,17 +91,53 @@ THE ERROR FILE  (pkg/errfile, src/lib/errfile, ~/T/ezbookkeeping/error.err — p
               PM specs reconciled to the code (pm/apis.mdx, pm/cli.mdx, pm/mcp.mdx, this
               file)                                                        2026-09-21
 
-NEXT: (1) point db_path, log_path and the storage root at ~/T/ (outside the repo) BEFORE importing
-      real statements — CLAUDE.md "Runtime state location"; (2) register the MCP with
-      `just install-mcp yes` and confirm `claude mcp list` shows ezbookkeeping connected;
-      (3) first real run: ezbk doctor, ezbk statements plan against the prepared archive, read the
-      unmapped list, then apply with --write.
+--------------------------------------------------------------------------------------------------
+STATEMENT IMPORT FORMATS  (pm/import_formats.mdx — the contract for every file the ingest plane reads)
+--------------------------------------------------------------------------------------------------
+
+[ DONE]  S1   pm/import_formats.mdx: 15 sections mirroring the Actual fork's, every format read from
+              the converters (OFX/QFX, native CSV/TSV/JSON, QIF, CAMT, MT940, IIF, GnuCash,
+              Beancount, Firefly III, custom, regional), probed on synthetic files; 20 upstream
+              defects recorded                                              2026-09-21
+[ DONE]  S2   plane: manifest `file` (one file per account in a shared directory),
+              `opening_balance` + `opening_date` (account created with its one Balance
+              Modification at 11:59:59 UTC), kind aliases, …manifest_ezbookkeeping.csv found before
+              import/accounts.csv, empty statements are not conflicts; tests
+              TestIngManifestFileOpeningAndKindAliases, TestIngOpeningTime,
+              TestIngEmptyOfxIsNotAConflict                                 2026-09-21
+[ DONE]  S3   upstream fix: the SGML decoder no longer loops forever on a bare & or < (DoS);
+              TestSGMLDecoderDecode_BareAmpersandReturnsErrorInsteadOfLooping — upstream PR candidate
+                                                                            2026-09-21
+[ DONE]  S4   runtime state out of the repo: `ezbk up` (RuntimeDirs) and `just run` use
+              ~/T/_ezbookkeeping/{data,log,storage} and move a stray ./data/ db once  2026-09-21
+[ DONE]  S5   MCP: instructions (which manifest, fallback categories per row mode, opening balances,
+              the import playbook), ezb_plan_accounts text; 159 tests green  2026-09-21
+[ DONE]  S6   rehearsal: the private archive's personal tree imported into a THROWAWAY server through
+              the MCP — every account's balance equal to its last printed statement, every re-plan
+              new 0, a second full run added nothing; throwaway database deleted   2026-09-21
+
+[ DONE]  S7   real import through the MCP into the operator's own sign-in user: every account's
+              balance equal to its last printed statement, every re-plan new 0, a second full run
+              applied nothing; write tier turned back off afterwards      2026-09-21
+
+[ DONE]  S8   own-account moves as transfers (apis.mdx §10.3.2): POST /transactions/transfer-candidates
+              (read: same currency and amount, ≤ window_days, last-four or transfer-word hint,
+              unambiguous pairs apart from ambiguous groups) and POST /transactions/convert-to-transfer
+              (write: pairs → one transfer, single rows → a transfer against a counterpart account;
+              per-account balance assertion; import records re-pointed so re-plans stay at new 0;
+              undo op txn.unconvert). MCP ezb_find_transfer_pairs, ezb_convert_to_transfer and the
+              one admin tool ezb_delete_transactions (EZBKMCP_ALLOW_ADMIN; the plane admits the MCP to
+              DELETE /transactions/bulk only) — 72 tools, 49 read, 23 write; CLI `ezbk transactions
+              transfer-candidates | convert-to-transfer`. Tests TestXfer* (end to end through upstream's
+              handlers on a temp SQLite, incl. a real ingEvaluate re-plan), TestGatesMcpReachesOnlyTheBulkDelete,
+              TestXf* (cli), mcp/test/transfers.test.ts                    2026-09-21
+
+NEXT: the confirm-group account imports only when the operator names it (--group confirm).
 
 --------------------------------------------------------------------------------------------------
 KNOWN
 --------------------------------------------------------------------------------------------------
   * Upstream's own API tokens ([security] enable_api_token) and upstream's MCP endpoint
     ([mcp] enable_mcp) stay OFF. This fork neither uses nor modifies them (CLAUDE.md).
-  * The runtime state (data/, log/, storage/) still lives inside the repo, git-ignored. Point
-    db_path/log_path/storage at ~/T/ before importing real statements (CLAUDE.md, "Runtime state
-    location").
+  * The runtime state lives in ~/T/_ezbookkeeping/ (CLAUDE.md "Runtime state location"); only a
+    bare `./ezbookkeeping server run` would still use the in-repo paths — never start it that way.
