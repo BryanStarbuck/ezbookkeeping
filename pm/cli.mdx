@@ -1,0 +1,1300 @@
+---
+title: ezBookkeeping — the operator CLI (`ezbk`)
+description: >
+  The terminal front door to THIS install of ezBookkeeping. `ezbk` is a deliberately THIN client —
+  it owns argument parsing, output formatting and getting the app up, and it owns no bookkeeping
+  logic at all: every balance, every total, every currency conversion, every "is this a duplicate"
+  verdict is computed by the running Go server behind a localhost-only MACHINE PLANE and returned
+  over HTTP. Authentication is the API secret key the web app mints for itself with crypto/rand into
+  ~/.credentials/ezbookkeeping.json at mode 0600 (256 bits, 64 hex — longer than a UUID); the CLI
+  reads it from the same filesystem, sends it as X-Ezbk-Api-Key, and the server compares it in
+  constant time before any handler runs. A process on another computer that reaches the port has no
+  way to hold that file, and the plane 404s anything off loopback anyway, so the shared-filesystem
+  trick IS the authentication. If the app is not running when `ezbk` is invoked, the CLI brings it up
+  itself (the same work the root justfile does) and gates on the health endpoint before issuing its
+  call. The flagship command family is the STATEMENTS PIPELINE (§10) — walk a tree of bank statements,
+  hand each file to ezBookkeeping's own OFX/QFX/QIF/CAMT/MT940/CSV converters (or extract PDFs into
+  ezBookkeeping CSV), de-duplicate at BOTH the statement level and the transaction level, map
+  accounts and categories explicitly, and import exactly once. `ezbk` is NOT the `ezbookkeeping`
+  server binary's own admin subcommands, and NOT upstream's `ebktools.sh` (§1). It is ours, it lives
+  in `cli/` with its own Go module so it never conflicts with an upstream merge, and it talks to this
+  machine.
+---
+
+# ezBookkeeping — the operator CLI (`ezbk`)
+
+`~/BGit/Bryan_git/ezbookkeeping/cli/` · binary **`ezbk`** · Go
+
+---
+
+## Table of Contents
+
+- [Introduction](#introduction)
+  - [Why this repo exists](#why-this-repo-exists)
+  - [Where this spec fits under that umbrella](#where-this-spec-fits-under-that-umbrella)
+  - [What the operator gets from it](#what-the-operator-gets-from-it)
+  - [How it works — the idea](#how-it-works--the-idea)
+  - [How it works — the machinery](#how-it-works--the-machinery)
+  - [What this spec covers](#what-this-spec-covers)
+- [Goal](#goal)
+- [Overview](#overview)
+- [1. There are THREE command-line tools in this repo, and confusing them is the commonest mistake here](#1-there-are-three-command-line-tools-in-this-repo-and-confusing-them-is-the-commonest-mistake-here)
+- [2. Placement, layout, and build integration](#2-placement-layout-and-build-integration)
+- [3. Bring-up — the CLI's justfile-equivalent duty](#3-bring-up--the-clis-justfile-equivalent-duty)
+- [4. Authentication — the API secret key](#4-authentication--the-api-secret-key)
+- [5. The machine plane — the HTTP surface `ezbk` speaks](#5-the-machine-plane--the-http-surface-ezbk-speaks)
+- [6. The verb catalogue](#6-the-verb-catalogue)
+- [7. The argument contract](#7-the-argument-contract)
+- [8. The zero-argument default — bare `ezbk`](#8-the-zero-argument-default--bare-ezbk)
+- [9. The read verbs](#9-the-read-verbs)
+- [10. The statements pipeline — `ezbk statements`](#10-the-statements-pipeline--ezbk-statements)
+- [11. The write verbs](#11-the-write-verbs)
+- [12. The operational verbs](#12-the-operational-verbs)
+- [13. Progress UI — the CLI must never look hung](#13-progress-ui--the-cli-must-never-look-hung)
+- [14. Output contracts](#14-output-contracts)
+- [15. Exit codes](#15-exit-codes)
+- [16. Logging, and what a failure leaves behind](#16-logging-and-what-a-failure-leaves-behind)
+- [17. Security](#17-security)
+- [18. Open-source safety](#18-open-source-safety)
+- [19. Testing](#19-testing)
+- [20. Use cases](#20-use-cases)
+- [21. Acceptance criteria](#21-acceptance-criteria)
+- [22. Build phases](#22-build-phases)
+- [23. Invariants recap](#23-invariants-recap)
+- [24. Related specs](#24-related-specs)
+
+---
+
+## Introduction
+
+### Why this repo exists
+
+ezBookkeeping is a self-hosted personal-finance app: a Go server, a Vue 3 web UI in desktop and
+mobile editions, and a SQLite database that, on this machine, lives at
+`~/BGit/Bryan_git/ezbookkeeping/data/ezbookkeeping.db`. Nobody else holds the books. That is the
+proposition, and it is why this repo is a working copy rather than a subscription.
+
+This repo — `~/BGit/Bryan_git/ezbookkeeping/`, forked from `mayswind/ezbookkeeping` to
+`github.com/BryanStarbuck/ezbookkeeping` — is a public fork we build on. Two consequences run through
+every decision below. **One:** nothing private ever lands in this tree; the operator's statements,
+balances and secrets live elsewhere on the disk and reach the code only through configuration (§18).
+**Two:** the repo tracks an upstream that moves steadily, so anything we add is added where an
+upstream merge will never touch it (§1.4).
+
+It has a sister: `~/BGit/Bryan_git/actual_budget_bryan/`, a fork of Actual Budget that grew the same
+three front doors first. Its `pm/cli.mdx` is the spec this one was grown from, and the two CLIs are
+deliberately alike — same exit codes, same output contracts, same key mechanism — so an operator who
+knows `abx` already knows most of `ezbk`.
+
+### Where this spec fits under that umbrella
+
+The product has three front doors onto one server. The **browser** at `http://localhost:8080/` is the
+one a human uses. The **MCP server** ([mcp.mdx](./mcp.mdx)) is the one Claude Code uses. This spec is
+the third: the **terminal**, for the operator who is already in a shell, already standing in a
+directory full of bank statements, and does not want to open a browser to answer _"which months am I
+missing?"_ or _"did that import double anything?"_
+
+All three answer from the same Go services. That is the design rule in §5.4, and it is what makes it
+impossible for the CLI and the UI to disagree about a balance.
+
+### What the operator gets from it
+
+- The questions a browser answers, answered in a pipe: balances, transactions, category totals,
+  net worth, exchange rates — as JSON for a script, a table for a human, or CSV for a spreadsheet or
+  a plotting tool.
+- The job a browser is bad at: taking **years of bank statements**, spread across entities, banks,
+  accounts, years and months, and turning them into a clean, de-duplicated import — where
+  "de-duplicated" means the same month downloaded twice does not produce two copies of January, and a
+  re-run next week does not produce a second copy of everything (§10).
+- An install that starts itself. `ezbk` never says _"start the server first."_ If the app is down, it
+  brings it up and then answers the question (§3).
+- A credential story with nothing to type. No password, no JWT to paste, no upstream API token to
+  generate, no secret in a config file inside a repo that is public (§4).
+
+### How it works — the idea
+
+The web app already knows everything. Rather than teach a second program to read the SQLite file, we
+give the running server a **loopback-only machine plane** ([apis.mdx](./apis.mdx)) — routes meant for
+programs rather than browsers — and make the CLI a caller of it.
+
+Authentication falls out of the filesystem. The server generates a 256-bit random key into a file in
+the operator's home directory that only the operator can read. Any program running as that operator
+can read it; nothing running anywhere else can. So the CLI proves it belongs on this machine by
+producing a secret only this machine's filesystem holds — and the plane refuses anything that did not
+arrive on the loopback interface, so an attacker reaching the port from the network is turned away
+before the key is even considered.
+
+### How it works — the machinery
+
+1. `ezbk` parses arguments and resolves a target (§7.2). The default target is **this machine**.
+2. It reads the API secret key from `~/.credentials/ezbookkeeping.json`, minting it with
+   `crypto/rand` if no process has yet (§4.3).
+3. It probes `GET http://127.0.0.1:8080/healthz.json`. If that fails, it performs the root justfile's
+   `build` + `run` work itself and waits for health, showing a spinner the whole time (§3, §13).
+4. It issues one HTTP call to `/machine/v1/*` with `X-Ezbk-Api-Key: <64 hex>` (§5).
+5. The server checks the loopback socket, the origin, the key in constant time, the tier, the input
+   schema — and only then reaches the books through `pkg/services`, the code the browser's API calls.
+6. `ezbk` renders the answer to stdout and everything else to stderr (§14).
+
+For the statements pipeline the same shape holds: parsing, de-duplication, mapping and the import plan
+are done on the server; the CLI prints the plan.
+
+### What this spec covers
+
+Every verb, every flag, the exit-code contract, the key lifecycle, the bring-up contract, the
+statements pipeline end to end including both de-duplication layers and the mapping steps
+ezBookkeeping needs, the write verbs, what the CLI prints on stdout versus stderr, what it logs, what
+it refuses, and the acceptance criteria that say it is done.
+
+It does **not** cover the MCP server ([mcp.mdx](./mcp.mdx)) or the machine plane's route reference
+([apis.mdx](./apis.mdx)), and it discusses the `ezbookkeeping` binary's own subcommands and
+`ebktools.sh` only to keep them apart (§1).
+
+---
+
+## Goal
+
+**One command, from any directory, that answers a question about this install truthfully, or takes a
+directory of bank statements and lands them in the books exactly once.**
+
+Three properties make that real rather than decorative:
+
+- **Truthfully** — the CLI computes nothing. A number `ezbk` prints was computed by the same Go code
+  that computed it for the browser, in one currency or with its conversion rates named (§5.4).
+- **Exactly once** — de-duplication is defined at two levels, is deterministic, survives re-runs, and
+  respects the operator's deletions (§10.6).
+- **From any directory** — the tool is on `PATH`, it starts the app if the app is down, and it needs
+  no environment set up by hand (§2.4, §3, §4).
+
+---
+
+## Overview
+
+|                        |                                                                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Binary**             | `ezbk`                                                                                                                    |
+| **Lives in**           | `~/BGit/Bryan_git/ezbookkeeping/cli/` (own `go.mod`; entry `cli/cmd/ezbk/`, implementation under `cli/internal/`)          |
+| **Stack**              | Go, the same toolchain the server builds with; one static binary, no runtime                                              |
+| **Talks to**           | `http://127.0.0.1:8080/machine/v1/*` — the machine plane inside the server ([apis.mdx](./apis.mdx))                       |
+| **Authenticates with** | `X-Ezbk-Api-Key`, 64 hex chars, from `~/.credentials/ezbookkeeping.json` (0600)                                           |
+| **State / logs**       | `~/T/_ezbookkeeping/`                                                                                                     |
+| **Env prefix**         | `EZBK_`                                                                                                                   |
+| **Never**              | computes a balance, converts a currency, decides a duplicate, reads the SQLite file, writes a source statement, or sends the key off loopback |
+| **Is not**             | the `ezbookkeeping` binary's `userdata`/`database`/`security` subcommands, nor `skills/ezbookkeeping/scripts/ebktools.sh` — see §1 |
+
+---
+
+## 1. There are THREE command-line tools in this repo, and confusing them is the commonest mistake here
+
+This section is first because the mistake is first.
+
+### 1.1 The naming table
+
+| Layer                    | `ezbookkeeping` (the server binary)                                   | `ebktools.sh` / `.ps1` — upstream skill             | **`ezbk` — this spec**                                   |
+| ------------------------ | --------------------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------- |
+| What it is               | the server itself, plus admin subcommands                             | a curl + jq client for 13 `/api/v1` commands         | **the operator's terminal front door**                   |
+| Location                 | `ezbookkeeping.go`, `cmd/`                                             | `skills/ezbookkeeping/scripts/`                      | **`cli/` (own Go module — §1.4)**                        |
+| Reaches the data by      | **opening the database directly** (`userdata`, `database` commands)   | `/api/v1` over HTTP, anywhere the token is accepted  | **`/machine/v1` on loopback only**                       |
+| Authenticates with       | nothing — it is the database's owner                                  | an upstream **API token** (`EBKTOOL_TOKEN`, full access, off by default) | **the API secret key, no human credential**   |
+| Needs the server up?     | no — and it is dangerous to write the DB while the server runs        | yes                                                  | **yes, and starts it if it is down (§3)**                |
+| Owns logic?              | yes — it is upstream                                                  | no                                                   | **no. Not one line (§5.4)**                              |
+| Knows about statements?  | `userdata transaction-import` of ezBookkeeping CSV/TSV only           | no                                                   | **that is its flagship job (§10)**                       |
+| Env prefix               | `EBK_` (config overrides)                                             | `EBKTOOL_`                                           | **`EZBK_`**                                              |
+| Logs to                  | `log/ezbookkeeping.log`                                               | stdout                                               | **`~/T/_ezbookkeeping/cli.info` and `cli.err`**          |
+
+### 1.2 The one-line routing test
+
+> **Administering the install itself — creating a user, migrating the database, generating a secret
+> for the `.ini` — with the server stopped? Use `ezbookkeeping`. Asking a question of, or changing,
+> the operator's books? Use `ezbk`.** `ebktools.sh` is upstream's, kept for upstream's users; this
+> fork does not use it.
+
+"Create a second user" → `ezbookkeeping userdata user-add`. "What did I spend in August?" → `ezbk`.
+
+### 1.3 What `ezbk` must never do
+
+- **Never open `data/ezbookkeeping.db`.** Not to read, not "just to check a count". A second process
+  with the SQLite file open is how a write gets `database is locked`, and a CLI that reads the file
+  directly is a CLI whose answers bypass the services the browser uses — the exact disagreement §5.4
+  exists to prevent.
+- **Never shell out to the `ezbookkeeping` binary's data subcommands.** `userdata transaction-import`
+  writes the database directly, with no dedupe, no journal and no undo. The one exception is bring-up
+  (§3), which starts `ezbookkeeping server run`.
+- **Never read or mint an upstream token.** Not `EBKTOOL_TOKEN`, not a `.env` file, not
+  `userdata user-session-new`. If `EBKTOOL_TOKEN` is set in the environment, `ezbk` ignores it
+  silently — it is not ours.
+- **Never publish.** `cli/` is `package main` in a module nobody imports; there is no release target.
+
+### 1.4 Why `ezbk` lives in `cli/` with its OWN Go module (LOCKED)
+
+The root `go.mod` is upstream's (`module github.com/mayswind/ezbookkeeping`). Anything we add inside
+that module adds imports to upstream's dependency graph and lines to `go.sum` that every upstream merge
+then fights.
+
+`cli/` has its own `go.mod` (`module github.com/BryanStarbuck/ezbookkeeping/cli`). Nested modules are
+excluded from the root module's `go build ./...` and `go test ./...`, so upstream's build and CI are
+untouched, and an upstream merge cannot conflict with a directory upstream has never heard of. The CLI
+**imports nothing from the root module** — not `pkg/models`, not `pkg/utils` — because the boundary is
+HTTP, and a CLI that links the server's packages is a CLI that has started computing.
+
+The cost is that `go` does not reach `cli/` from the root, so the root `justfile` builds it explicitly
+(§2.3). Paid once, in one recipe.
+
+---
+
+## 2. Placement, layout, and build integration
+
+### 2.1 Directory layout (LOCKED)
+
+```
+ezbookkeeping/
+├── cli/                          THE CLI — ours, its own Go module
+│   ├── go.mod                    module github.com/BryanStarbuck/ezbookkeeping/cli
+│   ├── justfile                  build | run | test, for working on the CLI alone
+│   ├── bin/ezbk                  build output (git-ignored)
+│   ├── cmd/ezbk/main.go          dispatch
+│   └── internal/
+│       ├── args/                 the argument contract (§7)
+│       ├── credentials/          the API secret key (§4) — same behaviour as the server's and the MCP's copies, proven by shared vectors
+│       ├── client/               the ONE HTTP client (§5)
+│       ├── bringup/              justfile-equivalent bring-up (§3)
+│       ├── progress/             the spinner (§13)
+│       ├── render/               json | table | csv — the ONE money renderer (§14)
+│       ├── logger/               cli.info / cli.err (§16)
+│       └── commands/             one file per verb family
+├── mcp/                          the MCP server — mcp.mdx
+├── pkg/machine/                  the machine plane — apis.mdx
+├── ai/                           the MCP instructions payload
+├── pm/                           product management. NO CODE, EVER
+│   ├── apis.mdx
+│   ├── cli.mdx                   this file
+│   └── mcp.mdx
+└── (upstream's tree)             contribute upstream, never fork its files here
+```
+
+**The charter, stated once.** `cli/` may hold **CLI wrapper code only** — argument handling, HTTP
+calls, rendering, process bring-up, credential reading. Anything that computes an _answer about money_
+is forbidden there and belongs behind the machine plane. If a CLI feature seems to need computation,
+the computation becomes a route in [apis.mdx](./apis.mdx) first. `pm/` holds no code at all.
+
+### 2.2 Language and stack
+
+Go, because the server is Go, the operator already has the toolchain, and a static binary on `PATH`
+needs no Node, no `npm install` and no runtime version to drift. Dependencies are kept to what the job
+needs — the standard library's `net/http`, `encoding/json`, `crypto/rand`, `crypto/sha256`, plus a
+flag parser only if the standard `flag` package cannot express §7's per-verb flags — and nothing that
+reaches the network on import.
+
+### 2.3 Build integration with the root justfile (LOCKED)
+
+- **`just build` builds the CLI too.** The root `build` recipe gains `build-cli` (and `build-mcp` —
+  [mcp.mdx](./mcp.mdx) §4) after `build-backend`: `cd cli && go build -trimpath -o bin/ezbk
+  ./cmd/ezbk`.
+- **`just run` also builds the CLI** through the same dependency chain, so it is never stale.
+- **`cli/` has its own justfile** so it can be worked on alone: `cd cli && just build`,
+  `cd cli && just run -- accounts list`.
+- **`just install-cli`** prints the `PATH` line (§2.4) and, only on request, appends it.
+
+Handles: building the CLI whenever the app is built.
+Code: `~/BGit/Bryan_git/ezbookkeeping/justfile` — recipes `build`, `build-backend`, `run` (exist today; gain `build-cli`, `build-mcp`, `server-bg`, `stop`, `status`)
+Code: `~/BGit/Bryan_git/ezbookkeeping/cli/justfile` — recipes `build`, `run`, `test`
+
+### 2.4 Installation on PATH
+
+```bash
+export PATH="$HOME/BGit/Bryan_git/ezbookkeeping/cli/bin:$PATH"   # in ~/.zshrc, once
+```
+
+`just install-cli` prints exactly that and never edits a shell profile without being asked.
+
+---
+
+## 3. Bring-up — the CLI's justfile-equivalent duty
+
+### 3.1 The preflight (LOCKED)
+
+Every `ezbk` invocation that needs the machine plane begins with a liveness preflight:
+
+1. **Probe** `GET http://127.0.0.1:8080/healthz.json` with a ~2 s timeout. Upstream's health route
+   (`pkg/api/healths.go`) answers `{"version":…,"commit":…,"status":"ok"}` with no auth. `ok` →
+   proceed.
+2. **If down, bring it up.** The CLI achieves the same effective result as the root justfile's `build`
+   + `run` recipes — it is **not required to shell out to `just`**, though doing so is acceptable when
+   `just` is present:
+   - build if needed (the Go binary `./ezbookkeeping` and `./dist/index.html` both exist and are newer
+     than their sources, or `just build` runs);
+   - ensure `data/`, `log/`, `storage/` exist and `data/.secret_key` exists (upstream's `[security]
+     secret_key` — **not** the API secret key, apis.mdx §5.2);
+   - **refuse, loudly, if a foreign process holds the port** — never blanket-kill a port, because the
+     pid on 8080 might be something the operator cares about (8080 is a popular port);
+   - start `./ezbookkeeping --conf-path conf/ezbookkeeping.ini server run` **detached**, with exactly
+     the environment the `run` recipe sets (`EBK_WORK_DIR`, `EBK_SERVER_HTTP_ADDR=127.0.0.1`,
+     `EBK_SERVER_HTTP_PORT`, `EBK_SERVER_DOMAIN=localhost`, `EBK_SERVER_STATIC_ROOT_PATH=dist`,
+     `EBKCFP_SECURITY_SECRET_KEY`), plus `EZBK_MACHINE_ALLOW_WRITE=1` only if `ezbk up --allow-write`
+     was typed; stdout and stderr appended to `~/T/_ezbookkeeping/server.log`, never `/tmp`;
+   - **wait** for `healthz.json`, bounded at 120 s, spinner running (§13).
+3. **If bring-up fails**, print the failure and the tail of `~/T/_ezbookkeeping/server.log`, and exit
+   **`5`**. Never fall back to computing the answer locally — there is no local compute path.
+
+**What the root justfile does NOT give us, verified against the recipe as it stands:**
+
+| The CLI needs                            | The `justfile` today                                                                   | Who closes the gap                  |
+| ---------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------- |
+| A **detached** server                    | `run:` runs `./ezbookkeeping … server run` in the **foreground**; Ctrl-C ends it        | `bringup` + a new `server-bg` recipe |
+| `~/T/_ezbookkeeping/server.log`          | **does not exist** — the server writes `log/ezbookkeeping.log` (its own log, kept)      | `bringup` creates and appends       |
+| `~/T/_ezbookkeeping/server.pid`          | **does not exist**                                                                      | `bringup` writes it                 |
+| A foreign-holder refusal on `:8080`      | **none**                                                                                | `bringup` + `server-bg`             |
+| `just stop` / `just status`              | **do not exist**                                                                        | new recipes, mirrored by `ezbk stop`/`status` |
+| The build step for `cli/` and `mcp/`     | **absent**                                                                              | `build-cli`, `build-mcp`            |
+
+So `server.log`, `server.pid`, the port guard and the stop/status recipes are things this spec
+**creates**. The root justfile gains matching `server-bg`, `stop` and `status` recipes so `just` and
+`ezbk` agree — otherwise an operator who alternates between the two ends up with two servers fighting
+over one SQLite file.
+
+### 3.2 What "up" means — one port, two gates (LOCKED)
+
+| Port   | Process                           | What it serves                                     | Is it the gate?            |
+| ------ | --------------------------------- | -------------------------------------------------- | -------------------------- |
+| `8080` | `ezbookkeeping server run` (Go)   | the built UI from `dist/`, `/api/v1`, `/healthz.json`, **the machine plane** | **yes** |
+| `8081` | Vite dev server (`just dev`)      | hot-reloading UI, proxying to 8080                  | **no**                     |
+
+**FRONTEND UP ≠ APP UP.** The preflight gates on `:8080/healthz.json`, never on `:8081` answering.
+Vite serves pages happily with no server behind it.
+
+A second, narrower gate applies to every machine-plane verb: `GET /machine/v1/ping` **with the key**.
+`healthz.json` proves the process is alive; `ping` proves the plane is armed and the key is right. A
+green health with a 401 from `ping` is the single most likely first-run failure, and it gets its own
+message naming the credentials file (§4.5 R6). A green health with a **404** from `ping` means the
+binary predates the machine plane — "rebuild: `just build`".
+
+Handles: the health gate and the bring-up.
+Code: `~/BGit/Bryan_git/ezbookkeeping/cli/internal/bringup/bringup.go` — `EnsureServerUp()`, `FailWithLogTail()`
+Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/api/healths.go` — `HealthStatusHandler` (exists today)
+
+### 3.3 `ezbk up`, `ezbk stop`, `ezbk status`
+
+- `ezbk up [--allow-write] [--allow-admin]` — bring the app up and wait for health. Idempotent;
+  already-up is a success, **unless** the flags ask for a tier the running server does not have, in
+  which case it says so and tells the operator to `ezbk stop` first — a tier is a boot-time decision
+  (apis.mdx §8.1) and `up` never restarts a server silently.
+- `ezbk stop` — stop **our** instance (the recorded pid), never a foreign process.
+- `ezbk status` — ports, pid, health, the machine-plane `ping`, the tiers, the bound user, the key's
+  fingerprint.
+
+---
+
+## 4. Authentication — the API secret key
+
+**The authority is [apis.mdx §5](./apis.mdx#5-authentication--the-api-secret-key).** This section is
+the CLI's side of it.
+
+### 4.1 Why not a password or an upstream token (LOCKED)
+
+1. **A password is a human credential**, and a CLI that prompts cannot run in a loop.
+2. **An upstream API token is full access** to every `/api/v1` route, including clearing all data, it
+   travels as a bearer header, and generating one needs the operator's password or a direct database
+   write (apis.mdx §2.2).
+3. **This repo is public.** A credential-shaped config key inside the tree eventually gets committed.
+   The API secret key lives in `~/.credentials/`, and there is no in-repo key that can hold it.
+4. **There is nothing to type.** A key the server mints for itself needs no prompt, no paste and no
+   onboarding step.
+
+The trade, stated plainly: this is **same-filesystem only**. It authenticates "a process running as
+this operator on this computer". A hosted deployment would need a real token scheme; the shared-file
+trick does not travel (§4.6).
+
+### 4.2 The credentials file (LOCKED)
+
+- **Location:** `~/.credentials/ezbookkeeping.json`, mode `0600`, owned by the current uid — unique to
+  this application. Override with `EZBK_CREDENTIALS_FILE`.
+- **Shape:**
+
+```json
+{
+  "ezbookkeeping": {
+    "machine": {
+      "api_key": "<64 hex chars — 32 bytes from crypto/rand>",
+      "created": "2026-09-21T17:04:11Z",
+      "created_by": "server",
+      "label": "operator-macstudio",
+      "username": "operator"
+    },
+    "statements": { "root": "/path/to/bank_statements" },
+    "timezone": "America/Los_Angeles"
+  }
+}
+```
+
+`label` is provenance. `created_by` is `server`, `ezbk` or `mcp`. `username` is optional — the bound
+user (apis.mdx §6). `statements.root` and `timezone` are optional.
+
+- **Resolution order, first hit wins:** `EZBK_API_KEY` → `EZBK_API_KEY_FILE` → the credentials file
+  → mint it (§4.3).
+
+### 4.3 Generation — the web app first, whichever side needs it if not (LOCKED)
+
+The operator never creates this by hand. **The normal path is that the web app mints it on first
+boot** and reuses it on every boot after. If `ezbk` runs before the server ever has, it mints the key
+itself with the same code, so the server finds it on boot:
+
+- `crypto/rand.Read` 32 bytes → 64 lowercase hex. Never `math/rand`, never a UUID.
+- **Atomic merge-write:** temp file in the same directory with `O_CREATE|O_EXCL` at `0600`, `fsync`,
+  `rename`; the rest of the JSON preserved byte for byte; parent created `0700`; a symlink at the
+  destination aborts the write.
+- **Compare-and-set:** re-read inside the write and yield to a key that appeared meanwhile.
+
+Handles: minting, merging and reading the key.
+Code: `~/BGit/Bryan_git/ezbookkeeping/cli/internal/credentials/credentials.go` — `EnsureKey()`, `LoadKey()`, `WriteMerged()`
+Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/credentials.go` — the server's copy, called from `machine.Arm()` at boot
+
+### 4.4 How the key is sent, and what the server checks (LOCKED)
+
+- Every machine-plane call carries **`X-Ezbk-Api-Key: <64 hex>`** and
+  **`X-Ezbk-Client: ezbk/<version>`**. Never a query string.
+- The server checks, before any handler: **loopback socket** (`c.Request.RemoteAddr`, never
+  `c.ClientIP()`, because gin trusts `X-Forwarded-For` from configured proxies) → **origin + host**
+  (a browser's `Origin` / `Sec-Fetch-Site` means 404) → **the key** (constant time) → **tier** →
+  **input schema**. Detail: apis.mdx §5.7.
+- A missing or wrong key → **`401` with a constant body**; the CLI does the explaining (R6).
+- **Mode check before read.** The CLI `stat`s the credentials file and refuses one looser than `0600`
+  or owned by another uid, exiting `2` with `fix: chmod 600 ~/.credentials/ezbookkeeping.json`.
+
+### 4.5 The rules, stated once
+
+**R1 — 256 bits from `crypto/rand`, 64 hex.** Longer than a UUID on purpose; not UUID-shaped on purpose.
+
+**R2 — Never logged, echoed, or put in a response or audit line.** Only its **fingerprint** — first 4
+hex plus a SHA-256 prefix.
+
+**R3 — Never attached to a URL that is neither loopback nor `https:`.** Checked before the socket
+opens; the refusal names the URL.
+
+**R4 — Never rotated implicitly.** `ezbk key rotate --yes` exists, prints the new fingerprint, and
+tells the operator to restart the server. The MCP reads the same file, so nothing else needs touching.
+
+**R5 — Never written from a value the operator typed.** No `ezbk key set <value>` — that puts a
+secret in shell history.
+
+**R6 — A missing key is a LOUD local failure with the remedy, never a silent 401:**
+
+```
+ezbk accounts list
+  refused: no API secret key for http://127.0.0.1:8080
+  Looked in: EZBK_API_KEY, EZBK_API_KEY_FILE,
+             ~/.credentials/ezbookkeeping.json  (ezbookkeeping.machine.api_key)
+  The app mints this on first boot. Start it and try again:
+    ezbk up
+  Or mint it here without starting anything:
+    ezbk key init
+```
+
+A **401 from a reachable server** gets a different message and exit `6`: _"the server holds a
+different key than the file — it was probably started before a rotation. Restart it: `ezbk stop &&
+ezbk up`."_
+
+**R7 — One key per install, resolved from the target.** A second checkout on another port reads its
+own key; the CLI never falls back from one target's key to another's.
+
+**R8 — The key authorises a MACHINE acting as the bound user**, not a person. It is accepted by
+`/machine/v1` only, never by `/api/v1` or `/mcp`.
+
+**R9 — Fail closed.** No key server-side, no plane: `/machine/v1/*` 404s.
+
+**R10 — The CLI never reads a human credential or an upstream token** (§1.3).
+
+### 4.6 What the key is NOT
+
+- Not an encryption key, and not `[security] secret_key` (which encrypts 2FA secrets and lives in
+  `data/.secret_key`).
+- Not a session. It does not expire and carries no claims; it never appears in the Security Settings
+  session list, because the plane never creates an upstream token.
+- Not transferable. Copying it to another computer gets that computer a `404`.
+
+---
+
+## 5. The machine plane — the HTTP surface `ezbk` speaks
+
+### 5.1 Where it is mounted, and why there
+
+Inside the `ezbookkeeping` server, at `/machine/v1`, by one `machine.Mount(router, config)` line in
+`cmd/webserver.go` ([apis.mdx §4](./apis.mdx#4-placement-layout-and-build-integration)). Behind it,
+the same `pkg/services` the browser's `/api/v1` handlers call.
+
+**Rejected: a standalone server.** A second writer on one SQLite file.
+**Rejected: using upstream's `/api/v1` with an API token.** Full access, no tiers, no dry run, and a
+token that must be generated with a password (apis.mdx §2.2).
+
+### 5.2 The routes `ezbk` is written against
+
+Read routes are always available. Write routes need the server's write tier (`ezbk up --allow-write`,
+which sets `EZBK_MACHINE_ALLOW_WRITE=1`) **and** `--write` on the call — both, not either.
+
+| Family          | Routes (see apis.mdx §10 for every argument)                                                       | Tier       |
+| --------------- | -------------------------------------------------------------------------------------------------- | ---------- |
+| Plane           | `/ping` `/whoami` `/capabilities` `/health`                                                        | read       |
+| Accounts        | `/accounts` `/accounts/:id` `/accounts/:id/balance` `/accounts/:id/reconciliation` `/accounts/:id/reconcile/plan` | read |
+| Transactions    | `/transactions` `/transactions/count` `/transactions/:id` `/transactions/export`                    | read       |
+| Reference       | `/categories` `/tags` `/tag-groups` `/templates` `/schedules/upcoming` `/insights`                   | read       |
+| Currency        | `/exchange-rates` `/exchange-rates/convert`                                                         | read       |
+| Analytics       | `/analytics/*` · `/accounts/:id/balance-history`                                                    | read       |
+| Data            | `/data/statistics` `/data/export`                                                                   | read       |
+| Ingest          | `/ingest/*` reads and plans                                                                         | read       |
+| Writes          | `POST/PATCH` on transactions, accounts, categories, tags, templates, rates, reconcile, ingest apply, undo | **write** |
+| Passthrough     | `/api/*` (apis.mdx §16) via `ezbk raw`                                                              | by path    |
+| Admin           | `DELETE`s, `/admin/*`                                                                               | **admin**  |
+
+**Where this table and apis.mdx disagree, apis.mdx is right.**
+
+### 5.3 Response envelope (LOCKED)
+
+```json
+{ "ok": true,  "data": { }, "meta": { "target": "local", "user": "operator", "defaultCurrency": "USD", "serverVersion": "2.0.1", "timezone": "America/Los_Angeles", "tookMs": 41 } }
+{ "ok": false, "error": { "code": "not_found", "message": "No account with that id.", "hint": "ezbk accounts list" } }
+```
+
+The nine codes: `unauthorized` · `forbidden` · `not_found` · `invalid_input` · `conflict` ·
+`write_disabled` · `not_ready` · `upstream_error` · `internal`. The MCP adds three of its own
+(`confirm_required`, `too_many_changes`, `wrong_server`) that never appear on the wire; the CLI uses
+the nine.
+
+### 5.4 The thin-client rule (LOCKED)
+
+**The CLI owns argument parsing, output formatting and bring-up. It owns no bookkeeping logic.**
+
+Every balance, every date-range filter, every category roll-up, every currency conversion, every
+duplicate verdict is computed behind the machine plane and returned verbatim. The CLI never re-filters,
+never re-sums, never converts, never rounds, and never stats a statement file the server already
+described. One set of services powers the browser, the CLI and the MCP — and a bug fixed for one is
+fixed for all three.
+
+The rendering layer is the one bounded exception: turning integer hundredths plus a currency code into
+`$1,234.56` or `¥12.34` for `--format table|csv` is _presentation_, it happens in exactly one
+function, and `--format json` always carries the raw integer.
+
+---
+
+## 6. The verb catalogue
+
+```
+ORIENTATION
+  ezbk                                    the zero-argument default — status + what needs doing (§8)
+  ezbk status                             port, pid, health, ping, tiers, bound user, key fingerprint
+  ezbk doctor                             is this environment sane? (§12.1)
+  ezbk up [--allow-write] [--allow-admin] | stop
+  ezbk logs [--follow] [--lines N]        server.log, the app's log/ezbookkeeping.log, cli.err
+  ezbk key init | show | rotate --yes
+  ezbk whoami                             bound user, default currency, timezone, tiers
+
+READING THE BOOKS
+  ezbk accounts list [--include-hidden] [--currency C]
+  ezbk accounts show <id|name>
+  ezbk accounts balance <id|name> [--as-of YYYY-MM-DD]
+  ezbk accounts reconciliation <id|name> --start D --end D
+  ezbk transactions list [--account A]... [--start D] [--end D] [--type T] [--category C]...
+                         [--tag T]... [--untagged] [--keyword K] [--min N] [--max N] [--currency C]
+                         [--limit N] [--cursor X]
+  ezbk transactions show <id>
+  ezbk transactions count [same filters]
+  ezbk transactions export [same filters] --format csv|tsv
+  ezbk categories list [--type income|expense|transfer] [--include-hidden]
+  ezbk tags list | ezbk tag-groups list
+  ezbk templates list [--scheduled]
+  ezbk schedules upcoming [--days 30]
+  ezbk rates list [--currency C]...
+  ezbk rates convert <hundredths> <FROM> <TO>
+  ezbk insights list
+  ezbk data stats | ezbk data export --format csv|tsv
+
+ANALYTICS  (every total comes from here — §9.3)
+  ezbk analytics summary      [--period this_month]...
+  ezbk analytics spending     --start D --end D [--interval month] [--group-by primary] [--top N] [--convert-to USD]
+  ezbk analytics income       (same flags)
+  ezbk analytics income-vs-expense --start D --end D [--interval month] [--convert-to USD]
+  ezbk analytics cash-flow    --start D --end D [--account A]...
+  ezbk analytics net-worth    --start D --end D [--interval month] [--convert-to USD]
+  ezbk analytics trend        --category C --start D --end D
+  ezbk analytics tags         --tag T... --start D --end D [--convert-to USD]
+  ezbk analytics payees       --start D --end D [--top 20]
+  ezbk analytics recurring | anomalies | runway [--basis 6] | import-fallout [--run R]
+
+THE STATEMENTS PIPELINE  (§10 — the flagship)
+  ezbk statements manifest   [PATH]
+  ezbk statements scan       [PATH] [--entity E] [--bank B] [--account A] [--year Y]
+  ezbk statements missing    [PATH]
+  ezbk statements extract    [PATH] [--force]                 raw mode only
+  ezbk statements dupes      [PATH] [--prefer FILE]
+  ezbk statements accounts   [PATH]                           plan the accounts (§10.8)
+  ezbk statements accounts   [PATH] --write --yes             create them and write the map
+  ezbk statements plan       [PATH] [--fallback-expense C] [--fallback-income C]
+  ezbk statements apply      [PATH] --write --yes [--accept-transfer ID]... [--accept-match ID=TXN]...
+  ezbk statements import-file <FILE> --account A [--type ofx|qfx|qif_mdy|camt053|…] [--write --yes]
+
+WRITING  (each needs --write, and the server's write tier; each dry-runs without it — §11)
+  ezbk transactions add --account A --type expense --amount 1250 --category C --date D [--comment …] [--tag T]…
+  ezbk transactions edit <id> [--amount N] [--category C] [--date D] [--comment …]
+  ezbk transactions set-category (<id>… | --filter …) --category C
+  ezbk transactions set-account  (<id>… | --filter …) --account A
+  ezbk transactions tag add|remove|clear (<id>… | --filter …) [--tag T]…
+  ezbk accounts add --name N --category checking --currency USD [--initial-balance 0 --initial-date D]
+  ezbk accounts edit <id|name> [--name …] [--comment …] | hide | unhide
+  ezbk accounts reconcile <id|name> --balance 421108 --as-of D [--adjust-into C]
+  ezbk categories add | edit | hide | unhide
+  ezbk tags add | edit | hide | unhide
+  ezbk schedules add --every monthly --day 1 --account A --amount N --category C --start D
+  ezbk schedules edit | pause | resume <id>
+  ezbk rates set <CUR> <rate> | ezbk rates clear <CUR>
+  ezbk undo | ezbk redo | ezbk journal
+
+ESCAPE HATCH
+  ezbk raw GET|POST <upstream-path> [--query k=v]... [--data JSON]     (apis.mdx §16)
+
+ADMIN  (each needs --write, --yes and the server's admin tier)
+  ezbk transactions delete <id>… | ezbk accounts delete <id> | ezbk categories delete <id> | …
+  ezbk admin clear-data --scope transactions|all
+  ezbk admin sessions list | revoke <token-id>
+```
+
+Every verb accepts the universal flags in §7.1, prints its answer on stdout and everything else on
+stderr (§14.1).
+
+---
+
+## 7. The argument contract
+
+**Positional first, flags anywhere.** Repeatable flags (`--account`, `--tag`, `--category`) accumulate.
+
+### 7.1 The universal flags
+
+| Flag                        | Meaning                                                                                  |
+| --------------------------- | ---------------------------------------------------------------------------------------- |
+| `--format json\|table\|csv` | what stdout carries. **`json` is the default** (§14.2)                                   |
+| `--write`                   | actually write. Without it, every write verb is a dry run that prints the plan           |
+| `--yes`                     | confirm a write over `--max-changes`, or an admin verb                                   |
+| `--max-changes <n>`         | the write ceiling for this run. Default 200                                              |
+| `--tz <IANA>`               | the timezone for dates in this call (default: credentials file, then the system's)       |
+| `--api <url>`               | talk to a different install. Loopback or `https:` only (R3)                              |
+| `--timeout <ms>`            | per-call timeout. **Ignored by `statements extract` and `statements apply`** (§7.4)      |
+| `--no-bringup`              | never start the app; if it is down, fail with exit `5`                                   |
+| `--quiet` / `--verbose`     | less / more stderr. Errors always print                                                  |
+| `--json-errors`             | errors on stderr as one JSON object per line                                             |
+| `--help` / `-h`             | usage                                                                                    |
+
+### 7.2 Target resolution — this machine is the default (LOCKED)
+
+| Mode      | How                   | Base URL                | When it is right                                        |
+| --------- | --------------------- | ----------------------- | ------------------------------------------------------- |
+| **local** | nothing, or `--local` | `http://127.0.0.1:8080` | **the default.** `EZBK_PORT` changes the port, matching the justfile's `EBK_PORT` |
+| explicit  | `--api <url>`         | whatever was typed      | a second checkout on another port                        |
+
+There is deliberately **no `--prod`**. There is no production install of this fork. The resolved
+target is printed under `--verbose` and **always** printed before any write.
+
+### 7.3 Flags are declared per verb, and the parser derives from the declaration (LOCKED)
+
+Actual's cli.mdx §7.3 records how a hand-maintained "flags that take a value" list went wrong in its own
+first draft. We do not repeat it. Each verb declares its flags, with arity, next to the verb:
+
+```go
+// cli/internal/commands/statements.go
+var Dupes = Verb{
+    Name: "statements dupes",
+    Flags: []Flag{
+        {Name: "prefer", Value: "path", Help: "resolve a conflict in favour of this statement file"},
+        {Name: "path",   Value: "path", Help: "the statements root (overrides EZBK_STATEMENTS_DIR)"},
+    },
+    Run: runDupes,
+}
+```
+
+The parser builds its value-taking set by walking the resolved verb's flags plus §7.1. An unknown flag
+is exit `2` with the nearest match; a boolean flag followed by a stray token the verb has no slot for
+is exit `2` naming both; `ezbk help <verb>` is generated from the same declaration. Tests: every flag
+in §6 resolves to a declared flag on that verb, and every declared flag appears in its help.
+
+### 7.4 No client-side timeout on the long verbs (LOCKED)
+
+`ezbk statements extract` and `ezbk statements apply` run with **no client-side timeout**. A client
+that gives up at thirty seconds reports a failure about a job that is running perfectly, the operator
+re-runs it, and now two imports race. The spinner is what stops it looking hung; the server streams
+NDJSON progress (apis.mdx §18).
+
+### 7.5 Amounts, dates and names on the command line
+
+- **Amounts are integer hundredths.** `--amount 1250` is 12.50 in the account's currency. A value
+  containing `.` is rejected with the integer the operator probably meant (`did you mean --amount
+  1250?`). This is the app's own convention (apis.mdx §17.1), and the help says so on every amount flag.
+- **Dates are `YYYY-MM-DD`**; months `YYYY-MM`. The CLI also accepts `today`, `yesterday`,
+  `this-month`, `last-month`, `this-year`, `last-year` and resolves them **locally, in the resolved
+  timezone, before the call** — and prints on stderr which dates it resolved them to. The wire never
+  carries a relative date.
+- **Names are accepted where ids are**, resolved server-side (`--account "Northbank Checking"`); an
+  ambiguous name is exit `2` listing the candidates with their ids.
+- **Ids are strings.** The CLI never parses an id into a number (they exceed 2⁵³).
+
+---
+
+## 8. The zero-argument default — bare `ezbk` (LOCKED)
+
+Running `ezbk` with no arguments prints a short **orientation report** and exits `0`:
+
+```
+ezBookkeeping — this machine
+  server       http://localhost:8080/   UP    (pid 48213, v2.0.1)
+  machine key  ~/.credentials/ezbookkeeping.json   ok   (a3f1… / sha256:9c2b)
+  plane        armed   user "operator"   writes off   admin off
+  books        12 accounts (3 currencies)   14,208 transactions   last 2026-09-19
+  upstream     API tokens off   MCP off
+  statements   /…/bank_statements   27 accounts, 7 account-months missing, 3 duplicate scans
+
+  ezbk doctor                check the environment
+  ezbk statements scan       look at the statements tree
+  ezbk analytics summary     this month so far
+```
+
+Rules:
+
+- It **never starts the app**. Bare `ezbk` is a question, not an instruction; if the server is down it
+  says so and suggests `ezbk up`.
+- It never fails because something is down. Each missing piece prints as a line with the command that
+  fixes it. Exit `0` unless the report itself would be a lie, then `1`.
+- `ezbk help`, `-h`, `--help` print the catalogue; an unknown verb prints it and exits `2`.
+- Paths are full absolute paths, always.
+- The **upstream** line is there on purpose: if `enable_api_token` or `enable_mcp` has been switched on,
+  there is a full-access bearer door open that none of our gates guard (apis.mdx §2.2), and the
+  operator should see that every time they type `ezbk`.
+
+---
+
+## 9. The read verbs
+
+### 9.1 Thin by construction
+
+Parse, call one route, render. They exist because a shell is a better place than a browser to pipe an
+answer into something else.
+
+- **`ezbk accounts list`** — id, name, category, currency, balance, hidden. Sub-accounts indented under
+  their parent in `--format table`. Liabilities print with their sign (a credit card owing $300 is
+  `-300.00`), because that is the app's convention and flipping it for display is how a total gets
+  double-negated.
+- **`ezbk accounts balance <id> [--as-of D]`** — one integer and its currency. A historical balance is
+  asked of the server; the CLI does not sum transactions to get one.
+- **`ezbk transactions list`** — the rows, paged by the server's cursor (`--limit` up to 5,000;
+  `nextCursor` on stderr when there is more). **Transfers** print once, as one row with both sides
+  (`Checking → Card  -500.00 USD → +500.00 USD`), because ezBookkeeping's API returns a transfer as one
+  transaction even though the database stores two rows — a script that sums must not double it.
+- **`ezbk transactions count`** — one integer. `ezbk transactions list | wc -l` is not a count; it is a
+  count of one page.
+- **Reference lists** — categories (two levels, primary with secondaries indented), tags, tag groups,
+  templates, scheduled transactions, insights.
+- **`ezbk rates list`** — each rate with its `source` (provider or custom) and its update time.
+- **`ezbk rates convert 50000 EUR USD`** — the server's conversion, with the rate and its date on
+  stderr. The CLI never multiplies.
+
+### 9.2 Mixed currencies in a table
+
+`--format table` never prints a total row across currencies. A list spanning USD and EUR accounts gets
+**one subtotal per currency** — computed by the server (the list route returns them) — or no total at
+all. A single "Total" under a column of dollars and euros is the most convincing wrong number a
+terminal can print.
+
+### 9.3 Analytics — every total comes from here
+
+`ezbk analytics …` are one-route verbs over [apis.mdx §12](./apis.mdx#12-the-analytics-plane--and-the-charting-it-feeds).
+They exist so the operator — and any script — gets totals the server computed, with transfers and
+opening balances excluded by default, per currency unless `--convert-to` is given, and the provenance
+(range, timezone, accounts, filters, rates) printed on stderr.
+
+**Charting.** `--format csv` emits one row per `(series, period)` with columns
+`series,period,currency,amount_hundredths,amount` — shaped so it pipes straight into a plotting tool
+(`ezbk analytics spending --interval month --format csv | …`). This is the first place the fork's
+"more charting" direction shows up (apis.mdx §12.4): the numbers are the server's, the pixels are
+whoever draws them.
+
+---
+
+## 10. The statements pipeline — `ezbk statements`
+
+This is the family `ezbk` exists for, and the only one with no counterpart in the browser or in
+upstream's tools. The engine is [apis.mdx §14–15](./apis.mdx#14-the-ingest-plane--statements-into-the-books);
+this is the operator's view of it.
+
+### 10.1 What the tree looks like on disk
+
+The operator's statements live **outside this repo**, under a configured root:
+
+```
+{ROOT}/
+├── {ENTITY}/                                  household, acme_llc, …
+│   └── {BANK}/                                Northbank, Meridian, …
+│       └── {ACCOUNT}/                         Checking_x4021, Card_x7734, …
+│           └── {YYYY}/{MM}/
+│               ├── 20250930-statement-4021.pdf          the source of truth
+│               ├── 20250930-statement-4021.ofx          a bank download, when there is one
+│               ├── 20250930-statement-4021_brew.txt     pdftotext extraction
+│               ├── 20250930-statement-4021_ocr.txt      OCR extraction
+│               └── 20250930-statement-4021_claude.txt   LLM extraction
+├── import/accounts.csv                        a prepared archive's manifest (apis.mdx §14.2)
+└── .ezbk-staging/                             THE STAGING DIRECTORY — the only place we write
+```
+
+**The root is configuration, never a constant** (§18): `--path` → `EZBK_STATEMENTS_DIR` →
+`ezbookkeeping.statements.root` in the credentials file → no root, and the verb refuses naming the
+setting.
+
+**Nothing under `{ROOT}` is ever written, moved, renamed or deleted except under
+`{ROOT}/.ezbk-staging/`.** The statements are the operator's financial records, and some are the only
+copy. If the operator shares a statements tree with the Actual Budget fork, the two staging
+directories (`.actual-staging/`, `.ezbk-staging/`) sit side by side and never touch each other.
+
+### 10.2 Stage 0 — which kind of archive is it? (`ezbk statements manifest`)
+
+**Run this first.** A **prepared** archive already holds importable files (OFX, QFX, QIF, CAMT, MT940,
+CSV) and a manifest; a **raw** archive is PDFs. In prepared mode the extraction stage does not exist,
+the bank's `FITID` is already the dedupe key, and ezBookkeeping's own converter reads each file. The
+manifest verb prints, per account, the converter the server will use (`ofx`, `qfx`, `camt053`,
+`qif_mdy`…) so a wrong guess is visible before anything is parsed. **QIF files need a date order**
+(`qif_ymd` / `qif_mdy` / `qif_dmy`); the server will not guess it, and neither will the CLI — the
+manifest or `--qif-date-order` must say.
+
+### 10.3 Stage 1 — discover (`ezbk statements scan`, `missing`)
+
+Walk the root; classify every file; derive a **statement identity** — `entity`, `bank`, `account_last4`
+(from the directory **and** the filename, a disagreement reported, never guessed), `period`, `sha256`,
+and which sidecars exist. `scan` prints entity → bank → account → year with counts and flags **missing
+months**, **duplicate scans** and **files with no usable extraction**. It changes nothing.
+
+`ezbk statements missing` prints only the gaps, one `ENTITY/BANK/ACCOUNT YYYY-MM` per line on stdout,
+so it pipes into whatever fetches them.
+
+### 10.4 Stage 2 — extract (`ezbk statements extract`, raw mode only)
+
+For every statement with no usable rows yet, produce rows, preferring `_claude.txt` > `_brew.txt` >
+`_ocr.txt` > the PDF itself. Every row records `source_file`, `source_kind`, `source_line`. A statement
+yielding **zero** rows is reported by name and makes `extract` exit `1` — a silent zero is how a year
+goes missing. `--force` re-extracts. The output is **ezBookkeeping CSV** in the staging directory, so
+even the raw path ends in the app's own `ezbookkeeping_csv` converter.
+
+### 10.5 Stage 3 — statement-level de-duplication (`ezbk statements dupes`)
+
+_The same month, scanned or downloaded twice._ Group by `(entity, bank, account_last4, period)`.
+Identical bytes → one statement (`duplicate_identical`). Different bytes → ranked (more rows; wider
+range; better source; newer file; first path — deterministic), the loser `superseded`, recording which
+rule decided. **Candidates that disagree about which transactions exist are a `conflict`** that blocks
+that account-month until the operator picks with `--prefer <path>`. Nothing is deleted; "duplicate" is a
+verdict about a file, not an action on it.
+
+### 10.6 Stage 4 — transaction-level de-duplication (LOCKED)
+
+_The same transaction, seen twice._ Every row gets an `import_id` (apis.mdx §14.5):
+
+- the **bank's own id** when the converter surfaces one (OFX/QFX `FITID`, CAMT and MT940 references),
+  prefixed by the account key — we never mint over a bank's id;
+- otherwise a deterministic hash of account key, date, hundredths, currency, normalised description and
+  an **ordinal** counted over the **merged account-month**, so two genuine $5.00 coffees on one day both
+  import and a cycle-dated card's two statements feeding one calendar month do not collapse them.
+
+**The server's `machine_import_record` table is the authority on "already imported"**, because
+ezBookkeeping's own importer has no duplicate check (apis.mdx §14). The CLI never decides it, and never
+asks the database.
+
+**A deletion is respected.** If the operator deleted an imported transaction in the browser, the next
+`plan` counts it `already present (deleted)` and does not bring it back. `ezbk statements apply
+--reimport-deleted --yes` is the only way to resurrect such rows; it names every one first and requires
+`--yes`.
+
+### 10.7 Stage 5 — mapping (the step ezBookkeeping needs that Actual did not)
+
+ezBookkeeping requires an **account** and a **secondary category** on every imported transaction. So
+before a plan can be applied:
+
+- **Accounts** come from the map written by `ezbk statements accounts --write` (§10.8).
+- **Categories** match by exact name to the operator's categories of the right type. Everything else is
+  listed by `plan` under **Unmapped**, with counts. `--fallback-expense "Other Expense"
+  --fallback-income "Other Income"` names where unmapped rows go; without them, an account with unmapped
+  rows is **blocked**, not guessed. After import, `ezbk analytics import-fallout --run <id>` lists what
+  landed in the fallback, ready for `ezbk transactions set-category`.
+- **Transfers.** A card payment appears in both the checking and the card statement. `plan` lists these
+  as **transfer candidates** (equal and opposite, same date, two mapped accounts) and imports neither as
+  a transfer unless `--accept-transfer <candidate-id>` says so — in which case one ezBookkeeping transfer
+  is created instead of an expense plus an income. Unaccepted, both import as ordinary rows and the plan
+  warns that spending may be double-counted.
+- **Hand-entered twins.** A statement row that matches an existing, un-imported transaction (same
+  account, amount, currency, ±3 days) is a **possible match**, excluded by default, and linked only with
+  `--accept-match <row-id>=<transaction-id>`.
+
+### 10.8 Accounts first (`ezbk statements accounts`)
+
+Against an empty book, the first thing to do is create the accounts. `ezbk statements accounts` prints
+one decision per manifest row — `create`, `link`, `skip`, `ambiguous` — with the proposed name
+(`Household · Northbank Checking ••4021`), **the ezBookkeeping category and whether it is an asset or a
+liability**, and **the currency**. Two things to read before `--write`:
+
+1. **Every liability.** A credit card created as a checking account inverts its balance and turns every
+   payment into income.
+2. **Every currency**, and every one that was defaulted rather than stated — currency cannot be changed
+   after an account is created.
+
+`ambiguous` rows block and are never created. `--write --yes` creates the rest in one batch and writes
+the map beside the statements.
+
+### 10.9 Stage 6 — plan and apply
+
+**`ezbk statements plan`** changes nothing and prints, per account:
+
+```
+household / Northbank / Checking_x4021  ->  "Household · Northbank Checking ••4021" (USD)
+  statements      21 primary, 3 superseded, 0 conflicts
+  rows           368 parsed (converter: ofx)  ->  368 after de-dupe
+  vs. books      241 already imported   2 already imported, deleted since (kept deleted)
+                   1 possible match with a hand-entered transaction (excluded)
+                   4 transfer candidates with Household · Northbank Card ••7734 (not accepted)
+                 120 NEW   (9 to fallback "Other Expense")
+  date range    2024-10-01 .. 2026-06-30
+```
+
+**Nothing is applied without three things:** `--write`, `--yes`, and a server started with
+`--allow-write`. **The plan is recomputed at apply time**; if it differs from what was just printed,
+`apply` prints the difference and asks for `--yes` again. `--max-changes N` (default 200) refuses a run
+that would add more rows without a second `--yes` — the first real import of a ten-year archive is
+supposed to be deliberate. `apply` then prints the per-account created counts, the run id, and exits
+`0` only if every account succeeded.
+
+**`ezbk statements import-file <FILE> --account A`** is the browser's Import dialog for one file: the
+same plan and apply, scoped to one file and one account, with `--type` naming the converter when the
+extension is not enough, and `--column-map` for a custom CSV.
+
+### 10.10 What the pipeline never does
+
+- Never writes, moves, renames or deletes anything under `{ROOT}` outside `.ezbk-staging/`.
+- Never deletes a transaction.
+- Never guesses a category, an account, a currency or a QIF date order.
+- Never overwrites a transaction's comment on a re-run.
+- Never invents a date, an amount or a balancing row.
+- Never uploads a statement anywhere — including to ezBookkeeping's optional LLM recognisers.
+
+---
+
+## 11. The write verbs
+
+Every write verb is a **dry run unless `--write` is given**, and the dry run is the server's own
+preview (apis.mdx §9.2) printed as a before/after table. With `--write`, the CLI performs the two-step
+protocol itself: it calls the route with `dry_run: true`, shows the preview, takes the returned
+`confirm_token`, and calls again with `dry_run: false` and the token. If the second call returns
+`conflict` because the books moved in between, it prints the new preview and asks for `--yes`.
+
+- **`ezbk transactions add`** — one transaction, or `--from-file rows.json` for many. Transfers take
+  `--to-account` and, across currencies, `--to-amount`.
+- **`ezbk transactions set-category` / `set-account` / `tag …`** — bulk, by ids or by the **same filter
+  flags `transactions list` takes**, so "show me these" and "change these" can never select different
+  sets. The preview lists every row; over `--max-changes` it needs `--yes`.
+- **`ezbk accounts add`** — prints the category's side (asset/liability) and the currency before
+  writing, because neither is cheap to fix.
+- **`ezbk accounts reconcile <acct> --balance 421108 --as-of 2026-08-31`** — shows the app's balance,
+  the operator's figure and the difference, and the transactions since the last reconciliation. With no
+  `--adjust-into`, `--write` only marks the account reconciled when the difference is zero, and refuses
+  otherwise with _"find the missing transaction first, or pass --adjust-into <category>"_. With it,
+  exactly **one** visible adjustment transaction is created.
+- **`ezbk schedules add`** — a scheduled template; `ezbk schedules upcoming` shows what it will create.
+- **`ezbk rates set EUR 1.0842`** — a custom rate is a preference; `ezbk rates clear EUR` restores the
+  provider's. The one place a decimal is typed on purpose: a rate is a ratio, not money.
+- **`ezbk undo` / `redo` / `journal`** — undo reverses the last **machine-plane** write (apis.mdx §9.6),
+  prints what it reversed, and cannot undo something done in the browser. It is the first thing to type
+  after a write that was not what the operator meant.
+
+---
+
+## 12. The operational verbs
+
+### 12.1 `ezbk doctor`
+
+Prints a report and exits `1` if any REQUIRED check failed:
+
+| Check                                                          | Required? | What a failure means                                                                  |
+| -------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------- |
+| `go` present, version ≥ the root `go.mod`'s                    | yes       | the server will not build                                                             |
+| `node`/`npm` present                                           | yes       | the UI will not build                                                                 |
+| `~/T/_ezbookkeeping` writable                                  | yes       | no logs, no pid                                                                       |
+| Credentials file exists, mode `0600`, owned by us              | yes       | §4.4                                                                                  |
+| `./ezbookkeeping` and `./dist/index.html` built                | no        | `just build`                                                                          |
+| `:8080` reachable, `healthz.json` ok                           | **no**    | "is my environment sane" and "is the server up" are different questions               |
+| `/machine/v1/ping` with the key                                | no        | reports `401` distinctly from `404` (old binary) — completely different fixes         |
+| A user is bindable                                             | no        | 0 users → register one; 2+ → set `ezbookkeeping.machine.username`                      |
+| Upstream `enable_api_token` / `enable_mcp` off                 | no        | **warns loudly if on** — a full-access bearer door is open (apis.mdx §2.2)            |
+| Server listening on loopback only                              | no        | warns if `http_addr` is `0.0.0.0` — the browser API is then reachable from the network |
+| `data/.secret_key` set (upstream's `secret_key` not the default `"ezbookkeeping"`) | no | 2FA secrets would be encrypted with a public default                          |
+| Statements root configured and readable                        | no        | only the `statements` family needs it                                                 |
+| `ezbk` on `PATH` and pointing at this checkout                 | no        | catches the second-checkout confusion                                                 |
+
+### 12.2 `ezbk logs`
+
+Tails `~/T/_ezbookkeeping/server.log` (bring-up's), `log/ezbookkeeping.log` (the app's own) and
+`~/T/_ezbookkeeping/cli.err`. `--follow`, `--lines N`. Prints paths first.
+
+### 12.3 `ezbk key`
+
+`init` (mint if absent, print the fingerprint), `show` (path, mode, owner, fingerprint, `created`,
+`created_by`, `label`, bound `username` — **never the key**), `rotate --yes` (mint, merge-write, print
+the new fingerprint, remind the operator to restart).
+
+---
+
+## 13. Progress UI — the CLI must never look hung (LOCKED)
+
+- One self-updating line on **stderr** — spinner, phase, elapsed, and a count where one is honest:
+  `⠹ Importing Household · Northbank Checking… 1,240/3,118  0m41s`.
+- **Phases that show it:** the health wait during bring-up, the Go build during bring-up, extraction,
+  plan and apply (from the server's NDJSON progress).
+- **TTY-gated.** No animation when stderr is not a TTY; `--quiet` suppresses both.
+- **stdout is never touched by progress.** `ezbk statements missing | wc -l` stays a count of months.
+- **Erased before any result, error or log tail prints**, including on failure.
+
+Code: `~/BGit/Bryan_git/ezbookkeeping/cli/internal/progress/spinner.go` — type `Spinner` (`Start()`, `Tick()`, `Stop()`)
+
+---
+
+## 14. Output contracts
+
+### 14.1 stdout is the answer; everything else is stderr (LOCKED)
+
+stdout carries **exactly one payload**. The spinner, warnings, the resolved target, the resolved dates,
+the provenance, the run summary and every progress line go to **stderr**. `ezbk accounts list --format
+json | jq '.data.accounts[].name'` must never choke on a banner.
+
+### 14.2 The three formats
+
+| `--format`       | Shape                                            | Amounts                                                                |
+| ---------------- | ------------------------------------------------ | ---------------------------------------------------------------------- |
+| `json` (default) | the machine-plane envelope, pretty-printed       | **raw integer hundredths, always**, beside their currency              |
+| `table`          | aligned columns with headers                     | decimal with the currency's symbol or code, thousands separators       |
+| `csv`            | RFC 4180, header row                             | **both** `amount_hundredths` and a decimal `amount`, plus `currency`   |
+
+Conversion happens in **one** function. A second place that turns hundredths into dollars is a second
+place they can be turned into dollars wrongly.
+
+### 14.3 Money — integer hundredths, always (LOCKED)
+
+> **An amount is a signed integer number of hundredths, with a currency. It is never a float in any
+> variable, field or intermediate value in this program.**
+
+ezBookkeeping keeps two decimal places for every currency (apis.mdx §17.1). The CLI parses hundredths,
+sends hundredths, and renders a decimal **string** only in the renderer. It never adds two amounts —
+not even for a table footer — and never adds two currencies.
+
+---
+
+## 15. Exit codes
+
+| Code | Meaning                                                                                                                                    |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `0`  | it worked — including "zero results", noted on stderr                                                                                      |
+| `1`  | it ran and failed — a `doctor` check failed, an extraction yielded nothing, an apply partially failed                                      |
+| `2`  | usage, or a local refusal before any call: unknown verb or flag, a decimal amount, no key (R6), credentials too permissive, ambiguous name |
+| `3`  | **not found** — no such account, no statement for that month, no bindable user. A fact, not an error                                       |
+| `4`  | **conflict** — a statement conflict, a recomputed plan that differs, undo refusing over a browser edit                                     |
+| `5`  | the app could not be brought up, or the machine plane could not be reached                                                                 |
+| `6`  | authentication failed — a `401` from a server that IS reachable. Distinct from `2`                                                         |
+| `7`  | **write refused by tier** — `--write` given but the server was not started with `--allow-write` (or admin)                                 |
+| `69` | the binary is not built (`EX_UNAVAILABLE`)                                                                                                 |
+
+Exit `7` is new relative to the Actual CLI: there, a tier refusal was folded into `2`, but "you asked
+correctly and the server said no" and "you typed it wrong" have different fixes, and a cron script
+should be able to tell them apart.
+
+---
+
+## 16. Logging, and what a failure leaves behind
+
+- **`~/T/_ezbookkeeping/cli.info`** — INFO and `API_CALL` lines: verb, target, route, duration, outcome,
+  row counts. **File only. Never stdout.**
+- **`~/T/_ezbookkeeping/cli.err`** — WARN and ERROR lines, **and** stderr.
+- `~/T/_ezbookkeeping/server.log` — the server's stdout/stderr when `ezbk` started it.
+- `log/ezbookkeeping.log` — the app's own log, written by upstream code, git-ignored.
+
+Rules: the key is never in any of them, only its fingerprint; **no financial data** — counts yes, an
+amount, a comment, an account name or number no; logging can never crash the CLI; files rotate at 8 MB,
+five generations; never `/tmp`; a panic is recovered at top level, logged with its stack to `cli.err`,
+printed as one sentence plus the remediation, and exits `1`.
+
+---
+
+## 17. Security
+
+- **One secret: the API secret key**, read rather than handed in, so `ezbk` works on the machine it
+  belongs to and nowhere else.
+- **No human credential, no upstream token** (§1.3, R10).
+- **Never sends the key off loopback** unless the target is `https:` (R3); the server 404s the plane
+  off loopback regardless.
+- **The server is the gate, not the client.** Every check the CLI makes — a decimal amount, a path
+  outside the root, a cross-currency total — exists to produce a better message before the round trip,
+  and **is repeated server-side**.
+- **Path containment.** Every statements path is resolved to an absolute real path (symlinks followed)
+  and must be inside the configured root; the server re-checks. `--path ../../.ssh` is refused twice.
+- **`ezbk raw` is loud.** Every passthrough write prints a one-line warning that it bypasses the dry
+  run, the token, the ceiling and the journal (apis.mdx §16), and the tier still applies.
+- **Prompt-injection posture.** A statement is untrusted input. Extracted text is parsed into typed
+  fields, never evaluated, never used to build a shell command, never interpolated into a query.
+
+---
+
+## 18. Open-source safety (LOCKED)
+
+This fork is public. Three rules, each with a test (§19):
+
+1. **No secret in the tree.** No config key under `cli/` can hold a key. A test greps the built binary
+   and the source for 64-hex literals.
+2. **No private path in the code.** The statements root, the bound username, entity names and last-fours
+   are **configuration, never constants**. Every name in this spec is invented (`household`, `acme_llc`,
+   `Northbank`, `Meridian`, `••4021`, `operator`). A test greps `cli/` for `/Users/` and the entity names
+   used on this machine.
+3. **No financial data in the repo.** `.ezbk-staging/` is outside the repo by construction and gets its
+   own `.gitignore` anyway; fixtures are synthetic statements with invented banks and amounts.
+
+---
+
+## 19. Testing
+
+| Layer                      | What it holds                                                                                                                                                                                                                         |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Unit (`go test`)**       | the parser and per-verb flag declarations; the hundredths renderer both ways, for USD, EUR and JPY; relative-date resolution in two timezones; the credentials merge (another product's keys survive); decimal-amount rejection with the suggested integer |
+| **Credentials parity**     | `cli/internal/credentials` (Go), `mcp/src/credentials.ts` (TypeScript) and `pkg/machine/credentials.go` all pass the shared vector file `pkg/machine/testdata/credentials_vectors.json`                                                |
+| **Golden fixtures**        | a synthetic statements tree under `cli/testdata/statements/` — three entities, two banks, OFX with `FITID`s, a CSV without ids, a QIF with no date order, a duplicated month (identical and different bytes), a conflict pair, an unreadable PDF, two identical same-day amounts, a cycle-dated card, a card payment present in two accounts, a EUR account |
+| **Pipeline end to end**    | against a real server: plan ≡ apply counts; a second apply adds 0; a row deleted in the UI stays deleted; `--reimport-deleted` brings it back and names it; the two-coffees and cycle-dated rows both import; a comment edited after import survives a re-run; transfer candidates are never auto-merged |
+| **Integration**            | a real server on an ephemeral port, temp work dir, temp SQLite, temp credentials file; bring-up from cold; the full gate ladder                                                                                                        |
+| **Auth negatives**         | no key → exit 2 with the R6 message; wrong key → exit 6; `0644` → exit 2 naming `chmod 600`; non-loopback `--api http://` → refused before any socket opens                                                                            |
+| **stdout purity canary**   | the built binary run over every verb with stderr discarded produces parseable JSON on stdout; a source grep bans `fmt.Print*` / `os.Stdout` outside `internal/render`                                                                  |
+| **Thin-client canary**     | no import of the root module; no `database/sql`, no `sqlite`; no `+` applied to an amount type outside `internal/render`                                                                                                               |
+| **Open-source canaries**   | the three §18 greps                                                                                                                                                                                                                   |
+| **Smoke**                  | `ezbk`, `ezbk doctor`, `ezbk --help` each exit as specified with the server both up and down                                                                                                                                          |
+
+---
+
+## 20. Use cases
+
+**UC-1 — First run on a fresh clone.** `just build`, add `cli/bin` to `PATH`, type `ezbk`. No server,
+no key. The report says so and suggests `ezbk up`. `ezbk up` starts the server, which mints the key on
+boot; the next `ezbk` shows it armed and bound to the one user. **No secret was typed.**
+
+**UC-2 — "What's my checking balance?"** `ezbk accounts balance "Northbank Checking" --format table`.
+The server is down; `ezbk` brings it up with a spinner, then prints `4,211.08 USD`.
+
+**UC-3 — A decade of statements, first import.** `ezbk statements manifest` shows a prepared archive
+of 27 accounts with OFX files. `ezbk statements accounts` proposes 24 creates and 3 links; the operator
+reads the liabilities and currencies and runs it with `--write --yes`. `ezbk statements plan
+--fallback-expense "Other Expense" --fallback-income "Other Income"` shows 11,902 new rows, 105
+transfer candidates and 312 bound for the fallback. The operator accepts the transfers and runs
+`apply --write --yes --max-changes 20000`.
+
+**UC-4 — The next month.** Same commands. `plan` reports 38 new, 11,902 already imported. `apply` adds
+38. **This is the case the whole `import_id` design exists for.**
+
+**UC-5 — The fallback clean-up.** `ezbk analytics import-fallout --run <id> --format table` groups the
+312 fallback rows by comment; `ezbk transactions set-category --keyword "ACME HARDWARE" --category "Home
+Repair"` previews 46 rows; `--write` applies.
+
+**UC-6 — "Did I spend more this year than last?"** `ezbk analytics income-vs-expense --start 2025-01-01
+--end 2026-12-31 --interval year --convert-to USD --format table` — the EUR account converted at the
+app's latest rate, and stderr says so.
+
+**UC-7 — A 401 after a rotation.** `ezbk key rotate --yes` without a restart. The next call exits `6`:
+_"the server is holding an older key — restart it: `ezbk stop && ezbk up`."_
+
+**UC-8 — A foreign process on 8080.** `ezbk up` finds a pid it did not start on the port, names it,
+refuses, exits `5`. It does not kill it; `EZBK_PORT=8090 ezbk up` is the suggestion.
+
+**UC-9 — Scripting a monthly import.** A cron entry runs `ezbk statements apply --write --yes --quiet
+--no-bringup`; exit `7` pages the operator with "the server was started without --allow-write", which
+is a different page from exit `5`.
+
+**UC-10 — An agent asks the same question.** Claude Code does not shell out to `ezbk`; it uses the MCP
+server, which reads the same key and calls the same routes. The answers are identical because the
+services are.
+
+---
+
+## 21. Acceptance criteria
+
+1. `ezbk` with no arguments prints the orientation report and exits `0` on a machine where nothing is
+   running and no key exists.
+2. A fresh machine needs **zero typed secrets**: the server mints the key at `0600` on first boot (or
+   `ezbk` does, if it runs first), and every later call authenticates.
+3. Killing the server and running `ezbk accounts list` brings it up, waits on `healthz.json`, and prints
+   the accounts — spinner on a TTY, none when piped.
+4. `ezbk accounts list --format json | jq .` succeeds with the server cold and warm; stdout holds no
+   banner or spinner residue.
+5. `/machine/v1/ping` from a non-loopback address → `404`; with a wrong key from loopback → `401` with a
+   body byte-identical to the no-key case; `ezbk` maps them to exits `5` and `6`.
+6. `chmod 644 ~/.credentials/ezbookkeeping.json` makes the CLI refuse with exit `2` naming `chmod 600`.
+7. The full statements pipeline twice over the fixture tree: a byte-identical `_rows.csv`, and the second
+   `apply` reports 0 created.
+8. The fixture's two identical same-day rows and its cycle-dated rows all import, and none re-imports.
+9. A duplicated month with identical bytes collapses; one with differing rows is a `conflict` that
+   blocks `apply` for that account only (exit `4`).
+10. No path under the statements root outside `.ezbk-staging/` is modified — asserted by a recursive
+    hash before and after.
+11. A row deleted in the UI is not re-added by `apply`; `--reimport-deleted --yes` re-adds and names it.
+12. No verb prints a total that spans two currencies without the rates on stderr.
+13. `--amount 12.50` is refused with `did you mean --amount 1250?`.
+14. The three §18 canaries pass; `cli/` imports nothing from the root module and never opens the SQLite
+    file.
+15. `just build` builds `cli/bin/ezbk`; upstream's `go build ./...` and `go test ./...` at the root are
+    unaffected by `cli/`.
+16. Every flag in §6 resolves to a declared flag on its verb, and every declared flag appears in
+    `ezbk help <verb>`.
+
+---
+
+## 22. Build phases
+
+| Phase                          | Ships                                                                                                   | Done when                        |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| **P1 — the spine**             | `cli/` module, parser, logger, progress, `--format`, exit codes, `ezbk help`                            | `ezbk --help` works anywhere     |
+| **P2 — the key**               | credentials (Go copy + the shared vectors), `ezbk key`, `ezbk doctor`, `ping`                                       | AC 2, 5, 6                       |
+| **P3 — bring-up**              | `bringup`, `ezbk up/stop/status/logs`, bare `ezbk`, the justfile's `server-bg`/`stop`/`status`          | AC 1, 3                          |
+| **P4 — the read verbs**        | accounts, transactions, reference, rates, data, `ezbk raw` (reads)                                      | AC 4                             |
+| **P5 — analytics**             | `ezbk analytics *` — every total, CSV series for charting                                               | AC 12                            |
+| **P6 — the write verbs**       | the two-step protocol, transactions/accounts/categories/tags/schedules/rates writes, reconcile, **undo** | AC 13                            |
+| **P7 — statements, read**      | `manifest`, `scan`, `missing`, `dupes`, `accounts` (plan), `plan`                                       | AC 9, 10                         |
+| **P8 — statements, write**     | `accounts --write`, `apply`, `import-file`, `extract` (raw)                                             | AC 7, 8, 11                      |
+| **P9 — hardening**             | every canary, the golden tree, the admin verbs                                                          | AC 14, 15, 16                    |
+
+P1–P3 must be right; everything after them is a verb on a working spine. **P4 + P5 is the first release
+worth using** — every question answered, nothing changeable.
+
+---
+
+## 23. Invariants recap (LOCKED)
+
+1. `ezbk` is not the `ezbookkeeping` binary's data subcommands and not `ebktools.sh`; it never opens the
+   database, never shells out to a data subcommand, never reads or mints an upstream token.
+2. CLI code lives only in `cli/`, its own Go module, importing nothing from the root module. `pm/` holds
+   no code.
+3. `just build` and `just run` always build the CLI.
+4. If the app is down, the CLI brings it up with the justfile's environment and gates on
+   **`:8080/healthz.json`**, then on `/machine/v1/ping` with the key.
+5. The API secret key is 256 `crypto/rand` bits, minted by the web app on first boot (or whichever side
+   needs it first), atomically merged into `~/.credentials/ezbookkeeping.json` at `0600`, sent as
+   `X-Ezbk-Api-Key`, compared in constant time, and never logged, echoed or sent off loopback.
+6. The CLI computes no answer about money: no sums, no conversions, no duplicate verdicts.
+7. Money is integer hundredths with a currency in every variable and field; decimals exist only in the
+   renderer; no total crosses currencies without the server's named rates.
+8. De-duplication has two layers, is deterministic, and the server's `machine_import_record` is the sole
+   authority on what is already imported; deletions are respected.
+9. Nothing outside `.ezbk-staging/` is ever written under the statements root.
+10. stdout carries exactly one payload; progress and diagnostics go to stderr.
+11. Writes need `--write` **and** the server's write tier; every write dry-runs first and is recomputed
+    at apply time.
+12. No secret, no private path and no financial data ever lands in this repo.
+
+---
+
+## 24. Related specs
+
+- **[apis.mdx](./apis.mdx) — the machine plane this CLI is a client of.** The authority on every route,
+  argument and error code.
+- [mcp.mdx](./mcp.mdx) — the MCP server. Same key, same plane, same services.
+- [../CLAUDE.md](../CLAUDE.md) — what this fork is, where things live, the open-source rule.
+- `~/BGit/Bryan_git/actual_budget_bryan/pm/cli.mdx` — `abx`, the sister fork's CLI this spec was grown
+  from.
+- `cmd/user_data.go` — upstream's `userdata` subcommands, to be sure a verb is not already the server
+  binary's job.

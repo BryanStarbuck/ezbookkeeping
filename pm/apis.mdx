@@ -1,0 +1,2179 @@
+---
+title: ezBookkeeping — the machine-plane API
+description: >
+  The HTTP contract that `ezbk` (the CLI) and the `ezbookkeeping` MCP server both speak, and the
+  ONLY way either of them reaches the operator's books. One loopback-bound plane mounted inside the
+  running Go server at /machine/v1, authenticated by an API secret key the web app mints for itself
+  with Go's crypto/rand into ~/.credentials/ezbookkeeping.json at mode 0600 — 256 bits, rendered as
+  64 hex characters, longer than a UUID and more than twice its entropy, never a password, never a
+  per-user JWT, never a key that leaves this computer. Behind the plane are the SAME Go services the
+  browser's /api/v1 handlers call, so the web UI, the terminal and the agent answer from one place
+  and cannot disagree about a balance. The design goal is COMPLETENESS: every action a person can
+  take in the web UI has a route here — not just listing accounts and transactions, but creating
+  accounts, importing years of bank statements through ezBookkeeping's own OFX/QFX/QIF/CAMT/MT940/CSV
+  converters, re-categorising and re-tagging in bulk, scheduling recurring transactions, reconciling
+  to a printed statement, setting custom exchange rates, and undoing any of it. Writes are gated by
+  two tier switches, a client switch and a confirm token the caller can only obtain by first reading
+  a plan; every write has a dry run; every result that hit a cap says so; money is an integer number
+  of hundredths IN ONE NAMED CURRENCY at every layer, and two currencies are never added together
+  without an exchange rate the response names. This spec is the contract; cli.mdx and mcp.mdx are
+  its two clients.
+---
+
+# ezBookkeeping — the machine-plane API
+
+`~/BGit/Bryan_git/ezbookkeeping/pkg/machine/` · base **`/machine/v1`** · Go (inside the existing
+`ezbookkeeping` server binary)
+
+---
+
+## Table of Contents
+
+- [Introduction](#introduction)
+  - [Why this repo exists](#why-this-repo-exists)
+  - [Where this spec fits under that umbrella](#where-this-spec-fits-under-that-umbrella)
+  - [What the operator gets from it](#what-the-operator-gets-from-it)
+  - [How it works — the idea](#how-it-works--the-idea)
+  - [How it works — the machinery](#how-it-works--the-machinery)
+  - [What this spec covers](#what-this-spec-covers)
+- [Goal](#goal)
+- [Overview](#overview)
+- [1. The three specs, and which one owns what](#1-the-three-specs-and-which-one-owns-what)
+- [2. What already exists upstream, and why we do not simply use it](#2-what-already-exists-upstream-and-why-we-do-not-simply-use-it)
+- [3. The eleven design rules](#3-the-eleven-design-rules)
+- [4. Placement, layout and build integration](#4-placement-layout-and-build-integration)
+- [5. Authentication — the API secret key](#5-authentication--the-api-secret-key)
+- [6. The bound user — whose books the key opens](#6-the-bound-user--whose-books-the-key-opens)
+- [7. The transport contract](#7-the-transport-contract)
+- [8. Tiers, capabilities and negotiation](#8-tiers-capabilities-and-negotiation)
+- [9. The write protocol](#9-the-write-protocol)
+- [10. The route catalogue](#10-the-route-catalogue)
+- [11. Coverage — every UI action, and the route that carries it](#11-coverage--every-ui-action-and-the-route-that-carries-it)
+- [12. The analytics plane — and the charting it feeds](#12-the-analytics-plane--and-the-charting-it-feeds)
+- [13. Currencies — the rule this app adds](#13-currencies--the-rule-this-app-adds)
+- [14. The ingest plane — statements into the books](#14-the-ingest-plane--statements-into-the-books)
+- [15. Account provisioning from a manifest](#15-account-provisioning-from-a-manifest)
+- [16. The passthrough — the upstream API behind the key](#16-the-passthrough--the-upstream-api-behind-the-key)
+- [17. Money, time and identifiers](#17-money-time-and-identifiers)
+- [18. Concurrency, limits and performance](#18-concurrency-limits-and-performance)
+- [19. Security](#19-security)
+- [20. Open-source safety](#20-open-source-safety)
+- [21. Testing](#21-testing)
+- [22. Use cases](#22-use-cases)
+- [23. Acceptance criteria](#23-acceptance-criteria)
+- [24. Build phases](#24-build-phases)
+- [25. Invariants recap](#25-invariants-recap)
+- [26. Related specs](#26-related-specs)
+
+---
+
+## Introduction
+
+### Why this repo exists
+
+This is a fork of [mayswind/ezbookkeeping](https://github.com/mayswind/ezbookkeeping) kept at
+`github.com/BryanStarbuck/ezbookkeeping` for one purpose: to run **this operator's own money** on
+their own machine, with their own years of bank statements in it, driven from wherever they happen
+to be working. Upstream ezBookkeeping is a good self-hosted personal-finance web app — a Go server
+with a Vue 3 front end in desktop and mobile editions, a SQLite (or MySQL/Postgres) database, a
+wide importer shelf, multi-currency accounts and a statistics page. It is a web app, though, and the
+operator does not live in a browser. They live in a terminal and in Claude Code.
+
+So this fork grows two extra front doors — a CLI (`ezbk`) and a stdio MCP server
+(`ezbookkeeping`) — and both of them need the same thing: **a way to ask the running app a
+question, and a way to tell it to do something, that is not a browser and is not a human login.**
+
+That is this spec.
+
+This fork is the second of its kind on this machine. `~/BGit/Bryan_git/actual_budget_bryan/`
+did the same thing to Actual Budget first, and its `pm/apis.mdx` is the model this spec was grown
+from. Where the two apps are alike, the design is deliberately the same so a lesson learned in one
+is a lesson learned in both. Where they differ — and they differ a lot: ezBookkeeping is a
+multi-user, multi-currency **bookkeeping** app with no envelope budget, no rules engine and no undo
+stack — this spec says so and designs for the app in front of it rather than the one it learned
+from.
+
+### Where this spec fits under that umbrella
+
+Three specs, one stack:
+
+```
+                        ┌───────────────────────────────┐
+   web browser ────────▶│  /api/v1   (upstream, JWT)    │──┐
+                        └───────────────────────────────┘  │
+                        ┌───────────────────────────────┐  ├─▶ pkg/services ──▶ the books
+   `ezbk`  (cli.mdx) ──▶│  /machine/v1   apis.mdx       │──┘      (one set of
+   MCP     (mcp.mdx) ──▶│  ← THIS SPEC   (API secret key)│         Go services)
+                        └───────────────────────────────┘
+```
+
+[cli.mdx](./cli.mdx) says what the terminal surface looks like. [mcp.mdx](./mcp.mdx) says what the
+agent surface looks like. **This spec says what is behind both of them**, and it is written first
+among equals: a verb `ezbk` cannot serve and a tool the MCP cannot serve are both the same bug — a
+missing route here.
+
+### What the operator gets from it
+
+Concretely, on a Tuesday evening:
+
+- _"How much did I actually spend on groceries this year, by month?"_ — one route, the server's own
+  aggregation, no model arithmetic anywhere in the chain.
+- _"Create the 27 accounts in my statement archive and import all 12,007 transactions."_ — a
+  manifest route, a provisioning route, and ezBookkeeping's own OFX/CSV converters parsing every
+  file.
+- _"Everything from ACME HARDWARE this year is Home Repair, not Shopping."_ — one bulk route, with a
+  dry run that names the exact 46 transactions before anything moves.
+- _"Northbank says $4,211.08 as of the 31st. What do I say?"_ — a reconcile route that returns the
+  difference and, only if asked again, writes one visible adjustment.
+- _"What's my net worth in dollars, counting the euro account?"_ — one route that converts with the
+  app's own exchange rates and **names the rate and its date** in the answer.
+- _"Undo that."_ — a route, because an agent that can write must be an agent that can be un-written,
+  and ezBookkeeping has no undo stack of its own (§9.6).
+
+### How it works — the idea
+
+**One set of services, three faces.** The `ezbookkeeping` Go binary is the only long-running
+process. The plane mounts inside its gin router and calls the **same** `pkg/services` functions the
+browser's `/api/v1` handlers call. Every balance the browser shows, every number `ezbk` prints and
+every figure the MCP hands a model comes out of those services. There is no second implementation
+of anything to drift.
+
+**The filesystem is the authentication.** The app mints a 256-bit random key into a `0600` file in
+the operator's home directory. A caller that can read that file is already a process running as the
+operator on the operator's machine — at which point it could open the SQLite file directly. The key
+is not trying to stop that person. It is stopping _everything else_: the other user on the box, the
+web page the operator happens to have open, the container on the same host, the phone on the Wi-Fi.
+
+**Nothing computes twice.** The clients are thin on purpose (cli.mdx §5.4, mcp.mdx §9.4). If a
+question needs arithmetic, the arithmetic happens here, once, in Go — and that is why this spec has
+an analytics plane (§12) that **moves** the grouping and currency conversion upstream does in the
+browser (`src/stores/statistics.ts`) into the server.
+
+### How it works — the machinery
+
+An `ezbk` or MCP call is:
+
+1. HTTP to `127.0.0.1:8080/machine/v1/...` with an `X-Ezbk-Api-Key` header.
+2. Five gates in order — loopback socket, origin + host, key, tier, input schema (§5.7, §19).
+3. A handler that validates its arguments, resolves the **bound user** (§6), calls **one** service
+   operation, and returns.
+4. One JSON envelope, success or failure, always the same shape (§7).
+
+Writes add a sixth step in front: the caller must first call the matching dry run or `plan` route,
+read the `confirm_token` it returns, and echo it back (§9).
+
+### What this spec covers
+
+What upstream already offers and why it is not enough; the key; the bound user; the envelope; the
+tier model; the write protocol and the undo journal; the complete route catalogue family by family;
+a coverage matrix against the web UI; the analytics plane and the charting it feeds; the currency
+rule; the ingest plane and manifest-driven account provisioning; the passthrough; the money, time and
+identifier rules; limits, concurrency, security, open-source safety, testing, use cases, acceptance
+criteria and build phases.
+
+It does not cover argument parsing or terminal rendering (cli.mdx §7, §13), tool descriptions or
+model-facing prompt design (mcp.mdx §9 and
+[ai/mcp_prompt_ezbookkeeping.md](../ai/mcp_prompt_ezbookkeeping.md)).
+
+---
+
+## Goal
+
+> **Everything a person can do in the ezBookkeeping web UI, a program can do over this plane — with
+> the same Go services computing it, the same converters parsing every statement, one currency per
+> number, and two switches plus a token standing between an agent and the operator's real money.**
+
+Five halves to that sentence, and each is a rule the build is measured against:
+
+| Half                             | The rule                                                                                                                               |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **Everything the UI can do**     | §11's coverage matrix has a row per UI action and a route per row. A blank cell is a backlog item, never a shrug.                      |
+| **The same services**            | No route reimplements a calculation the server already does. Where upstream computes in Vue, the calculation **moves** here (§12).     |
+| **The same converters**          | A statement file is parsed by `pkg/converters`, the code the UI's Import dialog uses — never by a parser we wrote beside it (§14.4).   |
+| **One currency per number**      | Every amount carries its currency; nothing is summed across currencies without a rate the response names (§13).                        |
+| **Two switches and a token**     | Server tier, client switch, `dry_run: false`, and a `confirm_token` the caller can only have read from a plan (§9).                    |
+
+---
+
+## Overview
+
+```
+                    ┌────────────────────────────────────────────────────────────────┐
+  ~/.credentials/   │  ezbookkeeping server  (Go, gin)  ─ the only long process        │
+  ezbookkeeping.    │                                                                  │
+  json  0600        │   /  /desktop  /mobile  /api/v1  /mcp  /healthz.json ← upstream   │
+       │            │                                                                  │
+       │  256-bit   │   /machine/v1/…                        ← THIS SPEC                 │
+       └───key──────┼──▶ gate 1 loopback socket (c.Request.RemoteAddr, never ClientIP) │
+                    │    gate 2 origin + host                                          │
+   ezbk ────────────┼──▶ gate 3 constant-time key compare (crypto/subtle)              │
+   MCP  ────────────┼──▶ gate 4 tier  (read · write · admin)                           │
+                    │    gate 5 input schema                                           │
+                    │    gate 6 confirm token + ceiling   (writes only)                │
+                    │         │                                                        │
+                    │         ▼  bound user (§6)                                       │
+                    │    pkg/services ──▶ xorm ──▶ SQLite  (data/ezbookkeeping.db)     │
+                    └────────────────────────────────────────────────────────────────┘
+                                                               │
+   web browser ────────────────────────────────────────────────┘  (same services, JWT door)
+```
+
+**Twelve families, ~130 routes, three tiers.** Read is always on. Write needs a server switch, a
+client switch and a token. Admin — the routes that can lose data — needs a third switch the MCP
+never gets.
+
+---
+
+## 1. The three specs, and which one owns what
+
+| Concern                                                    | Owner                                                                                      |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| What is computable, and what it is called on the wire      | **apis.mdx**                                                                               |
+| The envelope, the error vocabulary, the tier model         | **apis.mdx**                                                                               |
+| The API secret key: shape, storage, rotation, gate ladder  | **apis.mdx** (cli.mdx §4 and mcp.mdx §6 restate it, and defer here on any conflict)        |
+| The bound user                                             | **apis.mdx**                                                                               |
+| Argument parsing, flags, exit codes, terminal rendering    | cli.mdx                                                                                    |
+| Bring-up, ports, health gating, `ezbk` verb names          | cli.mdx                                                                                    |
+| Tool names, tool descriptions, JSON Schema, model framing  | mcp.mdx                                                                                    |
+| How the model is told to think about money and currencies  | [ai/mcp_prompt_ezbookkeeping.md](../ai/mcp_prompt_ezbookkeeping.md)                        |
+
+**Precedence (LOCKED).** Where this spec and a client spec disagree about the wire, **this spec
+wins** and the client spec is the one with the bug. Where they disagree about a client's own
+surface, the client spec wins. A route exists here before it exists there, never after.
+
+### 1.1 The one-line routing test
+
+> _Is it a fact about what the app can compute?_ → here.
+> _Is it a fact about how a human types it or how a model reads it?_ → cli.mdx or mcp.mdx.
+
+---
+
+## 2. What already exists upstream, and why we do not simply use it
+
+This section exists because the obvious objection is _"ezBookkeeping already has API tokens and an
+MCP server — why build a third door?"_ It does, and both are good. Neither is the thing this fork
+needs, and the reasons are specific.
+
+### 2.1 What upstream ships today
+
+| Upstream feature           | Where                                                                             | What it is                                                                                                                                                             |
+| -------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`/api/v1/*`**            | `cmd/webserver.go` `startWebServer()` lines 336–512                               | ~100 GET/POST `.json` routes the Vue app calls. Envelope `{success, result}` / `{success:false, errorCode, errorMessage}`                                              |
+| **API tokens**             | `pkg/services/tokens.go` `CreateAPIToken()` · `pkg/api/tokens.go` `TokenGenerateAPIHandler()` | A JWT of token type 8 (`API`), per user, signed with a random 10-char secret stored in `token_record`. Full access to every `/api/v1` route. **Off by default** (`[security] enable_api_token = false`) |
+| **The MCP server**         | `POST /mcp` · `pkg/mcp/` · `pkg/api/model_context_protocols.go`                    | JSON-RPC over HTTP, MCP token type 5, **seven tools** (`add_transaction`, `query_transactions`, `query_all_accounts`, `query_all_accounts_balance`, `query_all_transaction_categories`, `query_all_transaction_tags`, `query_latest_exchange_rates`). **Off by default** (`[mcp] enable_mcp = false`) |
+| **CLI token minting**      | `cmd/user_data.go` — `userdata user-session-new --type api\|mcp`                   | Mints either token straight into the database, no password                                                                                                              |
+| **`ebktools.sh` / `.ps1`** | `skills/ezbookkeeping/scripts/`                                                    | A curl + jq client for 13 `/api/v1` commands, reading `EBKTOOL_TOKEN` from the environment or a `.env` file                                                              |
+
+### 2.2 Why none of them is the machine plane (LOCKED)
+
+1. **An upstream token is a human's credential with no scope.** An API token opens **every**
+   `/api/v1` route for its user — including `data/clear/all.json`, which erases the books, and
+   `tokens/generate/*`. There is no read-only token, no write tier, no dry run and no ceiling. An
+   agent holding one can do anything the operator can, in one call, with nothing in between.
+2. **Getting one takes a password, a click or a database write.** The web route requires the
+   operator's password; the CLI route writes the database directly. Neither is "the app mints its
+   own key and the CLI simply finds it" — the requirement this fork was asked to meet.
+3. **It travels.** A bearer JWT in an `Authorization` header is designed to be sent from anywhere
+   `api_token_allowed_remote_ips` permits. The machine plane is designed to be **unreachable** from
+   anywhere but this computer (R10).
+4. **The upstream MCP is small by design and money-unsafe for our rules.** Seven tools, no
+   statistics, no updates, no import, and amounts on the wire as **decimal strings** (`"12.34"`),
+   which our integer rule (§17.1) forbids.
+5. **Every one of them lives in upstream's files.** Growing them means editing `pkg/api/*.go`,
+   `pkg/mcp/*.go` and `cmd/webserver.go` in hundreds of places — merge conflicts forever. The
+   machine plane is one new package and a two-line mount (§4.1).
+
+**What we do with them (LOCKED).** Nothing. They stay upstream's, they stay **off** in this fork's
+`just run` (the recipe never sets `EBK_SECURITY_ENABLE_API_TOKEN` or `EBK_MCP_ENABLE_MCP`), and the
+machine plane neither reads nor mints an upstream token. `ezbk doctor` reports if either has been
+switched on, because an operator who enabled them for an experiment and forgot has a full-access
+bearer door open that none of this spec's gates guard.
+
+### 2.3 What we DO reuse (LOCKED)
+
+- **`pkg/services`** — every read and write goes through the same service functions the `/api/v1`
+  handlers call: `services.Accounts`, `services.Transactions`, `services.TransactionCategories`,
+  `services.TransactionTags`, `services.TransactionTagGroups`, `services.TransactionTemplates`,
+  `services.ExchangeRates` (via `pkg/exchangerates`), `services.InsightsExplorers`.
+- **`pkg/converters`** — every statement file is parsed by
+  `converters.GetTransactionDataImporter(fileType)` (`pkg/converters/transaction_data_converters.go`
+  line 37), the same registry the Import dialog uses.
+- **`pkg/models`** — request and response shapes. The plane returns upstream's model fields in
+  upstream's casing (camelCase) wherever a model exists (§7.1a).
+- **`pkg/errs`** — upstream errors are mapped, not re-invented (§7.2).
+
+---
+
+## 3. The eleven design rules
+
+Each of these has shown up as a real bug in a real finance tool. They are stated once, here, and
+every route in §10 is written to obey them. R1–R10 are Actual Budget's rules carried over; **R11 is
+this app's own.**
+
+**R1 — One service call per route.** A route validates, calls one service operation, and renders.
+The exception is explicitly-named **composed routes** (reconcile, analytics, ingest apply, batch,
+undo), which say so in their entry and carry `meta.composed: true`.
+
+**R2 — Money is an integer number of hundredths.** Every amount in every argument, every response
+field and every intermediate value. Never a float, never a decimal string, never "dollars just for
+this one". §17.1.
+
+**R3 — Absent is not zero.** A category with no transactions in a period is **absent** from a
+breakdown, not present with `0`; an average over a period with no data is `null`; a balance we could
+not compute is an error, not `0`. §17.3.
+
+**R4 — Every write has a dry run.** `dry_run` defaults to **true** on every write route where a
+preview is meaningful. The preview is produced by the same code path as the write (§9.2).
+
+**R5 — Every cap is reported.** A clamped result carries `meta.truncated: true` and
+`meta.limitApplied`. A silent cap is how a caller concludes an account has exactly 1,000
+transactions. §7.5.
+
+**R6 — Every error names a fix.** `error.hint` is a remediation the caller can act on, in the
+caller's vocabulary. §7.4.
+
+**R7 — The app decides, we report.** Where the app has an opinion — what a balance is, what a
+converter parsed a row as, what an exchange rate is — the route returns the app's verdict verbatim.
+
+**R8 — Reads never mutate.** No read-tier route writes to the books, the filesystem or the token
+table. `POST /ingest/extract` is the one read-tier route that writes, only to the staging directory,
+and says so in its entry.
+
+**R9 — Fail closed.** No key, no plane. No bound user, no data. No tier, no route. No schema match,
+no handler. A 404 is the answer to everything the caller was not supposed to reach.
+
+**R10 — The plane is loopback-only, forever.** There is no configuration that binds it to another
+interface and no flag that turns the origin gate off — including when the server itself is started
+with `http_addr = 0.0.0.0`. Remote access to ezBookkeeping is what `/api/v1` and its JWTs are for.
+
+**R11 — One number, one currency.** Every amount on the wire travels with its ISO 4217 code. Two
+amounts in different currencies are never added, compared or ranked against each other unless the
+route converted them with the app's rates and **names each rate and its timestamp** in the
+response. §13.
+
+---
+
+## 4. Placement, layout and build integration
+
+### 4.1 Directory layout (LOCKED)
+
+```
+ezbookkeeping/
+├── pkg/machine/                   THE MACHINE PLANE — ours, one package tree upstream has never heard of
+│   ├── mount.go                   Mount(router, config) — the one call cmd/webserver.go makes
+│   ├── arm.go                     Arm() — resolve/mint the key and the bound user at server boot
+│   ├── credentials.go             the key: mint, resolve, fingerprint, merge-write
+│   ├── gates.go                   gates 1–3: loopback socket, origin + host, key
+│   ├── tier.go                    gate 4 — read / write / admin
+│   ├── validate.go                gate 5 — one validator per route
+│   ├── route.go                   the RouteDef shape + the /capabilities projection
+│   ├── routes.go                  var ROUTES []RouteDef — the ONE array
+│   ├── envelope.go                ok/error envelope + error vocabulary + upstream errs mapping
+│   ├── confirm.go                 gate 6 — plan tokens, fingerprints, ceilings
+│   ├── money.go                   the ONE place a big.Int string becomes an int64
+│   ├── clock.go                   the ONE place a YYYY-MM-DD becomes unix seconds (§17.4)
+│   ├── binduser.go                §6
+│   ├── journal.go                 the undo journal (§9.6)
+│   ├── audit.go                   ~/T/_ezbookkeeping/machine.audit
+│   ├── handlers/
+│   │   ├── plane.go               ping · whoami · capabilities · health
+│   │   ├── accounts.go            accounts, sub-accounts, reconcile
+│   │   ├── transactions.go        transactions, bulk, move, export
+│   │   ├── categories.go
+│   │   ├── tags.go                tags and tag groups
+│   │   ├── templates.go           templates and scheduled transactions
+│   │   ├── currency.go            exchange rates and conversion
+│   │   ├── insights.go            saved insights explorers
+│   │   ├── analytics.go           §12
+│   │   ├── ingest.go              §14 and §15
+│   │   ├── passthrough.go         §16
+│   │   └── admin.go               the destructive tier
+│   └── *_test.go                  colocated
+├── cmd/webserver.go               upstream's — gains ONE line: machine.Mount(router, config)
+├── cli/                           `ezbk` — cli.mdx
+├── mcp/                           the MCP server — mcp.mdx
+├── ai/mcp_prompt_ezbookkeeping.md the MCP's instructions payload
+└── pm/                            product management. NO CODE, EVER
+```
+
+**Why `pkg/machine/` and not beside `pkg/api/`.** The whole delta to upstream's tree is meant to be
+**one `machine.Mount(router, config)` line** in `cmd/webserver.go` (after the `/api/v1` group, before
+the listener) and **one `machine.Arm()` call** reached from server startup — a merge-conflict surface
+of two lines rather than two hundred. A package upstream has never heard of cannot conflict with an
+upstream commit; a file inside `pkg/api/` eventually will.
+
+**Why not a second process.** A second binary is a second thing to start, a second port to pin, a
+second health endpoint to get wrong, and a second writer on `data/ezbookkeeping.db` — SQLite with two
+writers is a `database is locked` at 2 a.m. One process, one writer.
+
+**The one table we add.** The ingest plane needs a durable record of which statement row became which
+transaction (§14.6), and the undo journal needs somewhere to live (§9.6). Both are tables owned by
+`pkg/machine`, created with `xorm` `Sync` inside `Arm()` in the **user-data** database — never by
+editing `cmd/database.go`'s upstream table list. Their names are prefixed `machine_` so nobody
+mistakes them for upstream's, and dropping them loses no upstream data.
+
+### 4.2 Build integration
+
+`just build` already builds the Go binary and the Vue front end. The plane is part of the Go binary
+and needs no separate step. `just build` additionally builds `cli/` and `mcp/` (cli.mdx §2.3,
+mcp.mdx §4). `just run` arms the plane; the boot line
+`Machine plane armed on /machine/v1 (key 4f2a…/sha256:9c1b, user "operator", writes DISABLED)` is the
+operator's proof it is up.
+
+Code: `~/BGit/Bryan_git/ezbookkeeping/cmd/webserver.go` — function `startWebServer()` (exists today; gains `machine.Mount(router, config)`)
+Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/mount.go` — function `Mount()`
+
+---
+
+## 5. Authentication — the API secret key
+
+This section is the **authority**. cli.mdx §4 and mcp.mdx §6 restate parts of it for their own
+readers; where they differ, this text is correct.
+
+### 5.1 Why not a password or an upstream token (LOCKED)
+
+1. **A password is typed by a human.** A CLI that prompts cannot run in a loop; an MCP that prompts
+   hangs a conversation.
+2. **An upstream API token unlocks everything** (§2.2) and is designed to travel.
+3. **Both are the operator's.** The API secret key authenticates _this machine_, not a person, and
+   never leaves it, so its blast radius is this computer.
+
+### 5.2 Shape and entropy (LOCKED)
+
+> **32 bytes from Go's `crypto/rand`, rendered as 64 lowercase hex characters.**
+
+- **At least the length of a UUID, on purpose longer.** The requirement is "a very large key, the
+  length of a UUID, from a cryptographically secure generator". A UUIDv4 is 36 characters carrying
+  122 random bits. This key is 64 characters carrying **256** random bits — more than twice the
+  entropy, and it is deliberately _not_ UUID-shaped: a UUID looks like an identifier, and
+  identifiers get logged, put in URLs and pasted into issues. A 64-character hex string looks like a
+  secret and gets treated like one.
+- **`crypto/rand.Read` and nothing else.** `math/rand` is a seeded PRNG and is not cryptographically
+  secure. A test asserts `pkg/machine` imports `crypto/rand` for minting and that `math/rand` appears
+  nowhere under `pkg/machine/` or `cli/` (and `Math.random` nowhere under the TypeScript `mcp/`, which
+  mints with `crypto.randomBytes`). A short read from `crypto/rand` is a fatal error,
+  never a retry with a weaker source.
+- **Not `security gen-secret-key`.** Upstream's `ezbookkeeping security gen-secret-key` makes a
+  random _alphanumeric_ string for `[security] secret_key`. That is a different secret with a
+  different job (below), and reusing the generator would blur the two.
+- **Validated on every read.** `^[0-9a-f]{64}$`. A key that does not match is refused at resolve
+  time with the rotate command as the hint — never silently padded, trimmed or lowercased.
+
+**It is NOT `data/.secret_key`.** The fork's `justfile` writes `data/.secret_key` with
+`openssl rand -hex 24` and passes it as `EBKCFP_SECURITY_SECRET_KEY`. That is upstream's
+`[security] secret_key`, which encrypts 2FA secrets and salts passcode hashes
+(`pkg/services/twofactor_authorizations.go`). It lives inside the repo directory (git-ignored by
+`/data/`), and it must stay unrelated to the API secret key: rotating one must never invalidate the
+other, and the API secret key must never live inside the repo tree at all.
+
+Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/credentials.go` — `MintKey()`, `IsWellFormedKey()`, `Fingerprint()`
+
+### 5.3 Where it lives (LOCKED)
+
+```jsonc
+// ~/.credentials/ezbookkeeping.json          mode 0600, directory mode 0700
+{
+  "ezbookkeeping": {
+    "machine": {
+      "api_key": "4f2a…64 hex chars…",
+      "created": "2026-09-21T10:04:11Z",
+      "created_by": "server",          // or "ezbk" or "mcp" — whoever needed it first
+      "label": "operator-macstudio",
+      "username": "operator"           // optional — the bound user (§6)
+    },
+    "statements": { "root": "/…/bank_statements" },
+    "timezone": "America/Los_Angeles"  // optional — §17.4
+  }
+  // …other products' top-level keys, preserved byte for byte
+}
+```
+
+- **One file unique to this application**: `ezbookkeeping.json`, beside `actual_budget.json`,
+  `large_files_bridge.json` and the rest. Never shared with the Actual Budget fork — two apps, two
+  keys, so a key leaked from one opens nothing in the other.
+- **`~/.credentials/`, not the repo.** The repo is public (§20). There is no config key anywhere in
+  the tree that can hold this value.
+- **Per machine, never synced.** A second machine mints its own.
+- **The write merges.** Read, mutate the `ezbookkeeping` subtree, write back — every key it does not
+  own preserved.
+- **The write is atomic and refuses symlinks.** Temp file in the same directory opened with
+  `O_CREATE|O_EXCL` at mode `0600` from creation (never `chmod` afterwards), `fsync`, `rename`. If
+  the destination is a symlink, the write is abandoned — that is somebody redirecting our secret.
+
+### 5.4 Who mints it, and when (LOCKED)
+
+**The web app mints it for itself, with no operator action at all.** `machine.Arm()` runs at server
+boot, resolves the key, finds none, and mints one. By the time the operator first types `ezbk` or
+first asks Claude Code a question, the key is there, and nobody had to be told about it. If it
+already exists, the server uses the pre-existing key unchanged.
+
+`ezbk` and the MCP may also mint — whichever of the three needs it first — under three rules:
+
+1. **Mint at boot, never at import.** Resolving the key _creates_ one. Doing that in a package
+   `init()` means every `go test` that imports the package writes a secret into the developer's real
+   home directory. `Mount()` registers routes holding no key; `Arm()` arms them from server startup.
+2. **The mint is a compare-and-set.** The writer re-reads inside the write and yields if a key
+   appeared, then reads back and trusts the file rather than its own mint. Three processes starting
+   at once converge on one key instead of three.
+3. **Until it is armed, the plane 404s everything** (R9) — the same answer a stranger gets.
+
+`ezbk key init` and `ezbk key rotate --yes` are conveniences over the same code path.
+
+### 5.5 Resolution order (LOCKED)
+
+First hit wins:
+
+| #   | Source                                                          | For                                               |
+| --- | --------------------------------------------------------------- | ------------------------------------------------- |
+| 1   | `EZBK_API_KEY` / `EZBKMCP_API_KEY`                              | CI, one-off overrides. Never in a checked-in file |
+| 2   | `EZBK_API_KEY_FILE` / `EZBKMCP_API_KEY_FILE`                    | the Docker-secret shape                           |
+| 3   | `~/.credentials/ezbookkeeping.json`                             | **the normal path**                               |
+| 4   | mint one (server always; `ezbk`/MCP only on first need)         | first run                                         |
+
+`EZBK_CREDENTIALS_FILE` / `EZBKMCP_CREDENTIALS_FILE` relocate step 3 — the seam every test uses,
+and why no test touches a real home directory. The server honours `EZBK_CREDENTIALS_FILE` too.
+
+**Why not `EBK_*`.** Upstream reads every `EBK_<SECTION>_<KEY>` variable as a config override
+(`pkg/settings/setting.go` `getConfigItemValueFromEnvironment()`). A variable named
+`EBK_MACHINE_API_KEY` would look like a `[machine]` section to anyone reading that loader, and a
+future upstream `[machine]` section would collide with it. Our prefix is `EZBK_` so the two
+namespaces cannot meet.
+
+### 5.6 How it is sent, and how it is checked (LOCKED)
+
+```http
+POST /machine/v1/transactions HTTP/1.1
+Host: 127.0.0.1:8080
+X-Ezbk-Api-Key: 4f2a…
+X-Ezbk-Client: ezbk/0.1.0
+Content-Type: application/json
+```
+
+- **A header, never a query parameter.** Query strings land in upstream's request log
+  (`[server] log_request`), shell history and `Referer`.
+- **`X-Ezbk-Api-Key`, not `Authorization: Bearer`.** Upstream's `JWTAuthorizationByHeader` already
+  owns `Authorization` on this server; a second meaning for the same header is a middleware-ordering
+  bug waiting. And proxies, browsers and HTTP libraries all have special handling for
+  `Authorization`; a bespoke header gets none of that helpfulness.
+- **Constant-time comparison, safe on unequal lengths.** Both sides are hashed with SHA-256 to a
+  fixed width and compared with `crypto/subtle.ConstantTimeCompare`, so one comparison of
+  equal-length buffers always runs and the length is never an oracle.
+- **The 401 body is constant.** `{"ok":false,"error":{"code":"unauthorized"}}` — byte for byte the
+  same for a missing key and a wrong one. The client does the explaining (cli.mdx §4.5 R6).
+- **Upstream's request logger must not see the key.** `middlewares.RequestLog` logs paths, not
+  headers, today. A test asserts no log line under `log/` ever contains the key pattern after a full
+  suite run, so an upstream change that starts logging headers fails our build rather than leaking.
+
+### 5.7 The gate ladder (LOCKED)
+
+Order is load-bearing. Nothing below a gate runs until it passes.
+
+| #   | Gate              | Refuses                                          | Answer                             |
+| --- | ----------------- | ------------------------------------------------ | ---------------------------------- |
+| 1   | Loopback socket   | another computer                                 | `404`                              |
+| 2   | Origin + Host     | a web page on this computer; DNS rebinding       | `404`                              |
+| 3   | The key           | another user on this computer                    | `401`, constant body               |
+| 4   | Tier              | a write with the tier off; admin from the MCP    | `403 write_disabled` / `forbidden` |
+| 5   | Input schema      | a malformed or unknown argument                  | `400 invalid_input`                |
+| 6   | Confirm + ceiling | a write with no token, a stale token, or too big | `403` / `409`                      |
+
+**Two facts about the server this mounts inside that gates 1 and 2 must survive:**
+
+1. **`router.SetTrustedProxies(config.TrustedProxyTextualIPs)` is global** (`cmd/webserver.go`
+   line 107), so gin's `c.ClientIP()` is derived from `X-Forwarded-For` / `X-Real-IP` whenever a
+   proxy is trusted — attacker-controlled. Upstream's own IP limits (`APITokenIpLimit`,
+   `MCPServerIpLimit`) use `ClientIP()`, which is right for them and wrong for us. **Gate 1 reads
+   `c.Request.RemoteAddr` — the kernel's view of the peer — and never calls `c.ClientIP()`**, never
+   reads `X-Forwarded-For` or `X-Real-IP`. Accepted peers: `127.0.0.1`, `::1`,
+   `::ffff:127.0.0.1`. A remote request carrying `X-Forwarded-For: 127.0.0.1` gets a 404, and a test
+   says so. A **Unix-socket** listener (`[server] protocol = socket`) is treated as loopback only if
+   the socket file is `0600`-owned by the current uid; otherwise the plane refuses to arm.
+2. **"Arrived on loopback" includes any web page the operator has open.** ezBookkeeping sets no CORS
+   headers today, so a cross-origin page cannot _read_ a response — but it can still _send_ a
+   simple request, and a DNS-rebound hostname turns a remote page into a same-origin one. The key is
+   what stops it; gate 2 is the second wall. A browser always sends `Origin` or `Sec-Fetch-Site` and
+   cannot be talked out of it; `ezbk`, the MCP and `curl` send neither, so **presence is the
+   signal**. Any request with an `Origin` header, or `Sec-Fetch-Site` other than absent, is `404`.
+   The plane also pins `Host` to `127.0.0.1:<port>` / `localhost:<port>` / `[::1]:<port>` —
+   rebinding is precisely the trick that has to lie about `Host` — and sets `Cache-Control:
+   no-store` and `Vary: Origin` on every answer.
+
+**The plane is loopback-only even when the server is not.** Upstream's default is
+`http_addr = 0.0.0.0`; the fork's `justfile` overrides it to `127.0.0.1`, but an operator can undo
+that. Gate 1 does not care what the listener is bound to: a phone on the Wi-Fi reaching
+`192.168.1.20:8080/machine/v1/ping` gets a 404 regardless. When the listener is non-loopback, the
+boot line says so loudly, because the browser door (`/api/v1`) is then network-reachable even though
+this one is not.
+
+Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/gates.go` — `isLoopbackSocket(c)`, `isBrowserRequest(c)`, `hostAllowed(c)`, `keyMatches(c)`
+
+### 5.8 Rotation, and what the key is not
+
+**Rotation** is `ezbk key rotate --yes`: mint, merge-write, print the new fingerprint. The running
+server still holds the old key in memory, so the operator restarts it — until they do, every call
+returns `401` with the client's hint `restart the server: ezbk stop && ezbk up`. A plane that
+hot-reloads its own credential is a plane where a stolen key is revoked "eventually".
+
+**The fingerprint** — `4f2a…/sha256:9c1b`, the first four hex characters plus a SHA-256 prefix — is
+the **only** representation of the key that may be logged, printed, put in an error or shown to a
+model.
+
+**What the key is NOT:**
+
+- Not a user identity. It authenticates _the machine_; the user is the bound user (§6).
+- Not a capability grant. Holding it does not enable writes; the tier switches do (§8).
+- Not an upstream token. `/api/v1` and `/mcp` never accept it, and `/machine/v1` never accepts a JWT.
+- Not `[security] secret_key`. That encrypts 2FA secrets; this authenticates callers.
+- Not an API key in the SaaS sense. It is never sent off this machine, by anything.
+
+---
+
+## 6. The bound user — whose books the key opens
+
+This section has no counterpart in the Actual Budget spec, because Actual opens **a budget file**
+and ezBookkeeping opens **a user's data**: every account, transaction and category row carries a
+`uid`, and every upstream handler reads it from the JWT claims. The machine key carries no user. So
+the plane binds to exactly one.
+
+### 6.1 Resolution (LOCKED)
+
+First hit wins:
+
+| #   | Source                                                         |
+| --- | -------------------------------------------------------------- |
+| 1   | `EZBK_MACHINE_USERNAME` in the **server's** environment        |
+| 2   | `ezbookkeeping.machine.username` in the credentials file       |
+| 3   | the database has exactly **one** non-deleted user → that user  |
+| 4   | **nothing**                                                    |
+
+**No user is ever guessed.** With zero users the plane answers `not_ready` with the hint _"register
+the first user at http://localhost:8080/ (the plane binds to it automatically)"_. With two or more
+and nothing configured, every data route answers `not_ready` naming the usernames that exist and the
+setting to choose one. Choosing a user's books on the operator's behalf is the worst mistake
+available on this plane — it is Actual's "never guess a budget" rule (its apis.mdx §8.0) moved to
+the thing that plays that role here.
+
+### 6.2 How the binding reaches the services
+
+The plane resolves the bound user's `uid` once at arm time and again whenever `whoami` is asked (a
+deleted or renamed user is noticed, not cached forever), then calls services with that `uid` exactly
+as an upstream handler does with `c.GetCurrentUid()`. It never constructs a JWT, never inserts a
+`token_record`, and never appears in the user's session list — `ezbk` activity is not a "session",
+and a phantom session in the Security Settings page would be the operator's first sign of an
+intruder that is not one.
+
+### 6.3 The bound user's restrictions still apply (LOCKED)
+
+ezBookkeeping has per-user **feature restrictions** (`pkg/core/user_feature_restriction.go`, values
+1–19 — e.g. restrictions on data import, data export, clearing data). The plane honours them: a
+route whose upstream counterpart checks a restriction checks the same one, and refuses with
+`forbidden` naming it. An administrator who restricted a user did not mean "except from the
+terminal".
+
+**2FA is deliberately not asked.** Two-factor protects a _human login_ reachable from a network. The
+machine plane is not a login and is not network-reachable (R10); the key proves "running as this OS
+user on this computer", which is a stronger statement than a TOTP code about where the caller is.
+`whoami` reports whether the bound user has 2FA on, so nobody is surprised.
+
+### 6.4 Every response names the user
+
+`meta.user` (username) is on every data response, the way Actual's `meta.budgetName` is — the
+cheapest defence against a caller that has drifted onto the wrong books.
+
+Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/binduser.go` — `ResolveBoundUser()`, `BoundUid(c)`
+
+---
+
+## 7. The transport contract
+
+### 7.1 The envelope (LOCKED)
+
+Every response, success or failure, is one JSON object of the same shape.
+
+```jsonc
+// success
+{
+  "ok": true,
+  "data": { /* route-specific */ },
+  "meta": {
+    "target": "local",
+    "user": "operator",
+    "defaultCurrency": "USD",
+    "serverVersion": "2.0.1",
+    "commit": "e136e51",
+    "asOf": "2026-09-21T18:41:02Z",
+    "timezone": "America/Los_Angeles",
+    "tookMs": 38,
+    "truncated": false,
+    "tier": "read"
+  }
+}
+
+// failure
+{
+  "ok": false,
+  "error": {
+    "code": "not_found",
+    "message": "No account with that id.",
+    "hint": "GET /machine/v1/accounts — or pass account_name instead of account_id",
+    "details": { "id": "3401855937219633152" },   // optional, structured, never a stack
+    "upstreamCode": 204001                         // optional — the pkg/errs code, when one caused it
+  }
+}
+```
+
+**This is not upstream's envelope, on purpose.** `/api/v1` answers `{success, result}` and
+`{success:false, errorCode, errorMessage, path}`. The machine plane answers `{ok, data, meta}` and
+`{ok:false, error:{code, message, hint}}` — the same shape the Actual Budget fork's plane uses, so a
+human or a model that has learned one of this operator's finance planes has learned both. The
+upstream code is kept in `error.upstreamCode` so nothing is lost in the mapping.
+
+### 7.1a Casing (LOCKED)
+
+- **`meta` and `error` are ours, and camelCase.**
+- **`data` carries upstream's model fields in upstream's casing — camelCase** (`sourceAccountId`,
+  `categoryId`, `utcOffset`) — wherever a `pkg/models` response type exists. Renaming them would be a
+  translation layer that drifts.
+- **Arguments are snake_case** (`account_id`, `start`, `category_ids`), matching the MCP's tool
+  arguments and upstream's own query-string convention (`category_ids`, `max_time`).
+- **Our additions to `data`** (analytics series, plans, provenance) are camelCase, like upstream's.
+- **`data` is never a bare array.** A list route returns `{ "accounts": [...] }`.
+
+### 7.2 The nine codes (LOCKED)
+
+`unauthorized` · `forbidden` · `not_found` · `invalid_input` · `conflict` · `write_disabled` ·
+`not_ready` · `upstream_error` · `internal`
+
+| Code             | HTTP | Means                                                                                          |
+| ---------------- | ---- | ---------------------------------------------------------------------------------------------- |
+| `unauthorized`   | 401  | gate 3 — no key or wrong key                                                                   |
+| `forbidden`      | 403  | gate 4 — admin route; a user feature restriction; the MCP asking for admin                     |
+| `not_found`      | 404  | gates 1–2, an unknown route, or a real missing entity                                          |
+| `invalid_input`  | 400  | gate 5 — schema, range, or an argument combination that cannot hold                            |
+| `conflict`       | 409  | the world changed under the caller — stale token, duplicate submission, ambiguous name          |
+| `write_disabled` | 403  | gate 4 — a write route with the tier off                                                       |
+| `not_ready`      | 503  | the plane is not armed, no user can be bound, or the database is not open                      |
+| `upstream_error` | 502  | a service returned an error we can name (mapped from `pkg/errs`)                               |
+| `internal`       | 500  | anything else; the message is generic and the detail is in the log                             |
+
+**Mapping from `pkg/errs` (LOCKED).** Upstream's codes are `category*100000 + subcategory*1000 +
+index` (`pkg/errs/error.go`). The mapping is a table in `envelope.go`, not a guess per handler:
+`*NotFound` errors → `not_found`; `ErrIncompleteOrIncorrectSubmission`, `ErrPageCountInvalid` and the
+other validation errors → `invalid_input`; `ErrRepeatedRequest` → `conflict`; feature-restriction and
+`ErrIPForbidden` → `forbidden`; `ErrOperationFailed` and database errors → `upstream_error` with the
+upstream code attached; anything unmapped → `internal`, logged with its code so the table can grow.
+
+**A tenth code is a spec change, not a commit.** mcp.mdx §12.3 lists twelve: the three extra
+(`confirm_required`, `too_many_changes`, `wrong_server`) are minted by the MCP and never appear on
+this wire. Every code here is also an MCP code; a test asserts the superset.
+
+### 7.3 Versioning (LOCKED)
+
+The path carries the version: `/machine/v1/`. Within `v1`, adding a route, an optional argument or a
+response field is not breaking; removing or renaming anything, or changing a field's type or units,
+is `v2`. `GET /capabilities` (§8.3) is how a client discovers what this build has.
+
+**Upstream version drift is not our version.** ezBookkeeping moves (2.0.1 today); when an upstream
+merge changes a model field the plane passes through, the plane's `v1` contract is what the clients
+depend on, and `money.go` / the response projectors absorb the change. A test pins the shape of every
+`data` object against a committed fixture, so an upstream field rename fails our build at merge time
+rather than surfacing as a model reading `undefined`.
+
+### 7.4 Errors name a fix (R6)
+
+| Bad hint                 | Good hint                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------ |
+| "Invalid account."       | `GET /machine/v1/accounts` — or pass `account_name` instead of `account_id`          |
+| "Write disabled."        | Set `EZBK_MACHINE_ALLOW_WRITE=1` for the server and restart it (`ezbk stop && ezbk up`) |
+| "Too many changes."      | 1,904 rows would change; raise `max_changes`, or narrow with `start`                 |
+| "Not ready."             | Two users exist (`operator`, `guest`); set `ezbookkeeping.machine.username`           |
+| "Currency mismatch."     | Pass `convert_to: "USD"` to convert with the app's rates, or filter to one currency  |
+
+### 7.5 Pagination, ordering and truncation
+
+Every list route takes `limit`, `offset` (or `cursor` where upstream pages by cursor) and `order`;
+every one has a hard cap.
+
+| Argument | Default | Cap   | Notes                                                                         |
+| -------- | ------- | ----- | ----------------------------------------------------------------------------- |
+| `limit`  | 200     | 5,000 | **Clamped, never rejected**                                                   |
+| `cursor` | —       | —     | the transaction list's; wraps upstream's `max_time` time-sequence id (§10.3)  |
+| `order`  | route   | —     | `field` or `-field`; only fields the route documents                          |
+
+When a cap bound the result: `meta.truncated: true`, `meta.limitApplied: 5000` and, for the
+transaction list, `data.nextCursor`. Upstream's `transactions/list.json` pages 50 at a time
+(`count` 1–50); the plane walks upstream's cursor internally up to `limit`, so a caller asking for
+500 rows makes one call, not ten.
+
+**Ordering is always explicit and always total.** Every default order ends with a tie-break on `id`.
+Transactions order by `transactionTime` (unix milliseconds, which is unique per user in
+ezBookkeeping — it doubles as the time-sequence id) and then `id`.
+
+### 7.6 Idempotency
+
+- Every `GET` is idempotent and safe.
+- Every `POST` that creates something accepts an optional `idempotency_key` (≤ 128 chars). A repeat
+  within the process lifetime returns the **original** response with `meta.replayed: true`. This is
+  mapped onto upstream's own duplicate checker: the plane passes the key as the `clientSessionId`
+  upstream's `TransactionCreateRequest` already carries, so upstream's
+  `[duplicate_checker] duplicate_submissions_interval` protection applies to machine writes too.
+- A delete of something already gone is `ok: true` with `deleted: 0`, not a 404, so a retry loop
+  terminates.
+
+### 7.7 Request shape
+
+`Content-Type: application/json` on every body-bearing call (multipart only on
+`/ingest/file/plan`, which accepts a file). Bodies capped at **16 MiB** (a 12,000-row import batch is
+about 3 MiB). Unknown top-level fields are **rejected**, not ignored — a typo'd `start_date` that
+silently means "no filter" is how someone recategorises a decade.
+
+**Every call carries a timezone.** Upstream's list and statistics handlers require
+`X-Timezone-Offset` or `X-Timezone-Name` (`pkg/core/context_web.go`). The plane accepts
+`X-Timezone-Name` from the client and otherwise uses the resolved default (§17.4), and **echoes the
+zone it used in `meta.timezone`**, because "September" means a different set of transactions in
+Los Angeles than in London.
+
+---
+
+## 8. Tiers, capabilities and negotiation
+
+### 8.1 Three tiers
+
+| Tier      | Server switch                  | What it is for                                                                                          |
+| --------- | ------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| **read**  | always on                      | everything that computes and returns                                                                    |
+| **write** | `EZBK_MACHINE_ALLOW_WRITE=1`   | changes the books: transactions, accounts, categories, tags, templates, rates, imports, undo            |
+| **admin** | `EZBK_MACHINE_ALLOW_ADMIN=1`   | can lose data or change the install: every delete, clear-data, hide-with-cascade, key rotation, tokens  |
+
+Admin is a separate switch and not "write plus". Write is "I intend to let a program edit my books
+this week"; admin is "I am doing surgery right now and I am watching". **The MCP is never given the
+admin tier** — mcp.mdx §9.5 exposes no admin tool, this plane refuses it anyway (the MCP identifies
+itself with `X-Ezbk-Client: ezbookkeeping-mcp/…`, and an admin route receiving that client refuses
+with `forbidden` even when the tier is on — a header is not authentication, so this is a second
+fence, not the first), and the refusal has its own test.
+
+The switches are read from the server's environment at boot, set by `just run`'s caller or by
+`ezbk up --allow-write`. They are **not** `.ini` keys: `conf/ezbookkeeping.ini` is upstream's file and
+is checked in; a write switch that could be committed as `true` is a write switch that eventually is.
+
+### 8.2 The client's switch is separate
+
+The server's tier is necessary and not sufficient. `ezbk` requires `--write` on the call (cli.mdx
+§7.1) and the MCP requires `EZBKMCP_ALLOW_WRITE=1` plus a per-call confirm (mcp.mdx §9.7). The plane
+does not trust either client — **it enforces its own half.**
+
+### 8.3 `GET /capabilities` (LOCKED)
+
+```jsonc
+{
+  "ok": true,
+  "data": {
+    "apiVersion": "v1",
+    "serverVersion": "2.0.1",
+    "tiers": { "read": true, "write": false, "admin": false },
+    "userBound": true,
+    "upstreamFeatures": {                     // what this server's .ini has switched on
+      "dataImport": true, "dataExport": true,
+      "transactionPictures": true, "scheduledTransactions": true,
+      "llm": false, "apiToken": false, "mcp": false
+    },
+    "routes": [
+      { "path": "/accounts", "methods": ["GET","POST"],
+        "tier": { "GET": "read", "POST": "write" },
+        "status": { "GET": "live", "POST": "live" },
+        "summary": { "GET": "Accounts, with balances.", "POST": "Create an account." } },
+      { "path": "/undo", "methods": ["POST"], "tier": { "POST": "write" },
+        "status": { "POST": "planned" },
+        "summary": { "POST": "Undo the last machine-plane write. NOT IMPLEMENTED YET (phase P5)." } }
+    ],
+    "limits": { "maxLimit": 5000, "maxChangesDefault": 200, "maxBodyBytes": 16777216 },
+    "features": ["analytics", "currency.convert", "ingest.prepared", "ingest.raw", "undo", "passthrough"]
+  }
+}
+```
+
+**The table is generated from the same array the router is built from** (`routes.go`
+`var ROUTES`). There is no second list. A test walks every published entry and asserts it answers
+rather than falling through to the terminal 404.
+
+**`upstreamFeatures` matters here in a way it did not for Actual.** ezBookkeeping switches whole
+families on and off in its `.ini` — import (`[data] enable_import`), export, pictures, scheduled
+transactions, custom icons. A route whose upstream feature is off is published with
+`status: "disabled_upstream"` and answers `forbidden` naming the `.ini` key, so a client says _"import
+is switched off in conf/ezbookkeeping.ini `[data] enable_import`"_ rather than surfacing a 404.
+
+### 8.3a `status` — `live`, `planned`, `disabled_upstream` (LOCKED)
+
+`live` means implemented. **`planned` means mounted, tiered and gated, with a handler that refuses
+`not_ready` naming the phase that will build it** — so the gate ladder in front of a route is
+integration-tested from P0. `disabled_upstream` is above.
+
+---
+
+## 9. The write protocol
+
+### 9.1 The switches and the token (LOCKED)
+
+Four things must be true before one transaction changes:
+
+1. `EZBK_MACHINE_ALLOW_WRITE=1` on the server.
+2. The client's own switch (`--write`, or `EZBKMCP_ALLOW_WRITE=1`).
+3. `dry_run: false` in the call.
+4. `confirm_token` echoing the token the matching dry run or plan returned.
+
+Plus a ceiling: `max_changes`, default **200**, and a refusal over it **reports the real count**.
+
+### 9.2 `dry_run` is the default, and the preview is the write (R4)
+
+Every write route accepts `dry_run`, and **it defaults to `true`**. A call with no `dry_run` changes
+nothing and returns what it would have done.
+
+**How the preview is produced — honestly, for this app.** Actual Budget's importer takes a
+`dryRun` flag natively. ezBookkeeping's services do not, and they open their own `xorm` sessions,
+so "run it inside a transaction and roll back" is not available without editing upstream services.
+The plane therefore produces previews in two sanctioned ways, and every write route's entry says which
+it uses:
+
+| Mode           | How                                                                                                                                                  | Used by                                   |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| **resolve**    | The route's handler runs every validation and resolution step the write runs — names to ids, filter to row set, the upstream request object built — and stops one call short of the service write. The preview is the **resolved change set**: the exact ids and the exact before/after of every field. | every single-entity and bulk write        |
+| **parse**      | For imports, upstream's own parse step (`TransactionParseImportFileHandler`'s converter call) **is** a preview: it turns a file into transactions without writing. The plan is its output plus our de-duplication verdict (§14.5). | `/ingest/*/plan`, `/ingest/file/plan`     |
+
+Both obey the rule that matters: **the apply recomputes the change set through the same code and
+compares its fingerprint to the token's** (§9.3). A preview is never produced by a second function
+that predicts the first — the `resolve` step is literally the write handler's own first half,
+factored so the second half is a separate call.
+
+**Rejected: a `predictChanges()` function.** A second implementation that guesses what the first one
+will do disagrees at exactly the edges that matter — a transfer's second row, a sub-account's parent
+balance, a hidden category — and surfaces as a plan that says 117 and an apply that does 131.
+
+The routes that have **no** `dry_run`, and say so in their schema: `POST /undo` (the preview is the
+thing itself, and it returns what it undid).
+
+### 9.3 The confirm token
+
+A dry run returns:
+
+```jsonc
+{
+  "ok": true,
+  "data": {
+    "dry_run": true,
+    "changes": { "create": 0, "update": 46, "unchanged": 0 },
+    "preview": [ { "id": "3401855937219633152", "field": "categoryId", "from": "…", "to": "…" } ],
+    "confirm_token": "cf_01J8…",          // opaque, 128 bits from crypto/rand, this process only
+    "expires_at": "2026-09-21T19:11:02Z",  // 10 minutes
+    "fingerprint": "sha256:7ab3…"          // of the exact change set
+  }
+}
+```
+
+- **Ten-minute expiry**, then `conflict` with the hint to re-plan.
+- **The change set is recomputed at apply time and compared against `fingerprint`.** If the world
+  moved — the operator edited a transaction in the browser, the scheduled-transaction cron fired — the
+  token is refused with `conflict` and the _new_ counts.
+- **The token is in-process only.** Not persisted, not derived from the key, gone on restart.
+- A model cannot invent it. The write path _requires having read the preview_.
+
+### 9.4 Batch
+
+`POST /batch` takes an ordered list of write operations (from a closed `op` set published in
+`/capabilities`) and applies them under one confirm token, one ceiling and one journal entry. **All
+or nothing, honestly bounded:** upstream services commit per call, so the plane applies operations in
+order and, on the first failure, **reverses the ones already applied through the undo journal**
+(§9.6) and reports the index that failed and why. The response says `rolledBack: n`. The ceiling
+counts changes, not operations.
+
+### 9.5 Transfers, sub-accounts and the second row
+
+Three ezBookkeeping facts every write route must respect, stated once:
+
+- **A transfer is two database rows** (`TRANSFER_OUT` type 4 and `TRANSFER_IN` type 5, linked by
+  `RelatedId`) but **one API transaction** (type 4). Every count in a preview counts API
+  transactions; a preview that said "2 changes" for one transfer would be the plan that disagrees
+  with its apply.
+- **A parent account with sub-accounts** (`type` 2, currency `---`) holds no balance of its own.
+  Writes targeting a parent account are `invalid_input` naming its sub-accounts.
+- **Balance-modification transactions** (type 1) are an account's opening balance, not income. The
+  plane never creates one except through account creation with an initial balance, and never lets a
+  bulk write change a transaction's type to or from it.
+
+### 9.6 Undo — built here, because the app has none
+
+Actual Budget's plane reached loot-core's own undo stack. **ezBookkeeping has no undo stack** — the
+browser's delete is a soft delete with no "restore" button, and an edit overwrites. So undo is the
+one feature this plane must **build**, and it is built narrowly and honestly:
+
+- **The journal.** Every machine-plane write appends one entry to `machine_journal` (a table owned by
+  `pkg/machine`, §4.1) holding: the route, the bound uid, the client, the timestamp, and **the
+  inverse** — for a create, the created ids; for an update, the full prior state of every field it
+  changed; for a bulk re-categorise, each row's prior `categoryId`; for an import, the created ids
+  and the `machine_import_record` rows it wrote.
+- **`POST /undo`** applies the inverse of the most recent un-undone journal entry **for this bound
+  user**, inside the same write tier, and returns a description of what it reversed. `POST /redo`
+  re-applies it. `GET /journal` lists recent entries (route, when, counts — never amounts).
+- **Undo reverses machine-plane writes only.** It cannot undo something done in the browser, and it
+  says so in its description and in `/capabilities`. Before reversing, it checks every row it will
+  touch still matches the state the journal recorded **after** the write; if the operator has since
+  edited one in the browser, undo refuses with `conflict` naming the row rather than overwriting a
+  human's later edit.
+- **Undoing a create soft-deletes** through the same service call the UI's delete makes. That is a
+  delete, and deletes are admin-tier — the single sanctioned exception: undo may delete **only rows
+  its own journal created**, and a test asserts it can reach no other row.
+- Undo is **write**-tier, built in the same phase as the first write (P5), never later — the most
+  valuable route on this plane for an operator who has just let an agent write.
+
+Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/journal.go` — `Record()`, `Undo()`, `Redo()`
+
+### 9.7 What writes never do
+
+- **Never delete without the admin tier** (except undo's own creations, above).
+- **Never write outside the database, the staging directory and the log directory.** The only
+  filesystem writes this plane performs are under `{STATEMENTS_ROOT}/.ezbk-staging/` (§14.3) and
+  `~/T/_ezbookkeeping/` (audit).
+- **Never invent a value.** No plug transaction hidden inside another row, no guessed category, no
+  rounded amount, no exchange rate the app did not supply.
+- **Never touch upstream's tokens** — no route mints, lists or revokes a JWT except the admin-tier
+  `/admin/sessions` family, which the MCP cannot reach.
+
+---
+
+## 10. The route catalogue
+
+Conventions for every table below:
+
+- **Tier** is `R` read · `W` write · `A` admin.
+- `:id` accepts an id (a decimal **string** — §17.5). Where a name is a reasonable alternative, the
+  route also accepts `*_name` and resolves it exact-match-first, then case-insensitive; ambiguity is
+  `invalid_input` carrying the candidates. Names are a convenience; ids are the contract.
+- **Service** names the `pkg/services` call (or upstream handler logic) the route reaches (R1).
+- **Preview** names the dry-run mode from §9.2 for write routes.
+
+### 10.0 The plane itself
+
+| Route           | M   | Tier | Answers                                                                                                        |
+| --------------- | --- | ---- | -------------------------------------------------------------------------------------------------------------- |
+| `/ping`         | GET | R    | liveness, key fingerprint, write/admin tier, server version                                                    |
+| `/whoami`       | GET | R    | install path, bound user (username, default currency, first day of week, 2FA on?), tiers, key fingerprint, statements root, timezone |
+| `/capabilities` | GET | R    | §8.3                                                                                                           |
+| `/health`       | GET | R    | database open? user bindable? which users exist (when unbindable)? upstream features on? what to do next       |
+
+**`/ping`, `/whoami`, `/capabilities` and `/health` answer without a bound user** — their job is to
+report what is wrong, and a diagnostic that needs the thing it diagnoses is no diagnostic. Upstream's
+`/healthz.json` stays as it is (unauthenticated, `{version, commit, status}`) and is what the CLI's
+bring-up polls (cli.mdx §3.2); `/machine/v1/health` is the authenticated, deeper answer.
+
+**`healthy` is deliberately narrow**: a server that is up with **no bindable user** is not healthy for
+any caller's purpose, and answering "ok" there is how a model concludes that an empty account list
+means no accounts rather than no user.
+
+### 10.1 The bound user, settings and data
+
+| Route                 | M     | Tier  | Service / notes                                                                                      |
+| --------------------- | ----- | ----- | ---------------------------------------------------------------------------------------------------- |
+| `/user/profile`       | GET   | R     | `Users.GetUserById` — nickname, default currency, first day of week, fiscal year start, formats      |
+| `/user/profile`       | PATCH | W     | `nickname`, `default_currency`, `first_day_of_week`, `fiscal_year_start` — **never** password or email |
+| `/user/settings`      | GET   | R     | the application cloud settings (`UserApplicationCloudSettings`)                                      |
+| `/user/settings`      | PATCH | W     | one or more keys                                                                                     |
+| `/data/statistics`    | GET   | R     | `DataManagements.DataStatisticsHandler` — counts of accounts, transactions, categories, tags…        |
+| `/data/export`        | GET   | R     | `format=csv\|tsv`, streamed — upstream's ezBookkeeping-format export (`[data] enable_export`)         |
+
+Changing the password, email, avatar, 2FA or external-auth links is **not on this plane** (§11's
+deliberate omissions).
+
+### 10.2 Accounts
+
+| Route                                 | M      | Tier  | Arguments                                                                                                         | Preview  |
+| ------------------------------------- | ------ | ----- | ----------------------------------------------------------------------------------------------------------------- | -------- |
+| `/accounts`                           | GET    | R     | `include_hidden` (false), `category`, `currency`, `with_sub_accounts` (true)                                      | —        |
+| `/accounts/:id`                       | GET    | R     | —                                                                                                                 | —        |
+| `/accounts/:id/balance`               | GET    | R     | `as_of` (`YYYY-MM-DD`, default today) — composed from the daily asset trend (§12.2)                               | —        |
+| `/accounts/:id/properties`            | GET    | R     | transaction count, first/last transaction time, last reconciled time, credit-card statement date and limit        | —        |
+| `/accounts`                           | POST   | W     | `name`, `category` (cash\|checking\|savings\|credit_card\|virtual\|debt\|receivables\|investment\|certificate_of_deposit), `currency`, `initial_balance` (hundredths), `initial_balance_date`, `color`, `icon`, `comment`, `credit_card_statement_date`, `sub_accounts[]`, `idempotency_key` | resolve |
+| `/accounts/batch`                     | POST   | W     | `accounts[]` — §15 uses this                                                                                      | resolve  |
+| `/accounts/:id`                       | PATCH  | W     | `name`, `color`, `icon`, `comment`, `credit_card_statement_date`, `credit_card_limit`                             | resolve  |
+| `/accounts/:id/hide`                  | POST   | W     | `hidden` (bool)                                                                                                   | resolve  |
+| `/accounts/:id/move`                  | POST   | W     | `to_index` — display order                                                                                        | resolve  |
+| `/accounts/:id`                       | DELETE | **A** | `confirm_token`                                                                                                   | resolve  |
+| `/accounts/:id/sub-accounts/:sub_id`  | DELETE | **A** | `confirm_token`                                                                                                   | resolve  |
+
+**Currency is immutable after creation**, as upstream enforces; `PATCH` rejects it with the hint that
+a new account plus a transfer is the only honest move.
+
+**`initial_balance` becomes upstream's balance-modification transaction**, dated
+`initial_balance_date` — exactly what the UI does. Liability categories (credit card, debt) take a
+**negative** initial balance for money owed, matching upstream's sign convention; the dry run shows the
+sign it will store.
+
+**Reconciliation** — a composed route, because ezBookkeeping has a reconciliation **statement**
+(`GET /api/v1/transactions/reconciliation_statements.json`) and a `last_reconciled_time`, but no
+cleared/reconciled flag per transaction and no "adjust" step:
+
+| Route                           | M    | Tier | Arguments                                                                                       |
+| ------------------------------- | ---- | ---- | ----------------------------------------------------------------------------------------------- |
+| `/accounts/:id/reconciliation`  | GET  | R    | `start`, `end` — upstream's statement: opening, inflows, outflows, closing, per-row running balance |
+| `/accounts/:id/reconcile/plan`  | POST | R    | `target_balance` (hundredths), `as_of`                                                          |
+| `/accounts/:id/reconcile/apply` | POST | W    | `confirm_token`, `create_adjustment` (false), `adjustment_category_id`, `mark_reconciled` (true) |
+
+`plan` returns the app's closing balance as of the date, the operator's figure, the signed difference,
+the transactions dated after the last reconciled time, and a `confirm_token`. `apply` optionally
+creates **one visible** income or expense transaction in the named category for the difference (never
+a plug hidden inside another row, and never a balance-modification transaction, which is an opening
+balance and nothing else), then sets `last_reconciled_time` through
+`AccountUpdateLastReconciledTimeHandler`'s service call. `create_adjustment` defaults to **false**:
+the right response to a difference is usually to find the missing transaction, and the plan's list of
+post-reconciliation rows is where to look.
+
+### 10.3 Transactions
+
+| Route                           | M      | Tier  | Arguments                                                                                                                                                                                                             | Preview |
+| ------------------------------- | ------ | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `/transactions`                 | GET    | R     | `account_ids[]`, `start`, `end`, `type` (income\|expense\|transfer\|balance_modification), `category_ids[]`, `tag_filter`, `untagged`, `keyword`, `min_amount`, `max_amount`, `currency`, `with_pictures`, `limit`, `cursor`, `order` | — |
+| `/transactions/count`           | GET    | R     | same filters — `TransactionCountHandler`                                                                                                                                                                              | —       |
+| `/transactions/:id`             | GET    | R     | — (with tags, pictures metadata, the transfer's other side)                                                                                                                                                           | —       |
+| `/transactions/earliest`        | GET    | R     | `account_id`                                                                                                                                                                                                          | —       |
+| `/transactions/latest`          | GET    | R     | `account_id`                                                                                                                                                                                                          | —       |
+| `/transactions/export`          | GET    | R     | same filters, `format=csv\|tsv`                                                                                                                                                                                       | —       |
+| `/transactions`                 | POST   | W     | `transactions[]` of `{type, time, account_id, amount, destination_account_id, destination_amount, category_id\|category_name, tag_ids[], comment, hide_amount, geo}`, `dry_run`                                        | resolve |
+| `/transactions/:id`             | PATCH  | W     | any field upstream's `TransactionModifyHandler` accepts                                                                                                                                                               | resolve |
+| `/transactions/set-category`    | POST   | W     | `ids[]` \| `filter{}`, `category_id`, `max_changes`, `dry_run` — `TransactionBatchUpdateCategoriesHandler`                                                                                                           | resolve |
+| `/transactions/set-account`     | POST   | W     | `ids[]` \| `filter{}`, `account_id`, `max_changes`, `dry_run` — `TransactionBatchUpdateAccountsHandler`                                                                                                              | resolve |
+| `/transactions/tags/add`        | POST   | W     | `ids[]` \| `filter{}`, `tag_ids[]`, `max_changes`, `dry_run`                                                                                                                                                          | resolve |
+| `/transactions/tags/remove`     | POST   | W     | `ids[]` \| `filter{}`, `tag_ids[]`, `max_changes`, `dry_run`                                                                                                                                                          | resolve |
+| `/transactions/tags/clear`      | POST   | W     | `ids[]` \| `filter{}`, `max_changes`, `dry_run`                                                                                                                                                                       | resolve |
+| `/transactions/move-all`        | POST   | W     | `from_account_id`, `to_account_id`, `dry_run` — `TransactionMoveAllBetweenAccountsHandler`; same currency only                                                                                                        | resolve |
+| `/transactions/:id`             | DELETE | **A** | `confirm_token`                                                                                                                                                                                                       | resolve |
+| `/transactions/bulk`            | DELETE | **A** | `ids[]`, `confirm_token`                                                                                                                                                                                              | resolve |
+
+Notes that matter:
+
+- **There is no "uncategorized" in ezBookkeeping.** Every non-balance-modification transaction has a
+  secondary category — upstream requires `categoryId`. So Actual's commonest question ("what haven't I
+  categorised?") becomes **"what landed in a catch-all?"** — answered by `category_ids` naming the
+  operator's catch-all categories, and by `/analytics/import-fallout` (§12.2) for rows an import sent
+  to its fallback category. `untagged: true` (upstream's `tag_filter=none`) is first-class.
+- **`filter{}` on a bulk write takes the same shape as the `GET` query.** One filter language, so
+  "show me these" and "change these" cannot select different sets. A bulk write with a `filter` always
+  dry-runs first by default and reports the exact count.
+- **Cursor paging wraps upstream's.** `cursor` is upstream's `max_time` time-sequence id, returned as
+  `nextCursor`; the plane walks it up to `limit` (§7.5).
+- **Amounts in filters are hundredths** (`min_amount: 50000` is 500.00) and apply in the
+  transaction's own currency; `currency` narrows to one. A `min_amount` across mixed currencies is
+  refused unless `currency` is set — "over 500" means nothing when one account is in yen (R11).
+- **Transfers carry both sides**: `sourceAmount` in the source account's currency and
+  `destinationAmount` in the destination's, which differ for a cross-currency transfer. Neither is
+  ever reported as "the amount" without its currency.
+- **Categories must match the type.** An expense transaction takes an expense category; the resolver
+  refuses a mismatch naming the category's type, before the service does.
+
+### 10.4 Categories
+
+| Route                 | M      | Tier  | Arguments                                                                    |
+| --------------------- | ------ | ----- | ---------------------------------------------------------------------------- |
+| `/categories`         | GET    | R     | `type` (income\|expense\|transfer), `include_hidden` (false), `parent_id`    |
+| `/categories/:id`     | GET    | R     | —                                                                            |
+| `/categories`         | POST   | W     | `name`, `type`, `parent_id` (omit for a primary category), `color`, `icon`, `comment` |
+| `/categories/batch`   | POST   | W     | `categories[]` — `CategoryCreateBatchHandler` (the "default categories" preset) |
+| `/categories/:id`     | PATCH  | W     | `name`, `parent_id`, `color`, `icon`, `comment`                              |
+| `/categories/:id/hide`| POST   | W     | `hidden`                                                                     |
+| `/categories/:id/move`| POST   | W     | `to_index`                                                                   |
+| `/categories/:id`     | DELETE | **A** | `confirm_token` — refused while transactions use it, naming the count        |
+
+**Two levels, and transactions use the second.** Primary categories group secondary ones; a
+transaction references a **secondary** category. `POST /transactions` naming a primary category is
+`invalid_input` listing its children.
+
+### 10.5 Tags and tag groups
+
+| Route                     | M      | Tier  | Arguments                          |
+| ------------------------- | ------ | ----- | ---------------------------------- |
+| `/tags`                   | GET    | R     | `include_hidden`, `group_id`       |
+| `/tags/:id`               | GET    | R     | —                                  |
+| `/tags`                   | POST   | W     | `name`, `group_id`                 |
+| `/tags/batch`             | POST   | W     | `tags[]`                           |
+| `/tags/:id`               | PATCH  | W     | `name`, `group_id`                 |
+| `/tags/:id/hide`          | POST   | W     | `hidden`                           |
+| `/tags/:id/move`          | POST   | W     | `to_index`                         |
+| `/tags/:id`               | DELETE | **A** | `confirm_token`                    |
+| `/tag-groups`             | GET    | R     | —                                  |
+| `/tag-groups`             | POST   | W     | `name`                             |
+| `/tag-groups/:id`         | PATCH  | W     | `name`                             |
+| `/tag-groups/:id/move`    | POST   | W     | `to_index`                         |
+| `/tag-groups/:id`         | DELETE | **A** | `confirm_token`                    |
+
+Tags are how an ezBookkeeping operator marks a trip, a project or a reimbursable — the thing Actual
+does with `#tags` in notes. A transaction carries at most **10**; bulk tag adds that would exceed it
+are refused per row, naming the rows.
+
+### 10.6 Templates and scheduled transactions
+
+ezBookkeeping keeps both in one table (`TransactionTemplate`, `TemplateType` 1 normal / 2 scheduled);
+the cron job `[cron] enable_create_scheduled_transaction` turns a schedule into real transactions.
+
+| Route                            | M      | Tier  | Arguments                                                                                                      |
+| -------------------------------- | ------ | ----- | -------------------------------------------------------------------------------------------------------------- |
+| `/templates`                     | GET    | R     | `kind` (normal\|scheduled), `include_hidden`                                                                   |
+| `/templates/:id`                 | GET    | R     | —                                                                                                              |
+| `/templates`                     | POST   | W     | the transaction fields, plus for scheduled: `frequency` (daily\|weekly\|monthly\|yearly\|every_n_days), `frequency_value`, `start`, `end` |
+| `/templates/:id`                 | PATCH  | W     | same                                                                                                           |
+| `/templates/:id/hide`            | POST   | W     | `hidden` — for a schedule, hiding **pauses** it; the response says so                                          |
+| `/templates/:id/move`            | POST   | W     | `to_index`                                                                                                     |
+| `/templates/:id`                 | DELETE | **A** | `confirm_token`                                                                                                |
+| `/schedules/upcoming`            | GET    | R     | `days` (30), `template_ids[]` — composed (below)                                                               |
+
+**`/schedules/upcoming` is composed, and computed once.** Upstream computes the next occurrence only
+inside its cron job. The plane needs "what's due in the next 30 days" without firing anything, so the
+occurrence arithmetic is factored out of the cron path into one function both call — never a second
+calendar implementation beside the cron's, which would disagree about the 31st of a 30-day month.
+
+### 10.7 Exchange rates and conversion
+
+| Route                               | M      | Tier | Arguments                                                                                     |
+| ----------------------------------- | ------ | ---- | --------------------------------------------------------------------------------------------- |
+| `/exchange-rates`                   | GET    | R    | `currencies[]` — latest rates from the configured source **merged with the user's custom rates**, each marked `source: "provider"\|"custom"` with its `updateTime` |
+| `/exchange-rates/convert`           | POST   | R    | `amount` (hundredths), `from`, `to` — composed; returns the amount, the rate used, its source and timestamp |
+| `/exchange-rates/custom/:currency`  | PUT    | W    | `rate` — `UserCustomExchangeRateUpdateHandler`                                                 |
+| `/exchange-rates/custom/:currency`  | DELETE | W    | — (a custom rate is a preference, not a record; deleting it restores the provider's rate)     |
+
+§13 is the rule these serve.
+
+### 10.8 Saved insights (explorers)
+
+ezBookkeeping's "Insights Explorer" saves query definitions (`InsightsExplorer`, `Data` blob).
+
+| Route                  | M      | Tier  | Notes                                  |
+| ---------------------- | ------ | ----- | -------------------------------------- |
+| `/insights`            | GET    | R     | saved definitions                      |
+| `/insights/:id`        | GET    | R     | —                                      |
+| `/insights`            | POST   | W     | `name`, `definition`                   |
+| `/insights/:id`        | PATCH  | W     | —                                      |
+| `/insights/:id/hide`   | POST   | W     | —                                      |
+| `/insights/:id/move`   | POST   | W     | —                                      |
+| `/insights/:id`        | DELETE | **A** | `confirm_token`                        |
+
+These store **definitions**, not numbers. The numbers come from §12, so a caller that wants "spending
+by category" never has to create an explorer to get it.
+
+### 10.9 Undo, journal, batch
+
+| Route       | M    | Tier | Notes                                                    |
+| ----------- | ---- | ---- | -------------------------------------------------------- |
+| `/undo`     | POST | W    | §9.6. No `dry_run`                                       |
+| `/redo`     | POST | W    | §9.6                                                     |
+| `/journal`  | GET  | R    | recent machine-plane writes: route, when, counts, client |
+| `/batch`    | POST | W    | §9.4                                                     |
+
+### 10.10 Admin
+
+| Route                        | M    | Tier  | Notes                                                                                                   |
+| ---------------------------- | ---- | ----- | ------------------------------------------------------------------------------------------------------- |
+| `/admin/key/rotate`          | POST | **A** | mint a new API secret key; response is the fingerprint only, hint says restart                         |
+| `/admin/data/clear`          | POST | **A** | `scope` (all\|transactions\|transactions_of_account), `account_id`, `confirm_token` — upstream's `data/clear/*` |
+| `/admin/sessions`            | GET  | **A** | the bound user's upstream sessions and tokens (`TokenListHandler`) — never the token values             |
+| `/admin/sessions/:token_id`  | DELETE | **A** | revoke one upstream session                                                                           |
+| `/admin/pictures/unused`     | DELETE | **A** | `TransactionPictureRemoveUnusedHandler`                                                               |
+
+Every `DELETE` elsewhere in this spec is admin-tier and listed with its family, because a caller looks
+for "how do I delete a tag" under tags.
+
+---
+
+## 11. Coverage — every UI action, and the route that carries it
+
+Organised by where the action lives in the web UI (desktop edition; the mobile edition has the same
+actions), so it can be walked screen by screen.
+
+| UI screen / action                                         | Route                                                        | Status              |
+| ---------------------------------------------------------- | ------------------------------------------------------------ | ------------------- |
+| **Overview** — today / this week / this month / this year  | `GET /analytics/period-summary`                              | ✅ (§12)            |
+| Overview — net assets, total liabilities                   | `GET /analytics/net-worth`                                   | ✅                  |
+| **Transaction list** — any filter, any account             | `GET /transactions`                                          | ✅                  |
+| Transaction list — by month                                | `GET /transactions?start=…&end=…`                            | ✅                  |
+| Transaction list — add (income / expense / transfer)       | `POST /transactions`                                         | ✅                  |
+| Transaction list — edit                                    | `PATCH /transactions/:id`                                    | ✅                  |
+| Transaction list — select many → change category          | `POST /transactions/set-category`                            | ✅                  |
+| Transaction list — select many → change account           | `POST /transactions/set-account`                             | ✅                  |
+| Transaction list — select many → add / remove / clear tags | `/transactions/tags/*`                                       | ✅                  |
+| Transaction list — delete / batch delete                   | `DELETE /transactions/:id` · `/transactions/bulk` (admin)    | ✅                  |
+| Transaction — add a picture                                | —                                                            | ⏳ P9 (§11.1)       |
+| Transaction — recognise from text or receipt (LLM)         | —                                                            | ⛔ deliberate       |
+| **Accounts** — add, edit, hide, reorder                    | `/accounts` family                                           | ✅                  |
+| Accounts — sub-accounts                                    | `POST /accounts` with `sub_accounts[]` · sub-account delete  | ✅                  |
+| Accounts — reconciliation statement                        | `GET /accounts/:id/reconciliation`                           | ✅                  |
+| Accounts — mark reconciled                                 | `/accounts/:id/reconcile/plan` + `/apply`                    | ✅ (composed)       |
+| Accounts — move all transactions to another account        | `POST /transactions/move-all`                                | ✅                  |
+| Accounts — delete                                          | `DELETE /accounts/:id` (admin)                               | ✅                  |
+| **Statistics** — category pie / bar, by account            | `GET /analytics/spending-by-category` · `/income-by-category` | ✅ (§12)            |
+| Statistics — trends by month                               | `GET /analytics/category-trend` · `/income-vs-expense`       | ✅                  |
+| Statistics — asset trends                                  | `GET /analytics/net-worth` · `/accounts/:id/balance-history` | ✅                  |
+| **Insights Explorer** — save, open, reorder                | `/insights` family, numbers from `/analytics/*`              | ✅                  |
+| **Categories** — add, edit, hide, reorder, delete          | `/categories` family                                         | ✅                  |
+| Categories — add the default preset                        | `POST /categories/batch`                                     | ✅                  |
+| **Tags** — add, edit, hide, reorder, group                 | `/tags` · `/tag-groups`                                      | ✅                  |
+| **Templates** — add, edit, hide, reorder                   | `/templates` family                                          | ✅                  |
+| **Scheduled transactions** — add, edit, pause              | `/templates` with `kind=scheduled`                           | ✅                  |
+| Scheduled — what's coming up                               | `GET /schedules/upcoming`                                    | ✅ (composed)       |
+| **Exchange rates** — view, set / clear custom rate         | `/exchange-rates` family                                     | ✅                  |
+| **Import** — upload a file, map, import                    | `POST /ingest/file/plan` + `/apply`                          | ✅ (§14)            |
+| **Export** — CSV / TSV                                     | `GET /data/export` · `/transactions/export`                  | ✅                  |
+| **Data management** — statistics                           | `GET /data/statistics`                                       | ✅                  |
+| Data management — clear all / transactions                 | `POST /admin/data/clear` (admin)                             | ✅                  |
+| **Settings** — nickname, default currency, week start      | `PATCH /user/profile`                                        | ✅                  |
+| Settings — application / cloud settings                    | `PATCH /user/settings`                                       | ✅                  |
+| Settings — password, email, avatar                         | —                                                            | ⛔ deliberate       |
+| Settings — 2FA, OAuth2 links                               | —                                                            | ⛔ deliberate       |
+| Settings — sessions, API / MCP tokens                      | `/admin/sessions` (list, revoke); **generate** ⛔            | ✅ / ⛔             |
+| Settings — custom icons                                    | —                                                            | ⏳ P9               |
+| **Anywhere** — undo                                        | `POST /undo` (machine-plane writes only)                     | ✅ (§9.6)           |
+
+### 11.1 The deliberate omissions, stated as decisions
+
+1. **Password, email, avatar, 2FA, OAuth2 links** — identity and credentials. A program changing
+   them can lock the operator out; the browser, with its confirmation flows, is the only right place.
+2. **Generating upstream API or MCP tokens** — that would hand a program a full-access bearer
+   credential that travels (§2.2). If the operator wants one, `ezbookkeeping userdata
+   user-session-new` is theirs to type.
+3. **LLM recognition** (`/llm/transactions/recognize_*`) — it sends the operator's text or receipt
+   image to a configured third-party model. The plane has no egress (§19.2), and a program choosing
+   to upload a receipt is a program exfiltrating one.
+4. **Pictures and custom icons** — binary uploads with their own storage and cleanup lifecycle;
+   deferred to P9, not refused. Metadata (whether a transaction has pictures) is readable now.
+5. **Registration and other users** — the plane serves one bound user (§6); user management is
+   `ezbookkeeping userdata …`, upstream's own admin CLI.
+
+Every other cell is a route, and a new UI feature upstream that this table cannot absorb is a change
+to this spec before it is a change to any client.
+
+---
+
+## 12. The analytics plane — and the charting it feeds
+
+### 12.1 Why it exists (LOCKED)
+
+ezBookkeeping has statistics endpoints — unlike Actual, whose reports were computed wholly in React.
+But look at what they return: `GET /transactions/statistics.json` answers **category × account pairs
+of big-integer strings, per currency**, and `statistics/trends.json` the same per month. The
+**grouping** (secondary into primary category), the **currency conversion** into the default
+currency, the **percentages**, the **top-N** and the **"other"** bucket all happen in the browser, in
+`src/stores/statistics.ts` (e.g. line 572, `exchangeRatesStore.getExchangedAmount(...)`).
+
+That is fine for a browser and fatal for us: the thin-client rule says a client never sums, and
+"what did I spend on groceries this year" is a sum — and in a multi-currency book it is a sum **plus
+a conversion**. So the grouping and conversion move here, into Go, once. Three consequences, all
+intended:
+
+- The CLI, the MCP and (eventually) the browser agree on a total because there is one implementation.
+- A model never does arithmetic on money, and never converts currencies in its head.
+- A ten-year aggregate is one call returning 120 rows, not 12,007 rows the caller must reduce.
+
+### 12.2 The routes
+
+All read-tier. All take `start` and `end` (`YYYY-MM-DD`, inclusive, in the resolved timezone —
+§17.4), and optional `account_ids[]`, `category_ids[]`, `exclude_category_ids[]`, `tag_filter`,
+`include_hidden_accounts` (false), `include_transfers` (false), and **`convert_to`** (§13.2).
+
+| Route                                  | Extra arguments                                                          | Answers                                                                        | Built on (upstream)                        |
+| -------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------ | ------------------------------------------ |
+| `/analytics/period-summary`            | `periods[]` (today\|this_week\|this_month\|this_year\|last_month\|custom) | income and expense per period, per currency — the Overview page                | `transactions/amounts.json`                |
+| `/analytics/spending-by-category`      | `interval` (none\|month\|quarter\|year), `group_by` (primary\|secondary\|account), `top_n` | the pie / bar chart                                         | `statistics.json`, `statistics/trends.json` |
+| `/analytics/income-by-category`        | same                                                                     | the income side of the same chart                                              | same                                       |
+| `/analytics/income-vs-expense`         | `interval`                                                               | in, out, net, per interval                                                     | `amounts/daily.json`, `statistics/trends.json` |
+| `/analytics/cash-flow`                 | `interval`, `account_ids[]`                                              | opening, in, out, closing, per interval                                        | `statistics/asset_trends.json`             |
+| `/analytics/net-worth`                 | `interval`                                                               | assets, liabilities, net — per interval and per account                        | `statistics/asset_trends.json`             |
+| `/accounts/:id/balance-history`        | `interval` (day\|week\|month)                                            | one account's closing balance over time                                        | `statistics/asset_trends.json`             |
+| `/analytics/category-trend`            | `category_id`, `interval`                                                | one category over time, with mean and median                                   | `statistics/trends.json`                   |
+| `/analytics/tag-breakdown`             | `tag_ids[]`                                                              | spending and income per tag — the "what did the trip cost" answer              | `statistics.json` with `tag_filter`        |
+| `/analytics/payee-leaderboard`         | `top_n` (20), `direction` (out\|in), `field` (comment)                   | who got the money — **by transaction comment**, since ezBookkeeping has no payee entity (below) | `transactions/list/all.json`   |
+| `/analytics/recurring`                 | `min_occurrences` (3), `tolerance_days` (3)                              | detected repeating charges not yet scheduled, and their annualised cost         | `transactions/list/all.json`               |
+| `/analytics/anomalies`                 | `z` (2.0), `min_amount`                                                  | categories unusually far from their own trailing norm                          | `statistics/trends.json`                   |
+| `/analytics/runway`                    | `basis` (3\|6\|12 months)                                                | liquid assets ÷ trailing average net outflow, in months                        | composed                                   |
+| `/analytics/import-fallout`            | `run_id`                                                                 | rows an import placed in its fallback category, by account and month          | `machine_import_record` + list             |
+
+**"Payee" is a comment here.** ezBookkeeping has no payee entity — the merchant text lives in the
+transaction's `comment` (and importers put the statement description there). The leaderboard groups
+by a normalised comment and **says so** in `data.groupedBy: "comment"`, and returns the raw variants
+it merged, so "Amazon" and "AMZN Mktp US" appearing as one row is visible evidence rather than a
+silent decision.
+
+### 12.3 The rules these obey
+
+- **Every figure is integer hundredths with its currency**, every count an integer. No percentages
+  as floats — a share is returned as its two integers (`amount`, `total`) and the presentation layer
+  divides.
+- **Transfers are excluded by default.** A transfer from Checking to Savings is not spending.
+  `include_transfers: true` exists, and the response echoes which it did.
+- **Balance modifications are always excluded from income and expense.** An account's opening balance
+  is not income, and counting it is how a tracker reports a record month the week an operator sets up
+  their accounts. There is no argument to include it.
+- **Hidden accounts are excluded by default**, and the response says so.
+- **Per currency unless `convert_to`.** Without it, every series is returned per currency and no
+  total crosses a currency boundary. With it, every converted figure carries the rate (§13.2).
+- **Every response carries its own provenance**: resolved date range, timezone, the account ids
+  actually included, the filters applied, the row count, and — if converted — every rate used.
+- **Detectors are not oracles.** `/recurring` and `/anomalies` return the evidence (the occurrences,
+  the trailing mean, the deviation) so the caller can show its work.
+- **One implementation of grouping.** Primary-category roll-up, top-N and the "other" bucket live in
+  `pkg/machine/handlers/analytics.go` and nowhere else.
+
+### 12.4 The charting it feeds (the direction of this fork)
+
+This fork intends to grow **more charting** than upstream ships — month-over-month category bars,
+net-worth lines, runway, tag breakdowns, multi-currency views. That work lands in this order, and the
+order is the point:
+
+1. **The numbers first, here.** Every chart this fork will ever draw is a route in §12.2 before it is
+   a pixel. The response shape is chart-ready on purpose: `series[]` of `{key, label, currency,
+   points[{period, amount}]}` plus `provenance`.
+2. **Then the terminal and the agent.** `ezbk analytics … --format csv` pipes a series into any
+   plotting tool, and the MCP returns the same series a model can describe (or, in a surface that
+   renders charts, hand over as data rather than a picture).
+3. **Then the browser.** New Vue chart components call the **same** analytics routes through a
+   browser-safe door (a JWT-authenticated `/api/v1` mirror of the analytics family, added then), so
+   the chart the operator sees and the number the agent quotes are the same computation. What must
+   never happen is a new chart that re-implements the sum in TypeScript beside `statistics.ts` —
+   that is two implementations, and the day they disagree the operator trusts neither.
+
+Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/handlers/analytics.go` — one handler per route above
+Code: `~/BGit/Bryan_git/ezbookkeeping/src/stores/statistics.ts` — upstream's in-browser grouping and conversion (exists today; the logic being moved)
+
+---
+
+## 13. Currencies — the rule this app adds
+
+Actual Budget is single-currency, so its specs never needed this section. ezBookkeeping is not: every
+account has an ISO 4217 currency, a user has a default currency, a transfer can cross currencies with
+two different amounts, and the app keeps exchange rates from a configured provider
+(`[exchange_rates] data_source`, European Central Bank by default) plus the user's custom overrides.
+
+### 13.1 The rule (LOCKED — R11)
+
+> **Every amount travels with its currency, and two currencies are never combined without a named
+> rate.**
+
+- Every amount field on the wire has a sibling currency field, or sits inside an object that has one.
+  A bare `amount` with no reachable currency is a bug in the route.
+- A list, a total, a ranking or a comparison that spans currencies is returned **per currency** unless
+  the caller asked for conversion.
+- "Largest expense" across a USD and a JPY account is not answerable without conversion, and the
+  route says so rather than comparing 50,000 yen to 500 dollars as if they were numbers of the same
+  thing.
+
+### 13.2 Conversion (LOCKED)
+
+`convert_to: "USD"` on an analytics route or `POST /exchange-rates/convert`:
+
+- Uses **the app's rates only**: the user's custom rate for a currency if one exists, otherwise the
+  provider's latest. Never a rate the caller supplied inline, never one a model remembered.
+- **Names every rate used**, with its source (`custom`/`provider`), the provider name, and its
+  `updateTime`.
+- **States the limitation plainly.** ezBookkeeping keeps **latest** rates, not historical ones. A
+  2019 euro expense converted today uses today's rate, and the response carries
+  `rateBasis: "latest"` and a `note` saying historical figures are converted at the current rate. A
+  caller that needs historical-rate accuracy is told it is not available, not handed a number that
+  pretends otherwise.
+- Rounds **once**, at the end, half-away-from-zero to hundredths, in `money.go`. Converting each row
+  and summing the rounded rows is a different number from summing and converting; the plane sums in
+  the source currency first, converts each currency's total once, and reports both.
+- A currency with **no rate available** is not silently dropped from a converted total: it is
+  returned in `unconverted[]` with its own per-currency figure, and `meta.partial: true`.
+
+### 13.3 The default currency
+
+`meta.defaultCurrency` (the bound user's) is on every response, so a client that renders a total
+knows which currency the operator thinks in. It is a display preference, never a silent `convert_to`.
+
+---
+
+## 14. The ingest plane — statements into the books
+
+The flagship, as in the Actual fork — but with one large difference that shapes everything below.
+
+> **Actual Budget had an importer that decides duplicates. ezBookkeeping does not.** Its import
+> (`POST /api/v1/transactions/import.json`) writes whatever rows it is handed; its only protection is
+> `clientSessionId`, which stops the _same submission_ twice within five minutes, not the same
+> transaction arriving in two files a month apart. So on this fork, **the machine plane is the
+> duplicate authority**, and because it is, it is implemented exactly once, deterministically, with
+> a durable record, and never by a model.
+
+### 14.1 Two modes, because two kinds of tree exist
+
+| Mode           | Input                                                                                                                        | What we do                                                                    |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| **`prepared`** | a tree that already holds importable files (`.ofx` / `.qfx` / `.qif` / CAMT `.xml` / MT940 / `.csv`) and a manifest          | read the manifest, hand each file to **ezBookkeeping's own converter**, dedupe, import |
+| **`raw`**      | a tree of statement PDFs and text sidecars                                                                                   | extract → normalise to ezBookkeeping CSV → dedupe → stage → import             |
+
+**`prepared` is primary and built first.** ezBookkeeping's converter shelf is wider than Actual's:
+`ofx`, `qfx`, `qif_ymd`/`qif_mdy`/`qif_dmy`, `iif`, `camt052`, `camt053`, `mt940`, `gnucash`,
+`firefly_iii_csv`, `beancount`, custom delimiter-separated and Excel files with a column map, and
+several regional app formats (`pkg/converters/transaction_data_converters.go`
+`GetTransactionDataImporter()`). A real archive is usually already prepared, and re-extracting from
+PDF what an OFX `FITID` already carries is strictly worse.
+
+`raw` is for statements that only ever existed as paper; its output is **ezBookkeeping CSV**
+(`ezbookkeeping_csv`), so even the raw path ends in the app's own parser.
+
+**The prepared tree is not ours.** It is audit evidence produced by whatever pipeline the operator
+ran, and this plane treats it as **strictly read-only** — never writes into it, never moves a file in
+it, never rewrites its manifest.
+
+### 14.2 The manifest
+
+A CSV (or JSON) with one row per account. The route cares about these columns and **reports any it
+could not find rather than guessing**:
+
+| Column                                        | Required | Meaning                                                                        |
+| --------------------------------------------- | -------- | ------------------------------------------------------------------------------ |
+| `entity`                                      | ✅       | the legal person or company the account belongs to                             |
+| `institution`                                 | ✅       | the bank                                                                       |
+| `label`                                       | ✅       | the account's name in the archive                                              |
+| `last4`                                       | ✅       | the account number's last four digits                                          |
+| `kind`                                        | ✅       | `checking` · `savings` · `card` · `brokerage` · `loan` · `cash`                |
+| `currency`                                    | —        | ISO 4217; **defaults to the bound user's default currency, and says so**       |
+| `path`                                        | ✅       | the account's directory, relative to the tree root                             |
+| `transactions`, `statements`, `first`, `last` | —        | counts and coverage, used for the plan's preview                               |
+| `reconciled`, `recon_na`                      | —        | how many statements balanced; surfaced as a warning                            |
+
+```jsonc
+// GET /ingest/manifest?root=…   (read)
+{
+  "ok": true,
+  "data": {
+    "root": "{STATEMENTS_ROOT}",
+    "manifest_path": "import/accounts.csv",
+    "mode": "prepared",
+    "accounts": [
+      {
+        "entity": "household", "institution": "Northbank", "label": "Checking_x4021",
+        "last4": "4021", "kind": "checking", "currency": "USD",
+        "path": "bank/household/Northbank/Checking_x4021",
+        "statements": 21, "transactions": 368, "first": "2024-10", "last": "2026-06",
+        "files": { "combined": "Checking_x4021_ALL.ofx", "monthly": 21, "formats": ["ofx", "csv"],
+                   "converter": "ofx" },
+        "warnings": []
+      }
+    ],
+    "totals": { "accounts": 27, "transactions": 12007, "unreconciled": 12 }
+  }
+}
+```
+
+`files.converter` is the ezBookkeeping `fileType` the plane will hand the file to, chosen by
+extension and sniffed content, and **echoed so a wrong guess is visible** (a `.qif` needs a date order
+— `qif_ymd` vs `qif_mdy` vs `qif_dmy` — and the plane refuses to pick between them without a
+`qif_date_order` in the manifest or the call, because a wrong guess silently swaps days and months).
+
+**Conflict rule (LOCKED).** If the manifest's own directory is named `import/`, staging **must not**
+be `{ROOT}/import/`. The default staging path is **`{ROOT}/.ezbk-staging/`**, and a route asked to
+stage into a directory that already holds foreign files refuses with `conflict` naming both paths.
+
+### 14.3 The staging directory
+
+```
+{ROOT}/.ezbk-staging/
+├── _manifest.csv     one row per source file ever seen
+├── _rows.csv         every de-duplicated row, across every account (ezBookkeeping CSV columns + import_id)
+├── _dupes.csv        what was collapsed, and the rule that collapsed it
+├── _conflicts.csv    the cases that block an apply
+├── _unmapped.csv     categories and accounts the plan could not map (§14.7)
+├── _run.log          append-only: run id, timestamp, counts, outcome
+└── {ENTITY}/{INSTITUTION}/{ACCOUNT}/{YYYY}-{MM}.csv
+```
+
+- **Rebuildable at any time.** Deleting it loses nothing but time; nothing downstream treats it as a
+  system of record.
+- **Atomic per file** (temp + rename).
+- **Gets a `.gitignore` containing `*` on first write**, because the statements tree is usually a git
+  repo and these are derived files full of real financial data.
+- In `prepared` mode staging holds only the run log, the plan and the unmapped list — the importable
+  files are the operator's, and we do not copy them.
+
+### 14.4 The routes
+
+| Route                    | M    | Tier | Arguments                                                                              |
+| ------------------------ | ---- | ---- | -------------------------------------------------------------------------------------- |
+| `/ingest/roots`          | GET  | R    | — configured statement roots and whether each is readable                              |
+| `/ingest/converters`     | GET  | R    | — the `fileType`s this build's `pkg/converters` supports, and which are enabled        |
+| `/ingest/manifest`       | GET  | R    | `root`, `manifest_path`                                                                |
+| `/ingest/scan`           | POST | R    | `root`, `mode`, `entity`, `institution`, `account`, `year`                             |
+| `/ingest/coverage`       | GET  | R    | `root`, `account` — which account-months are present and missing                       |
+| `/ingest/map`            | GET  | R    | `root` — the current statements→books map                                              |
+| `/ingest/map`            | PUT  | W    | `root`, `map` — written beside the statements, never in the repo                       |
+| `/ingest/map/infer`      | POST | R    | `root` — propose account mappings; never saves                                         |
+| `/ingest/accounts/plan`  | POST | R    | `root`, `naming`, `kind_to_category{}` — §15                                           |
+| `/ingest/accounts/apply` | POST | W    | `confirm_token`, `dry_run`                                                             |
+| `/ingest/extract`        | POST | R\*  | `root`, `force` — **raw mode only**; writes to staging only                            |
+| `/ingest/dupes`          | GET  | R    | `root` — what both de-dupe layers collapsed, and why                                   |
+| `/ingest/rows`           | GET  | R    | `root`, `account`, `start`, `end`, `limit`                                             |
+| `/ingest/plan`           | POST | R    | `root`, `accounts[]`, `start`, `end`, `category_map{}`, `fallback_category_ids{}`      |
+| `/ingest/apply`          | POST | W    | `confirm_token`, `max_changes`, `dry_run`                                              |
+| `/ingest/file/plan`      | POST | R    | `account_id`, `path` \| multipart file, `file_type`, `column_map` (custom files) — the "Import" dialog |
+| `/ingest/file/apply`     | POST | W    | `confirm_token`, `dry_run`                                                             |
+| `/ingest/runs`           | GET  | R    | the run log                                                                            |
+| `/ingest/runs/:id`       | GET  | R    | one run's full report                                                                  |
+
+`R*` — `/ingest/extract` cannot change the books but does write to staging. It is the one read-tier
+route that touches disk, it says so here, and it has its own ceiling.
+
+`[data] enable_import = false` in the server's `.ini` makes every write route here
+`disabled_upstream` (§8.3), and the bound user's import feature restriction makes them `forbidden`.
+
+### 14.5 Two layers of de-duplication
+
+**Layer one, the statement level.** The same month scanned twice under two filenames is one
+statement. Grouping is on `(entity, institution, last4, statement_period)` read from _inside_ the
+document, never from the directory name. Identical bytes → `duplicate_identical`. Different bytes,
+same period → ranked by a fixed rule chain (more rows; wider coverage; better source; newer mtime;
+lexicographically first path — deterministic on every machine), the loser `superseded`, both recorded.
+Two statements that disagree about a _transaction_ → `conflict`, which blocks that account-month and
+names both files.
+
+**Layer two, the transaction level — the `import_id`.**
+
+- In **prepared** mode, if the converter surfaces the bank's own id — OFX/QFX `FITID`
+  (`pkg/converters/ofx/ofx_data.go`, field `TransactionId` tagged `xml:"FITID"`), CAMT `AcctSvcrRef`
+  / `NtryRef`, MT940 reference — **that is the id, prefixed by its account key**. We never mint our
+  own over the top of a bank's.
+- Otherwise (CSV, QIF, raw) we mint:
+  `sha256(account_key ‖ date ‖ amount_hundredths ‖ currency ‖ normalised_description ‖ ordinal)[:32]`,
+  where `account_key` is `{entity}/{institution}/{last4}` (not the ezBookkeeping account id, so a
+  deleted-and-recreated account still matches), and `ordinal` is the tie-group index **within the
+  merged account-month** — so two genuine $5.00 coffees on the same day at the same shop get ordinals
+  0 and 1 and both import, and a cycle-dated card whose 15th-to-14th statements feed one calendar month
+  from two files does not collapse two real transactions into one. (Actual's cli.mdx §10.6a is the long
+  form of why the scope is the merged account-month; the rule is carried over unchanged.)
+
+Category, tags and comment are deliberately **not** in the hash — those are things the operator changes
+after import, and an id that changed when they did would re-import every edited row.
+
+### 14.6 The durable record — `machine_import_record` (LOCKED)
+
+ezBookkeeping's `Transaction` has no `imported_id` column, and we will not add one to upstream's table
+or smuggle one into `comment` (the operator's field). So the plane keeps its own table:
+
+| Column            | Holds                                                            |
+| ----------------- | ---------------------------------------------------------------- |
+| `uid`             | the bound user                                                   |
+| `import_id`       | §14.5 — unique per `uid`                                         |
+| `transaction_id`  | the ezBookkeeping transaction it became                          |
+| `account_key`     | `{entity}/{institution}/{last4}`                                 |
+| `source_file`     | path relative to the statements root                             |
+| `run_id`          | the ingest run                                                   |
+| `created_unix_time` |                                                                |
+
+**The plan asks this table, and only this table, "does this row already exist?"** — one
+implementation, the authority on this fork.
+
+**A deletion is a decision, and it is respected (LOCKED).** When the operator deletes an imported
+transaction in the browser, ezBookkeeping soft-deletes the row; our record still points at it. The
+next run finds the `import_id`, sees the transaction is deleted, and counts it
+`already_present_deleted` — **not re-imported**. This is Actual's `reimportDeleted: false` lesson
+applied at birth rather than retro-fitted: an import that resurrects deleted rows every month is an
+import nobody runs twice. The operator who wants one back runs `ezbk statements apply
+--reimport-deleted --yes`, which names every row it would resurrect first. No MCP tool can do it
+(mcp.mdx §11.3).
+
+**Fuzzy matching against hand-entered rows.** An operator often types a transaction in by hand and the
+statement arrives later. The plan reports, per statement row with no `import_id` match, any existing
+**un-recorded** transaction in the same account with the same amount and currency within ±3 days as a
+`possible_match` — and **does not decide**. Possible matches are excluded from the apply by default
+and listed for the operator; `accept_matches[]` on the apply links a named statement row to a named
+existing transaction (writing the record, creating nothing). A statement row is never fuzzy-matched to
+another statement row: those match on `import_id` or not at all.
+
+### 14.7 Mapping categories and accounts (LOCKED)
+
+ezBookkeeping requires a secondary category on every income and expense transaction, and its
+converters bring category **names** from the file (or none). The UI's import dialog makes the human
+map them. The plane does the same, explicitly:
+
+- **Accounts** map through the statements map (§14.4 `/ingest/map`), written by `/ingest/accounts/apply`.
+- **Categories** map by exact name to the bound user's secondary categories of the right type.
+  Anything unmatched goes to `_unmapped.csv` and the plan's `unmapped[]`, with every row count.
+- **A fallback is explicit.** `fallback_category_ids: {expense: "…", income: "…"}` names where
+  unmatched rows land. Without it, a plan with unmapped categories **blocks** that account and says
+  so. The plane never picks a category; `/analytics/import-fallout` later lists what went to the
+  fallback, so it can be re-categorised deliberately.
+- **Transfers between two mapped accounts** in one import (a card payment appearing in both the
+  checking and the card statement) are detected by equal-and-opposite amounts on the same date across
+  two mapped accounts and **reported as `transfer_candidates[]`, never merged automatically**. Accepting
+  one (`accept_transfers[]`) imports a single ezBookkeeping transfer instead of an expense in one account
+  and an income in the other — the double-count that makes a tracker report spending twice.
+
+### 14.8 Plan and apply are one path
+
+`/ingest/plan` parses every file through `pkg/converters`, runs both dedupe layers, consults
+`machine_import_record`, applies the maps, and returns per account: rows parsed, collapsed, already
+present (and already present but deleted), possible matches, transfer candidates, unmapped, **new** —
+plus a `confirm_token` whose fingerprint covers the exact set of new rows. `/ingest/apply` **recomputes
+all of it** and refuses with `conflict` and the new counts if the fingerprint moved; then submits the
+new rows through the same service path `TransactionImportHandler` uses (in batches, reporting progress),
+writes `machine_import_record` and the journal entry, and returns the created counts per account.
+
+**The comment field.** The statement's description goes into the new transaction's `comment` — that is
+where ezBookkeeping's own importers put it, and it is the only text field a transaction has. But it is
+written **only on create**. A re-run never updates the comment of an existing row, because by then the
+operator may have edited it, and an import that overwrites a note a human typed has destroyed the only
+data in the row a human authored. A test writes a comment, re-runs, and asserts it survives byte for
+byte.
+
+### 14.9 What ingest never does
+
+- Never writes, moves, renames or deletes anything under `{ROOT}` outside the staging directory.
+- Never deletes a transaction. Ingest is additive.
+- Never guesses a category, an account, a currency, or a QIF date order.
+- Never invents a date, an amount, or a balancing row. An unreadable row is named in `_conflicts.csv`
+  and counted.
+- Never uploads a statement anywhere — including to the LLM recognisers upstream offers.
+
+---
+
+## 15. Account provisioning from a manifest
+
+### 15.1 `POST /ingest/accounts/plan` (read)
+
+Reads the manifest and the bound user's accounts, and returns a per-row decision with its reasoning.
+It **creates nothing**.
+
+```jsonc
+{
+  "ok": true,
+  "data": {
+    "plan": [
+      { "manifest": { "entity": "household", "institution": "Northbank", "label": "Checking_x4021",
+                      "last4": "4021", "kind": "checking", "currency": "USD" },
+        "action": "create",
+        "proposed": { "name": "Household · Northbank Checking ••4021", "category": "checking",
+                      "currency": "USD", "side": "asset" },
+        "reason": "no existing account matched on last4 or name" },
+
+      { "manifest": { "entity": "household", "institution": "Meridian", "label": "Retirement",
+                      "kind": "brokerage", "currency": "USD" },
+        "action": "create",
+        "proposed": { "name": "Household · Meridian Retirement", "category": "investment",
+                      "currency": "USD", "side": "asset" },
+        "reason": "kind=brokerage → investment",
+        "warnings": ["source is monthly aggregate, not per-trade"] },
+
+      { "manifest": { "entity": "acme_llc", "institution": "Northbank", "label": "Card_x7734",
+                      "last4": "7734", "kind": "card" },
+        "action": "link",
+        "existing": { "id": "3401855937219633152", "name": "Acme LLC Card" },
+        "reason": "matched on last4 7734" }
+    ],
+    "summary": { "create": 24, "link": 3, "ambiguous": 0 },
+    "confirm_token": "cf_01J8…"
+  }
+}
+```
+
+`action` is one of `create` · `link` · `skip` · `ambiguous`. **`ambiguous` never becomes a create** —
+two accounts sharing a last4 across two entities is the normal case in a real archive.
+
+### 15.2 The naming rule
+
+Default `"{Entity} · {Institution} {Kind} ••{last4}"`, overridable per call with `naming` and per row
+with `name`. It disambiguates entities, it is stable (a re-run yields `link`, never a `(2)`), and it
+carries the last4 so a human can check a row against paper. It fits ezBookkeeping's 64-character
+account name limit; a longer rendering is truncated in the middle of the institution, never the last4,
+and the plan shows the truncation.
+
+### 15.3 Kind to ezBookkeeping category — and why this is the decision to read aloud
+
+ezBookkeeping has no on-budget/off-budget switch. Its equivalent consequential decision is the
+**account category**, because it decides asset versus liability and therefore the sign of every
+balance and the side of net worth it lands on (`pkg/models/account.go` asset/liability maps):
+
+| `kind`      | Category                 | Side          | Why                                                         |
+| ----------- | ------------------------ | ------------- | ----------------------------------------------------------- |
+| `checking`  | `checking`               | asset         | money you spend                                             |
+| `savings`   | `savings`                | asset         |                                                             |
+| `cash`      | `cash`                   | asset         |                                                             |
+| `card`      | `credit_card`            | **liability** | the balance owed is negative; payments are transfers in     |
+| `brokerage` | `investment`             | asset         | market movement is not income — it stays out of income/expense by construction |
+| `loan`      | `debt`                   | **liability** |                                                             |
+| `cd`        | `certificate_of_deposit` | asset         |                                                             |
+
+Controlled by `kind_to_category{}`, echoed, and explained per row. A credit card created as a checking
+account turns every payment into "income" and inverts the card's balance — invisible for months, one
+line to confirm.
+
+**Currency is the second decision.** It is immutable after creation (§10.2), so the plan prints it for
+every `create` row and flags any row whose currency was defaulted rather than stated in the manifest.
+
+### 15.4 `POST /ingest/accounts/apply` (write)
+
+Takes the token, creates the `create` rows through `/accounts/batch`, links the `link` rows, and
+**writes the map** beside the statements, so the next `/ingest/plan` has a complete mapping and the
+operator never hand-writes a file of 27 account ids. `dry_run` defaults true.
+
+---
+
+## 16. The passthrough — the upstream API behind the key
+
+`/machine/v1/api/*` forwards to the upstream `/api/v1/*` handler of the same path, **as the bound
+user**, behind the same five gates.
+
+**Why it exists.** Completeness on day one. The typed routes of §10 take phases to build; the
+passthrough makes every upstream capability reachable from `ezbk` from P1, so the operator is never
+told "that needs a new route" for something the UI can already do.
+
+**Why it is fenced (LOCKED).**
+
+| Upstream path class                                                      | Tier       |
+| ------------------------------------------------------------------------ | ---------- |
+| any `GET`                                                                | read       |
+| any `POST` not below                                                     | write      |
+| `*/delete.json`, `*/batch_delete.json`, `data/clear/*`, `*/remove_unused.json` | **admin** |
+| `tokens/*`, `users/2fa/*`, `users/external_auth/*`, `users/avatar/*`, `llm/*` | **refused** (404) |
+
+- **No dry run, no confirm token, no ceiling, no journal.** The passthrough is the upstream API, not
+  the machine plane's write protocol. That is exactly why **the MCP never calls it** (mcp.mdx §9.5) and
+  why `ezbk` reaches it only through `ezbk raw`, which prints a one-line warning on every write.
+- **The envelope is ours; `data` is upstream's `result` verbatim**, including upstream's big-integer
+  strings — the passthrough is the one place R2's integer conversion does not apply, and
+  `meta.passthrough: true` says so.
+- **A typed route supersedes.** When §10 has a route for something, `ezbk` verbs use it, and the
+  passthrough remains only as the escape hatch. A passthrough call that is made twice for the same
+  purpose is a signal a typed route is missing.
+
+This is the machine plane's answer to Actual's `/query` hatch: ezBookkeeping has no query language to
+expose, and **raw SQL is never exposed** (§19.3), so the upstream API is the hatch.
+
+---
+
+## 17. Money, time and identifiers
+
+### 17.1 Integer hundredths, everywhere (LOCKED — R2)
+
+`-12350` with `currency: "USD"` is `-$123.50`. ezBookkeeping stores every amount as an int64 at a
+**fixed scale of two decimal places for every currency** (`pkg/models/transaction.go`; `1234` is
+12.34), including currencies that have no minor unit in real life — `1234` JPY in ezBookkeeping is
+¥12.34. The plane keeps the app's scale exactly and never re-scales per currency: a yen amount of
+¥5,000 is `500000` here, as it is in the database. Clients render with the currency's conventional
+decimals; the wire never changes scale.
+
+- **No floats.** Not once.
+- **No decimal strings on the wire either** — which is a real change from upstream, whose account
+  balances and statistics amounts are big-integer **strings** (`"123450"`) and whose MCP uses decimal
+  strings (`"1234.50"`). The plane converts upstream's integer strings to JSON integers in exactly one
+  place, `money.go`. It is lossless: upstream's per-amount range is ±999,999,999,999,999, inside
+  JSON's safe integer range (2⁵³−1 ≈ 9.007 × 10¹⁵). A **sum** that exceeds the safe range is refused
+  with `upstream_error` naming the field rather than rounded — a household will never see it, and a
+  silent float is worse than a loud error.
+- The clients call their own renderer for display; `--format json` and every MCP response carry the
+  raw integer.
+- A test round-trips adversarial values — `-1`, `0`, `1`, `99`, `-99`, `100000000`,
+  `999999999999999` — through every layer, and a canary greps `pkg/machine/` for `float64` outside
+  `money.go`'s rate handling.
+
+**Exchange rates are the one non-integer.** A rate is a ratio, not money. It travels as upstream
+supplies it (a decimal string) and is used for exactly one multiplication inside `money.go`, with the
+result rounded once to integer hundredths.
+
+### 17.2 Signs
+
+Income positive, expense as a positive `amount` with `type: expense` in upstream's model — ezBookkeeping
+stores the magnitude and the type carries direction. The plane's **analytics** and **balance** routes,
+which are ours, use signed integers (negative is money out) so a series can be charted without
+knowing each row's type; **transaction** routes keep upstream's `{type, amount}` shape verbatim. Each
+route's entry says which convention it uses, and the two never mix inside one response.
+
+### 17.3 Absent is not zero (LOCKED — R3)
+
+ezBookkeeping has no budget, so Actual's `budgeted: null` case does not arise. The rule survives in
+the places it applies here:
+
+- A category with **no transactions** in a period is **absent** from a breakdown, not present with
+  `0` — and `include_zero: true` lists it explicitly with `amount: 0` **and** `count: 0`, so a zero is
+  always a counted zero.
+- An average over a period with no data is `null`, not `0`.
+- An account with no transactions has a real balance (its opening balance) and
+  `firstTransaction: null`.
+- A balance we could not compute is an error, not `0`.
+- A converted total missing a currency's rate is `partial`, not a smaller number (§13.2).
+
+### 17.4 Time
+
+- **Dates on the wire are `YYYY-MM-DD`; months are `YYYY-MM`; instants are RFC 3339.** Upstream's API
+  takes unix seconds plus a `utcOffset` in minutes; `clock.go` converts, in exactly one place.
+- **Ranges are inclusive on both ends** and every response echoes the unix range it resolved.
+- **The timezone decides what "a day" is.** Resolution: the call's `X-Timezone-Name` → the credentials
+  file's `ezbookkeeping.timezone` → the server machine's local zone. Echoed in `meta.timezone`.
+- **Each transaction keeps its own offset** (`TimezoneUtcOffset`) — the offset in force where it
+  happened. Upstream's statistics accept `use_transaction_timezone`; the plane passes it through and
+  echoes it, because "spent in March" for a transaction made in Tokyo at 08:00 on 1 April local time
+  depends on which clock you ask.
+- **No relative dates on the wire.** "Last month" is the client's to resolve, and the response says
+  which month it decided.
+- `transactionTime` in responses is **unix milliseconds** — upstream stores milliseconds so each
+  user's times are unique (the extra digits are a sequence, not precision). The plane returns it
+  verbatim and adds `date` (`YYYY-MM-DD` in the resolved zone) beside it.
+
+### 17.5 Identifiers
+
+ezBookkeeping ids are int64s from its own generator, serialised by upstream as **strings**
+(`json:"id,string"`) because they exceed JavaScript's safe range. The plane keeps them as strings,
+always. A client that parses an id into a number has already corrupted it; the CLI and the MCP treat
+ids as opaque strings, and a test sends an id above 2⁵³ through every route.
+
+Where a name is accepted instead, resolution is exact-match-first, then case-insensitive, and
+**ambiguity is an error carrying the candidates**.
+
+---
+
+## 18. Concurrency, limits and performance
+
+- **One process, one writer.** SQLite serialises writes; the plane additionally serialises its own
+  writes at concurrency 1, so a second machine-plane write waits rather than racing a first. If it
+  waits past its timeout it gets `conflict` with a retry hint, never a partial apply.
+- **Reads are unbounded** and do not block on a write.
+- **No cache on this plane.** Upstream's services read the database; a cache here would be a second
+  copy that can be stale.
+- **Long routes stream progress.** `/ingest/apply` and `/ingest/extract` accept
+  `Accept: application/x-ndjson` and emit progress lines, ending with the normal envelope — so a client
+  can draw a progress bar and never look hung. Upstream already tracks import progress
+  (`GET /transactions/import/process.json`); the plane reports the same numbers. With plain
+  `Accept: application/json` they take as long as they take, and **there is no server-side timeout on
+  them**.
+
+| Limit                    | Value       | Behaviour over it                        |
+| ------------------------ | ----------- | ---------------------------------------- |
+| `limit` on a list        | cap 5,000   | clamped, `truncated: true`               |
+| Response bytes           | 16 MiB      | `truncated: true` + narrowing hint       |
+| Request bytes            | 16 MiB      | `invalid_input`                          |
+| `max_changes` on a write | default 200 | refused, **reporting the real count**    |
+| Per-call timeout         | 30 s        | `upstream_error`; ingest routes exempt   |
+| Tags per transaction     | 10          | upstream's; refused per row              |
+| `/analytics/*` range     | 50 years    | `invalid_input`                          |
+
+---
+
+## 19. Security
+
+### 19.1 Threat model
+
+| #   | Threat                                                | Control                                                                                                        |
+| --- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| 1   | Another computer reaches port 8080                    | Gate 1, on `c.Request.RemoteAddr`, never `ClientIP()` / `X-Forwarded-For`                                       |
+| 2   | A web page the operator has open calls the plane      | Gate 2 (origin + host) and gate 3 (the key it cannot read)                                                     |
+| 3   | Another user on this machine                          | Gate 3; the key file is 0600 and ownership-checked                                                             |
+| 4   | An agent writes something the operator did not want   | Gates 4 and 6: server tier, client switch, `dry_run` default, a token only a plan produces, a ceiling, undo    |
+| 5   | A malicious transaction comment steers a model        | §19.4 — untrusted fields are marked, never executed                                                            |
+| 6   | A secret leaks into a log, an error or a context      | §19.3 — fingerprints only; upstream's request log checked                                                      |
+| 7   | A bad plan is applied against a changed ledger        | §9.3 — fingerprint recomputed at apply                                                                         |
+| 8   | The operator's statement archive is damaged           | §14.2's conflict rule and §14.9's never-list                                                                   |
+| 9   | The wrong user's books are read or written            | §6 — never guess a user; `meta.user` on every response                                                         |
+| 10  | An upstream full-access token door left open          | §2.2 — `ezbk doctor` flags `enable_api_token` / `enable_mcp`                                                   |
+
+### 19.2 No egress
+
+The machine plane makes no outbound network call of its own. It does not call upstream's LLM
+recognisers, does not fetch exchange rates on demand (it reads what upstream's own scheduled fetch
+stored), and does not fetch map tiles. A test runs the full suite with outbound networking blocked.
+
+### 19.3 What is never exposed
+
+The API secret key (fingerprint only); `[security] secret_key`; any user's password hash, salt, 2FA
+secret or recovery codes; any upstream JWT or `token_record.secret`; OAuth2 client secrets; LLM API
+keys; mail passwords; absolute filesystem paths outside the statements root; environment variables;
+SQL strings; stack traces. **Raw SQL is never accepted as input** — there is no query escape hatch that
+takes SQL, and none is planned.
+
+A **canary test** calls every route in `/capabilities` against a fixture database and greps every
+response for the key pattern, for `secret`, `password`, `salt`, `token`, and `/Users/`.
+
+### 19.4 Prompt-injection posture
+
+A transaction comment, an account name, a category name, a tag and a statement description are
+**operator-supplied data that may have been written by a third party** — a merchant chose that
+descriptor, not the operator.
+
+- Responses mark them: `meta.untrusted: ["comment", "name", "description"]`.
+- The plane never interprets them as instructions, never uses them to choose a route, and never
+  reflects them into a `hint`.
+- [ai/mcp_prompt_ezbookkeeping.md](../ai/mcp_prompt_ezbookkeeping.md) carries the matching instruction
+  on the model's side: text from the books is _evidence about money_, never a directive.
+
+### 19.5 The audit trail
+
+Every write appends one line to `~/T/_ezbookkeeping/machine.audit`:
+
+```
+2026-09-21T18:41:02Z  route=/ingest/apply  tier=write  caller=ezbookkeeping-mcp/0.1.0  user=operator  token=cf_01J8…  changed=117  ok=true  took_ms=8412
+```
+
+No amounts, no comments, no account names — **what happened, not what it was about.** `caller` comes
+from `X-Ezbk-Client` and is advisory. The journal (§9.6) is the undo mechanism; the audit file is the
+human-readable history, and it survives a database restore.
+
+---
+
+## 20. Open-source safety (LOCKED)
+
+This fork is public at `github.com/BryanStarbuck/ezbookkeeping`. Three rules, each with a test:
+
+1. **No secret in the tree.** No config key anywhere under `pkg/machine/`, `cli/`, `mcp/` or `conf/`
+   can hold the API secret key. `data/.secret_key` is under `/data/`, which `.gitignore` already
+   excludes, and it is not the API key anyway (§5.2). A test greps the built binaries and the tree for
+   64-hex literals.
+2. **No private path in the code.** The statements root, the bound username, entity names and account
+   last-fours are **all configuration, none constants**. **Every entity, institution and account in
+   this spec is invented** — `household`, `acme_llc`, `Northbank`, `Meridian`, `••4021`, `operator`.
+   A test greps the source for `/Users/`, for the archive directory name and for the entity names used
+   on this machine.
+3. **No financial data in the repo.** `data/ezbookkeeping.db` lives under the git-ignored `/data/`;
+   the statements tree and staging directory are outside the repo; fixtures are synthetic.
+
+**The upstream-contribution line.** Anything here that belongs to every ezBookkeeping user — a
+converter fix, a statistics bug — goes upstream to `mayswind/ezbookkeeping` as its own small PR, not
+into `pkg/machine`. The machine plane is this fork's; the converters and services are everyone's.
+
+---
+
+## 21. Testing
+
+| Layer                     | What it holds                                                                                                                                                                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Gate ladder**           | every gate in order with a negative for each: non-loopback → 404; non-loopback carrying `X-Forwarded-For: 127.0.0.1` with trusted proxies configured → 404; `Origin: https://evil.example` → 404; `Sec-Fetch-Site: cross-site` → 404; a rebinding `Host` → 404; no key → 401 constant body; wrong key → same body byte for byte; write route with tier off → `write_disabled`; admin route with write only → `forbidden`; admin route from the MCP client with admin on → `forbidden` |
+| **Credentials**           | mint uses `crypto/rand`, 64 hex; the merge preserves another product's keys; 0644 refused; symlink refused at read and write; three concurrent minters converge on one key; the server reuses a pre-existing key unchanged                   |
+| **Bound user**            | 0 users → `not_ready` with the register hint; 1 user → bound; 2 users, nothing set → `not_ready` naming both; configured username wins; a restricted feature → `forbidden`; no `token_record` row is ever created by the plane               |
+| **Envelope**              | every route returns the envelope, including 404 and 500; the vocabulary is exactly nine; every `pkg/errs` code in the mapping table maps; mcp.mdx's twelve are a strict superset                                                           |
+| **Capability parity**     | `/capabilities` lists exactly the routes mounted — one array, asserted both directions                                                                                                                                                     |
+| **Coverage parity**       | §11's matrix is a committed fixture; a ✅ row with no route in `/capabilities` fails the build                                                                                                                                             |
+| **Money**                 | adversarial values round-trip; no big-int string survives outside `/api/*` passthrough; `float64` confined to `money.go` rate handling; a sum beyond 2⁵³−1 is refused, never rounded                                                       |
+| **Currency**              | a mixed-currency breakdown without `convert_to` returns per-currency series and no cross-currency total; with it, every rate is named with source and time; a currency with no rate lands in `unconverted[]` with `partial: true`          |
+| **Ids**                   | an id above 2⁵³ survives every route as a string                                                                                                                                                                                           |
+| **Time**                  | a transaction at 23:30 on the 31st in UTC−8 lands in the right month under both `America/Los_Angeles` and `Europe/London`, and `meta.timezone` says which                                                                                  |
+| **Write protocol**        | dry run defaults true; no token → refused; expired token → refused; moved fingerprint → refused **with new counts**; ceiling refuses with the real number; a transfer counts as one change                                                 |
+| **Undo**                  | every write route followed by `/undo` restores the prior state under a full-table hash of the user's rows; undo refuses with `conflict` when a row was edited in the browser in between; undo can delete only rows its journal created      |
+| **Ingest**                | plan and apply report identical counts over an unchanged ledger; a second apply adds 0; a deleted imported row is **not** re-added; `--reimport-deleted` re-adds and names it; the two-coffees and cycle-dated fixtures both import both rows; an OFX `FITID` is used verbatim; a comment edited after import survives a re-run; QIF without a date order is refused |
+| **Transfer detection**    | a card payment present in checking and card statements yields one `transfer_candidate`, never an automatic merge                                                                                                                           |
+| **Analytics**             | each route against a fixture with a hand-computed answer; transfers and balance modifications excluded; the grouping matches `src/stores/statistics.ts` on the same fixture (the parity test that proves the move was faithful)           |
+| **Passthrough**           | tier classes enforced; `tokens/*`, `2fa/*`, `llm/*` → 404; `meta.passthrough: true`                                                                                                                                                        |
+| **Leak canary**           | every route called; responses grepped for the key pattern, `secret`, `password`, `salt`, `/Users/`; `log/ezbookkeeping.log` grepped for the key after the suite                                                                           |
+| **Upstream-drift canary** | every `data` shape pinned against a committed fixture, so an upstream model change fails at merge time                                                                                                                                     |
+| **Open-source canaries**  | the three §20 greps                                                                                                                                                                                                                        |
+| **Integration**           | a real server on an ephemeral port with a temp work dir, temp SQLite, temp credentials file; the full ladder end to end                                                                                                                    |
+
+Go tests live beside the code (`pkg/machine/*_test.go`) and run under the repo's existing
+`go test ./...`, so upstream's CI shape is unchanged.
+
+---
+
+## 22. Use cases
+
+Each row is a real sentence an operator says, and the route sequence that answers it. mcp.mdx §18
+dramatises the same scenarios for a model and cli.mdx §19 for a terminal — here they are the wire.
+
+| #   | "…"                                                        | Routes                                                                                                                        |
+| --- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Is this thing even on?                                     | `GET /ping` → `GET /whoami`                                                                                                   |
+| 2   | Set my books up from my statement archive                  | `GET /ingest/manifest` → `POST /ingest/accounts/plan` → `/apply` → `POST /ingest/plan` → `POST /ingest/apply`                 |
+| 3   | Import the OFX I downloaded this morning                   | `POST /ingest/file/plan` → `POST /ingest/file/apply`                                                                          |
+| 4   | What did I spend on groceries this year, by month?         | `GET /analytics/category-trend?interval=month&category_id=…`                                                                  |
+| 5   | Where is my money actually going?                          | `GET /analytics/spending-by-category?group_by=primary&top_n=10` + `/analytics/payee-leaderboard`                              |
+| 6   | What's my net worth in dollars?                            | `GET /analytics/net-worth?convert_to=USD` — rates named                                                                       |
+| 7   | What subscriptions am I paying for?                        | `GET /analytics/recurring` → `GET /templates?kind=scheduled` (which are already scheduled)                                    |
+| 8   | Everything from ACME HARDWARE is Home Repair               | `GET /transactions?keyword=ACME%20HARDWARE` → `POST /transactions/set-category` (dry run, then token)                         |
+| 9   | Northbank says $4,211.08 as of the 31st                    | `POST /accounts/:id/reconcile/plan` → `POST /accounts/:id/reconcile/apply`                                                    |
+| 10  | What did the Lisbon trip cost?                             | `GET /analytics/tag-breakdown?tag_ids=…&convert_to=USD`                                                                       |
+| 11  | Rent is due on the 1st every month — schedule it           | `POST /templates` (`kind: scheduled`, dry run) → token                                                                        |
+| 12  | What's coming up this month?                               | `GET /schedules/upcoming?days=30`                                                                                             |
+| 13  | How long could I go if income stopped?                     | `GET /analytics/runway?convert_to=USD`                                                                                        |
+| 14  | Anything weird this month?                                 | `GET /analytics/anomalies` + `GET /analytics/import-fallout`                                                                  |
+| 15  | What did last night's import dump into "Other"?            | `GET /analytics/import-fallout?run_id=…` → `POST /transactions/set-category`                                                  |
+| 16  | Which months of statements am I missing?                   | `GET /ingest/coverage`                                                                                                        |
+| 17  | Undo that                                                  | `POST /undo`                                                                                                                  |
+| 18  | Export everything for my accountant                        | `GET /data/export?format=csv`                                                                                                 |
+| 19  | The euro rate the app has is wrong                         | `GET /exchange-rates?currencies=EUR` → `PUT /exchange-rates/custom/EUR`                                                       |
+| 20  | Something no typed route covers                            | `ezbk raw GET transactions/list/by_month.json …` (§16)                                                                        |
+
+---
+
+## 23. Acceptance criteria
+
+The plane is done when all of these hold:
+
+1. On a machine with no `~/.credentials/ezbookkeeping.json`, `just run` mints a 64-hex key at `0600`
+   with no operator action, and a second `just run` reuses it unchanged.
+2. `GET /ping` answers with the key and 401s without it; from a non-loopback address it 404s even
+   with the key — including when the server listens on `0.0.0.0`.
+3. `GET /capabilities` lists every mounted route, and §11's coverage fixture matches it.
+4. Every route in §10 exists, validates its input, and returns the envelope — including its errors.
+5. **Every ✅ cell in §11 is exercised by a test** that performs the action and asserts the books
+   changed the way the UI would have changed them.
+6. Every write defaults to `dry_run: true`, refuses without a token, and reports the real count at the
+   ceiling.
+7. `/ingest/plan` and `/ingest/apply` report identical counts over an unchanged ledger; a second full
+   import adds zero; a deleted imported row stays deleted.
+8. `POST /undo` restores the user's rows to a byte-identical state after every write route.
+9. No float, no decimal string and no big-int string appears in any typed-route response.
+10. No typed route returns a total spanning two currencies without naming the rates.
+11. The gate ladder's negative suite passes, including `X-Forwarded-For` and `Origin`.
+12. The leak canary passes across every route and the server log.
+13. The three open-source canaries pass.
+14. Upstream's `go test ./...` still passes, and `cmd/webserver.go` differs from upstream by the mount
+    line only.
+15. `just build && just run && ezbk doctor` is green on a machine that has never run this, with no
+    manual key step.
+
+---
+
+## 24. Build phases
+
+| Phase   | Delivers                                                                                                                                  | Depends on |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| **P0**  | `pkg/machine` skeleton, `Mount` + `Arm`, the key (mint/merge/resolve), gates 1–3, envelope, `/ping`, fail-closed, the mount-line test      | —          |
+| **P1**  | bound user (§6), tier, validate, `routes.go` (the one array), `/whoami`, `/capabilities`, `/health`, **the passthrough (§16)**             | P0         |
+| **P2**  | the typed read families: accounts, transactions (cursor walk), categories, tags, templates, exchange rates, insights, data statistics/export | P1         |
+| **P3**  | the analytics plane (§12) and currency conversion (§13) — including the parity test against `statistics.ts`                               | P2         |
+| **P4**  | `confirm.go`, the write protocol, the journal; first writes: transactions add/modify, set-category, tags                                  | P2         |
+| **P5**  | **undo / redo** — with the first writes, never later                                                                                      | P4         |
+| **P6**  | the remaining writes: accounts, categories, tags, templates/schedules, rates, reconcile, batch                                            | P5         |
+| **P7**  | the ingest plane, `prepared` mode: manifest, converters, both dedupe layers, `machine_import_record`, maps, plan/apply, file import        | P5         |
+| **P8**  | account provisioning (§15) and `raw` mode extraction                                                                                       | P7         |
+| **P9**  | admin tier, pictures and custom icons, NDJSON progress, the full canary suite, the upstream-drift fixtures                                | P6         |
+
+**P2 + P3 is the shippable milestone** — every read and every total, nothing that can change the
+books. P7 is what makes the first evening useful.
+
+---
+
+## 25. Invariants recap (LOCKED)
+
+1. Loopback only, forever — on the real socket peer, whatever the listener is bound to.
+2. The API secret key is 256 bits from `crypto/rand`, 64 hex, in `~/.credentials/ezbookkeeping.json`
+   at 0600, minted by the web app on first boot and reused thereafter, never in the repo.
+3. It is compared in constant time and never logged except as a fingerprint.
+4. It is not an upstream token, not `[security] secret_key`, and never accepted by `/api/v1` or `/mcp`.
+5. The plane binds to exactly one user and never guesses between several.
+6. Five gates before any handler, six before any write. Fail closed at every one.
+7. One envelope. Nine error codes. Every error names a fix.
+8. Money is integer hundredths, everywhere, always — at the app's fixed scale for every currency.
+9. Every amount carries its currency; no total crosses currencies without named rates.
+10. Absence is reported as absence, never as zero.
+11. Every write has a dry run built from the write's own first half; a write needs two switches, a
+    `dry_run: false` and a token only a plan could produce.
+12. The machine plane is the duplicate authority for imports, with one implementation and a durable
+    record; a deletion is never undone by an import.
+13. One service call per route; composed routes say so and are named in this spec.
+14. Nothing is computed twice. If a client would have to sum or convert it, it becomes a route here.
+15. Every cap is reported.
+16. Deleting is admin-tier, and the MCP does not have it; undo deletes only what undo's journal created.
+17. The delta to upstream's files is one mount line and one arm call.
+18. No secret, no private path and no financial data in this repo.
+
+---
+
+## 26. Related specs
+
+- [cli.mdx](./cli.mdx) — `ezbk`, the terminal client of this plane.
+- [mcp.mdx](./mcp.mdx) — `ezbookkeeping`, the agent client of this plane.
+- [ai/mcp_prompt_ezbookkeeping.md](../ai/mcp_prompt_ezbookkeeping.md) — what the MCP tells the model
+  about money, currencies and asking.
+- [../CLAUDE.md](../CLAUDE.md) — what this fork is, and how it extends upstream.
+- `~/BGit/Bryan_git/actual_budget_bryan/pm/apis.mdx` — the sister fork's machine plane this spec was
+  grown from.
+- `skills/ezbookkeeping/SKILL.md` and `scripts/ebktools.sh` — upstream's own API client, over upstream
+  tokens; a reference for `/api/v1` parameter semantics.
