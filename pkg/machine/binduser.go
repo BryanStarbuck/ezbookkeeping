@@ -67,7 +67,7 @@ func ResolveBoundUser(c core.Context) (*models.User, error) {
 			return nil, f
 		}
 
-		return nil, NewFail(CodeNotReady, "check log/ezbookkeeping.log; the users table could not be read", "cannot list users")
+		return nil, NewFail(CodeNotReady, "check ~/T/ezbookkeeping/error.err; the users table could not be read", "cannot list users")
 	}
 
 	switch len(names) {

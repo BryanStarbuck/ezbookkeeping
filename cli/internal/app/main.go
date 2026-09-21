@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/errfile"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/exitcode"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/logger"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/render"
@@ -26,10 +27,16 @@ func Main(argv []string, stdout, stderr io.Writer) (code int) {
 		}
 	}
 
+	verbName := ""
+
 	defer func() {
 		if r := recover(); r != nil {
+			// pm/error_err.mdx §7 G5: the record and the stack go to error.err; cli.err keeps the
+			// usage trail
+			errfile.Recovered("running ezbk", r, errfile.F("verb", verbName))
+			errfile.Flush()
 			logger.Error("panic: %v", r)
-			printError(stderr, &ExitError{Code: exitcode.Failed, Msg: fmt.Sprintf("internal error: %v", r), Hint: "the stack is in ~/T/_ezbookkeeping/cli.err"}, jsonErrors)
+			printError(stderr, &ExitError{Code: exitcode.Failed, Msg: fmt.Sprintf("internal error: %v", r), Hint: "the stack is in ~/T/ezbookkeeping/error.err"}, jsonErrors)
 			code = exitcode.Failed
 		}
 	}()
@@ -77,6 +84,10 @@ func Main(argv []string, stdout, stderr io.Writer) (code int) {
 	}
 
 	p, err := Parse(argv)
+
+	if p != nil && p.Verb != nil {
+		verbName = p.Verb.Name
+	}
 
 	if err != nil {
 		var ue *UsageError

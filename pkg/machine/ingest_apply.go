@@ -604,7 +604,7 @@ func ingServiceFail(err error, message string) error {
 		return Upstream(ue)
 	}
 
-	return NewFail(CodeUpstreamError, "read log/ezbookkeeping.log for the server-side detail", "%s", message)
+	return NewFail(CodeUpstreamError, "read ~/T/ezbookkeeping/error.err for the server-side detail", "%s", message)
 }
 
 // ---- the inverse: ing.import ----------------------------------------------------------------

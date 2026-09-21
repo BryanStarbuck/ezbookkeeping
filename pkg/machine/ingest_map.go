@@ -118,7 +118,7 @@ func ingLoadAccounts(mc *Ctx) (*ingAccountIndex, error) {
 	accounts, err := services.Accounts.GetAllAccountsByUid(mc.Web, mc.Uid)
 
 	if err != nil {
-		return nil, NewFail(CodeUpstreamError, "check log/ezbookkeeping.log", "cannot read the bound user's accounts")
+		return nil, NewFail(CodeUpstreamError, "check ~/T/ezbookkeeping/error.err", "cannot read the bound user's accounts")
 	}
 
 	idx := &ingAccountIndex{ById: map[int64]*models.Account{}, ByName: map[string][]*models.Account{}}

@@ -279,3 +279,10 @@ func getFinalLog(format string, args ...any) string {
 
 	return result
 }
+
+// AddHook attaches a hook to the boot, cli and default loggers (pm/error_err.mdx §8 N6)
+func AddHook(hook logrus.Hook) {
+	bootLogger.AddHook(hook)
+	cliLogger.AddHook(hook)
+	defaultLogger.AddHook(hook)
+}

@@ -1074,7 +1074,7 @@ func anHandleImportFallout(mc *Ctx) (any, error) {
 
 	if err := q.Find(&recs); err != nil {
 		log.Errorf(mc.Web, "[machine.anHandleImportFallout] cannot read import records: %s", err.Error())
-		return nil, NewFail(CodeUpstreamError, "read log/ezbookkeeping.log for the server-side detail", "cannot read the import records")
+		return nil, NewFail(CodeUpstreamError, "read ~/T/ezbookkeeping/error.err for the server-side detail", "cannot read the import records")
 	}
 
 	if runId != "" && len(recs) == 0 {

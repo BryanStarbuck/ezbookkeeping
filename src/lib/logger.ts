@@ -1,4 +1,7 @@
 import { isEnableDebug } from './settings.ts';
+import { errorFileFor } from './errfile/index.ts';
+
+const errors = errorFileFor('src/lib/logger.ts');
 
 function logDebug(msg: string, obj?: unknown): void {
     if (isEnableDebug()) {
@@ -19,6 +22,7 @@ function logInfo(msg: string, obj?: unknown): void {
 }
 
 function logWarn(msg: string, obj?: unknown): void {
+    errors.warn(msg, obj);
     if (obj) {
         console.warn('[ezBookkeeping Warn] ' + msg, obj);
     } else {
@@ -27,6 +31,7 @@ function logWarn(msg: string, obj?: unknown): void {
 }
 
 function logError(msg: string, obj?: unknown): void {
+    errors.caught(msg, obj);
     if (obj) {
         console.error('[ezBookkeeping Error] ' + msg, obj);
     } else {

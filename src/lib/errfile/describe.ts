@@ -27,8 +27,7 @@ export type DescribedError = {
 };
 
 // \x00-\x1f, \x7f, U+2028 and U+2029: anything that could end a line or forge a second header.
-// eslint-disable-next-line no-control-regex -- matching control characters is the point
-const CONTROL_CHARS = /[\u0000-\u001f\u007f  ]/g;
+const CONTROL_CHARS = /[\u0000-\u001f\u007f\u2028\u2029]/g;
 
 /** Replace every control character (and the two Unicode line separators) with a space. */
 export function stripControlChars(value: string): string {
@@ -240,8 +239,8 @@ export function trimStack(stack: string, maxFrames: number = STACK_FRAMES): stri
             }
 
             const line = stripControlChars(raw.trim())
-                .replace(REPO_PREFIX, '$1')
-                .replace(ORIGIN_PREFIX, '');
+                .replace(ORIGIN_PREFIX, '')
+                .replace(REPO_PREFIX, '$1');
             frames.push(`    ${line.startsWith('at ') ? line : 'at ' + line}`);
         }
 

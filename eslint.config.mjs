@@ -1,5 +1,6 @@
 import pluginVue from 'eslint-plugin-vue';
 import vueTsEslintConfig from '@vue/eslint-config-typescript';
+import errfilePlugin, { ERRFILE_LINT_IGNORES } from './scripts/eslint/errfile-plugin.mjs';
 
 export default [
     ...pluginVue.configs['flat/essential'],
@@ -15,6 +16,7 @@ export default [
     {
         ignores: [
             'dist/**',
+            'mcp/**',
             '**/*.{js,jsx,cjs,mjs}'
         ]
     },
@@ -27,5 +29,11 @@ export default [
                 allowModifiers: true
             }]
         }
+    },
+    {
+        files: ['src/**/*.{vue,ts,tsx,mts}'],
+        ignores: ERRFILE_LINT_IGNORES,
+        plugins: { errfile: errfilePlugin },
+        rules: { 'errfile/catch-must-report': 'warn' } // Phase C: "warn"; Phase D flips it to "error" (pm/error_err.mdx §13.2)
     },
 ];

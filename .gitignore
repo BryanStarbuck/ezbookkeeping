@@ -165,3 +165,6 @@ ezbookkeeping
 /data/
 /storage/
 /log/
+
+# errfilecheck and other tool binaries (just check-errors)
+/bin/

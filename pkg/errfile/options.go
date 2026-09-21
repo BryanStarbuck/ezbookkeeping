@@ -52,7 +52,7 @@ func Install(o Options) (flush func()) {
 				Type:    "logged",
 				Message: "Install called with App " + o.App + " after " + box.app + "; the first install is kept",
 				Fields:  []Field{F("command", o.Command)},
-				Where:   "pkg/errfile/options.go",
+				Where:   ownWhere(),
 			})
 		}
 

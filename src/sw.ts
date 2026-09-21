@@ -9,6 +9,11 @@ import type {
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
 import { registerRoute } from 'workbox-routing';
 import { CacheFirst, NetworkFirst, StaleWhileRevalidate } from 'workbox-strategies';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+import { installBrowserErrorFile } from '@/lib/errfile/browser.ts';
+
+installBrowserErrorFile({ app: 'sw' });
+const errors = errorFileFor('src/sw.ts');
 
 interface CacheTimestampEntry {
     request: Request;
@@ -328,6 +333,7 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 
             return Response.redirect(redirectUrl, 303);
         } catch (ex) {
+            errors.caught('handling the shared image upload', ex);
             console.error('failed to handle share image upload in service worker', ex);
             return Response.redirect(redirectUrl, 303);
         }
@@ -363,6 +369,7 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
             }
         }
     } catch (ex) {
+        errors.caught('processing a message from the page', ex);
         console.error('failed to process message in service worker', ex);
     }
 });

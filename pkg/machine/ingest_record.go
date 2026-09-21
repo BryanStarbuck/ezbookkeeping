@@ -67,7 +67,7 @@ func ingLoadRecords(mc *Ctx, importIds []string) (map[string]*MachineImportRecor
 		var recs []*MachineImportRecord
 
 		if err := db.NewSession(mc.Web).Where("uid=?", mc.Uid).In("import_id", importIds[start:end]).Find(&recs); err != nil {
-			return nil, NewFail(CodeUpstreamError, "check log/ezbookkeeping.log; the machine_import_record table could not be read", "cannot read import records")
+			return nil, NewFail(CodeUpstreamError, "check ~/T/ezbookkeeping/error.err; the machine_import_record table could not be read", "cannot read import records")
 		}
 
 		for _, r := range recs {
@@ -90,7 +90,7 @@ func ingRecordedTransactionIds(mc *Ctx) (map[int64]bool, error) {
 	var recs []*MachineImportRecord
 
 	if err := db.NewSession(mc.Web).Cols("uid", "import_id", "transaction_id").Where("uid=?", mc.Uid).Find(&recs); err != nil {
-		return nil, NewFail(CodeUpstreamError, "check log/ezbookkeeping.log; the machine_import_record table could not be read", "cannot read import records")
+		return nil, NewFail(CodeUpstreamError, "check ~/T/ezbookkeeping/error.err; the machine_import_record table could not be read", "cannot read import records")
 	}
 
 	out := make(map[int64]bool, len(recs))
@@ -113,7 +113,7 @@ func ingRecordsOfRun(mc *Ctx, runId string) ([]*MachineImportRecord, error) {
 	var recs []*MachineImportRecord
 
 	if err := db.NewSession(mc.Web).Where("uid=? AND run_id=?", mc.Uid, runId).OrderBy("import_id asc").Find(&recs); err != nil {
-		return nil, NewFail(CodeUpstreamError, "check log/ezbookkeeping.log; the machine_import_record table could not be read", "cannot read import records")
+		return nil, NewFail(CodeUpstreamError, "check ~/T/ezbookkeeping/error.err; the machine_import_record table could not be read", "cannot read import records")
 	}
 
 	return recs, nil
@@ -166,7 +166,7 @@ func ingLoadTxnStates(mc *Ctx, ids []int64) (map[int64]*ingTxnState, error) {
 		var txns []*models.Transaction
 
 		if err := db.NewSession(mc.Web).Cols("transaction_id", "uid", "deleted", "type", "account_id", "amount", "updated_unix_time", "comment").Where("uid=?", mc.Uid).In("transaction_id", uniq[start:end]).Find(&txns); err != nil {
-			return nil, NewFail(CodeUpstreamError, "check log/ezbookkeeping.log", "cannot read transactions")
+			return nil, NewFail(CodeUpstreamError, "check ~/T/ezbookkeeping/error.err", "cannot read transactions")
 		}
 
 		for _, t := range txns {
@@ -235,7 +235,7 @@ func ingWriteRecords(mc *Ctx, runId string, writes []ingRecordWrite) error {
 
 	if err != nil {
 		log.Errorf(mc.Web, "[machine.ingest] cannot write import records for uid %d: %s", mc.Uid, err.Error())
-		return NewFail(CodeUpstreamError, "re-run the plan; rows already recorded are skipped (details in log/ezbookkeeping.log)", "cannot write import records")
+		return NewFail(CodeUpstreamError, "re-run the plan; rows already recorded are skipped (details in ~/T/ezbookkeeping/error.err)", "cannot write import records")
 	}
 
 	return nil

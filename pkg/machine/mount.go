@@ -2,6 +2,7 @@ package machine
 
 import (
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -9,10 +10,17 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/api"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
-	"github.com/mayswind/ezbookkeeping/pkg/log"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
+	errfileserver "github.com/mayswind/ezbookkeeping/pkg/errfile/server"
 	"github.com/mayswind/ezbookkeeping/pkg/settings"
 	"github.com/mayswind/ezbookkeeping/pkg/utils"
 )
+
+// EnvCanary switches the hidden canary route on (pm/error_err.mdx §15.3)
+const EnvCanary = "EZBK_ERROR_FILE_CANARY"
+
+// errorFileHint is the hint every internal / upstream_error Fail carries (pm/error_err.mdx §8 N8)
+const errorFileHint = "read ~/T/ezbookkeeping/error.err for the server-side detail"
 
 // BasePath is where the plane is mounted
 const BasePath = "/machine/v1"
@@ -29,6 +37,19 @@ func Mount(router *gin.Engine, config *settings.Config) {
 		r := &Routes()[i]
 		group.Handle(r.Method, r.Path, wrap(r, config))
 	}
+
+	// The hidden canary (pm/error_err.mdx §15.3): only under EZBK_ERROR_FILE_CANARY=1, never in
+	// Routes() (so never in /capabilities), behind the same gates, and it panics inside wrap().
+	if os.Getenv(EnvCanary) == "1" {
+		group.Handle(canaryRoute.Method, canaryRoute.Path, wrap(&canaryRoute, config))
+	}
+
+	// POST /error-report — the browser's delivery route (pm/error_err.mdx §9). Outside /machine/v1
+	// (no machine key: the browser never holds it) and outside /api/v1 (no JWT: a fault on the
+	// login page still arrives). Its safety is the plane's own loopback check plus the guards inside.
+	router.POST("/error-report", errfileserver.HandlerWithPeerCheck(func(c *gin.Context) bool {
+		return isLoopbackSocket(c, config)
+	}))
 
 	// Unknown /machine/v1 paths get the plane's own 404 (behind the same gates); everything else
 	// keeps upstream's NoRoute/NoMethod behaviour.
@@ -101,8 +122,8 @@ func wrap(r *RouteDef, config *settings.Config) gin.HandlerFunc {
 
 		defer func() {
 			if rec := recover(); rec != nil {
-				log.Errorf(web, "[machine.wrap] panic in %s %s: %v", r.Method, r.Path, rec)
-				writeFail(c, &Fail{Code: CodeInternal, Message: "internal error", Hint: "read log/ezbookkeeping.log for the server-side detail"}, mc, "")
+				errfile.Recovered("handling "+r.Method+" "+r.Path, rec, errfile.F("request_id", web.GetContextId()))
+				writeFail(c, &Fail{Code: CodeInternal, Message: "internal error", Hint: errorFileHint}, mc, "")
 			}
 		}()
 
@@ -138,7 +159,7 @@ func wrap(r *RouteDef, config *settings.Config) gin.HandlerFunc {
 			user, err := ResolveBoundUser(web)
 
 			if err != nil {
-				writeFail(c, toFail(err), mc, "")
+				writeFail(c, reportFail(r, web, err), mc, "")
 				return
 			}
 
@@ -149,7 +170,7 @@ func wrap(r *RouteDef, config *settings.Config) gin.HandlerFunc {
 		result, err := r.Handler(mc)
 
 		if err != nil {
-			writeFail(c, toFail(err), mc, "")
+			writeFail(c, reportFail(r, web, err), mc, "")
 			return
 		}
 
@@ -168,7 +189,7 @@ func wrap(r *RouteDef, config *settings.Config) gin.HandlerFunc {
 			converted, ierr := Integerize(result)
 
 			if ierr != nil {
-				writeFail(c, toFail(ierr), mc, "")
+				writeFail(c, reportFail(r, web, ierr), mc, "")
 				return
 			}
 
@@ -195,6 +216,33 @@ func wrap(r *RouteDef, config *settings.Config) gin.HandlerFunc {
 
 		c.JSON(http.StatusOK, gin.H{"ok": true, "data": data, "meta": meta})
 	}
+}
+
+// reportFail normalises a handler error into a Fail and reports only what is a real fault
+// (pm/error_err.mdx §7 G7): internal and upstream_error are Caught with the request id; every
+// other code is a gate refusal or a validation answer, which is Expected (R7).
+func reportFail(r *RouteDef, web *core.WebContext, err error) *Fail {
+	f := toFail(err)
+
+	if f.Code == CodeInternal || f.Code == CodeUpstreamError {
+		errfile.Caught("handling "+r.Method+" "+r.Path, err, errfile.F("request_id", web.GetContextId()), errfile.F("code", f.Code))
+	} else {
+		errfile.Expected("handling "+r.Method+" "+r.Path, err)
+	}
+
+	return f
+}
+
+// canaryRoute is the deliberate fault of §15.3: `POST /machine/v1/__canary` panics inside wrap()
+var canaryRoute = RouteDef{
+	Method:  "POST",
+	Path:    "/__canary",
+	Tier:    TierRead,
+	NoUser:  true,
+	Summary: "hidden: panic on purpose so the error file can be checked end to end",
+	Handler: func(mc *Ctx) (any, error) {
+		panic("errfile canary: a deliberate panic in the machine plane")
+	},
 }
 
 func baseMeta(mc *Ctx, started time.Time) map[string]any {

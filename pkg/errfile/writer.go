@@ -210,7 +210,9 @@ func (w *RollingFileWriter) fail(batch []byte) {
 }
 
 // roll rotates <file> → <file>.1 → … → <file>.N. Synchronous and rare: a rename chain within one
-// filesystem is ~1–2 ms. Another process may have rolled already, so the real size is read first.
+// filesystem is ~1–2 ms. Several processes may share the file, so the REAL size decides, and a
+// lock file (O_EXCL) makes sure only one of them rolls: a process that finds the lock adopts the
+// real size and carries on appending.
 func (w *RollingFileWriter) roll(incoming int64) {
 	real := int64(0)
 
@@ -218,14 +220,26 @@ func (w *RollingFileWriter) roll(incoming int64) {
 		real = st.Size()
 	}
 
-	if real < w.size {
-		// Someone else rolled (or truncated) the file. Adopt the real size; roll only if needed.
-		w.size = real
+	w.size = real
 
-		if w.size+incoming <= w.maxBytes {
-			return
-		}
+	if real+incoming <= w.maxBytes {
+		return // someone else rolled (or truncated) the file already
 	}
+
+	lock := w.path + ".lock"
+	lf, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, fileMode)
+
+	if err != nil {
+		// Another process is rolling right now — unless the lock is stale (a crash mid-roll).
+		if st, serr := os.Stat(lock); serr == nil && time.Since(st.ModTime()) > 10*time.Second {
+			_ = os.Remove(lock)
+		}
+
+		return
+	}
+
+	_ = lf.Close()
+	defer func() { _ = os.Remove(lock) }()
 
 	if w.maxBackups == 0 {
 		_ = os.Remove(w.path)

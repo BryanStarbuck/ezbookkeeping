@@ -98,6 +98,7 @@ import '@/styles/mobile/font-size-xxxx-large.scss';
 import '@/styles/mobile/amount-color.scss';
 
 import App from '@/MobileApp.vue';
+import { installBrowserErrorFile } from '@/lib/errfile/browser.ts';
 
 Framework7.use([
     Framework7Dialog,
@@ -139,6 +140,7 @@ Framework7.use([
 ]);
 
 const app = createApp(App);
+installBrowserErrorFile({ app: 'web', edition: 'mobile', vueApp: app });
 const pinia = createPinia();
 const i18n = createI18n(getI18nOptions());
 registerComponents(app);

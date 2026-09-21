@@ -285,7 +285,7 @@ func ingLoadCategories(mc *Ctx) (*ingCategoryIndex, error) {
 	cats, err := services.TransactionCategories.GetAllCategoriesByUid(mc.Web, mc.Uid, 0, -1)
 
 	if err != nil {
-		return nil, NewFail(CodeUpstreamError, "check log/ezbookkeeping.log", "cannot read the bound user's categories")
+		return nil, NewFail(CodeUpstreamError, "check ~/T/ezbookkeeping/error.err", "cannot read the bound user's categories")
 	}
 
 	idx := &ingCategoryIndex{byId: map[int64]*models.TransactionCategory{}, byName: map[models.TransactionCategoryType]map[string][]*models.TransactionCategory{}}
@@ -488,7 +488,7 @@ func ingLoadExisting(mc *Ctx, accountIds []int64, first, last string) (map[int64
 	if err := db.NewSession(mc.Web).Cols("transaction_id", "uid", "deleted", "type", "account_id", "amount", "transaction_time", "timezone_utc_offset", "comment").
 		Where("uid=? AND deleted=? AND transaction_time>=? AND transaction_time<=?", mc.Uid, false, minMs, maxMs).
 		In("account_id", accountIds).Find(&txns); err != nil {
-		return nil, NewFail(CodeUpstreamError, "check log/ezbookkeeping.log", "cannot read existing transactions")
+		return nil, NewFail(CodeUpstreamError, "check ~/T/ezbookkeeping/error.err", "cannot read existing transactions")
 	}
 
 	for _, t := range txns {

@@ -122,7 +122,7 @@ func txnStatementAmount(field, v string) (int64, error) {
 			return 0, f
 		}
 
-		return 0, NewFail(CodeUpstreamError, "read log/ezbookkeeping.log for the server-side detail", "upstream returned a malformed %s", field)
+		return 0, NewFail(CodeUpstreamError, "read ~/T/ezbookkeeping/error.err for the server-side detail", "upstream returned a malformed %s", field)
 	}
 
 	return n, nil

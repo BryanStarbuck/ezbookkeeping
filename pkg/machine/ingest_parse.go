@@ -132,11 +132,11 @@ func ingParseUpstream(mc *Ctx, data []byte, fileName, fileType string, custom *i
 	raw, merr := json.Marshal(result)
 
 	if merr != nil {
-		return nil, NewFail(CodeInternal, "read log/ezbookkeeping.log", "unexpected parse result")
+		return nil, NewFail(CodeInternal, "read ~/T/ezbookkeeping/error.err", "unexpected parse result")
 	}
 
 	if uerr := json.Unmarshal(raw, &wrapper); uerr != nil {
-		return nil, NewFail(CodeInternal, "read log/ezbookkeeping.log", "unexpected parse result")
+		return nil, NewFail(CodeInternal, "read ~/T/ezbookkeeping/error.err", "unexpected parse result")
 	}
 
 	return wrapper.Items, nil

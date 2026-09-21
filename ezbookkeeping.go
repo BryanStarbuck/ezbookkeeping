@@ -11,6 +11,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/cmd"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/utils"
 )
 
@@ -57,6 +58,7 @@ func main() {
 	err := cmd.Run(context.Background(), os.Args)
 
 	if err != nil {
+		errfile.Fatal("running ezbookkeeping", err, errfile.F("command", commandName(os.Args)))
 		log.Fatalf("Failed to run ezBookkeeping with %s: %v", os.Args, err)
 	}
 }

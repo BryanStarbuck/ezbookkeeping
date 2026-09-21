@@ -609,7 +609,7 @@ func refHandleDataStatistics(mc *Ctx) (any, error) {
 		n, err := strconv.ParseInt(v, 10, 64)
 
 		if err != nil {
-			return nil, NewFail(CodeUpstreamError, "read log/ezbookkeeping.log", "the data statistics returned a non-integer %s", k)
+			return nil, NewFail(CodeUpstreamError, "read ~/T/ezbookkeeping/error.err", "the data statistics returned a non-integer %s", k)
 		}
 
 		counts[k] = n

@@ -63,6 +63,7 @@ func initializeSystem(c *core.CliContext) (*settings.Config, error) {
 	}
 
 	settings.SetCurrentConfig(config)
+	installErrorFile(config) // pm/error_err.mdx §8 N5 + N6
 
 	err = datastore.InitializeDataStore(config)
 

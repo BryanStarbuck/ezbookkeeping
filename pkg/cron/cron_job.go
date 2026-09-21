@@ -6,6 +6,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
 	"github.com/mayswind/ezbookkeeping/pkg/duplicatechecker"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/utils"
 )
@@ -19,6 +20,7 @@ type CronJob struct {
 }
 
 func (j *CronJob) doRun() {
+	defer errfile.RecoverNet("running the cron job " + j.Name)()
 	start := time.Now()
 	c := core.NewCronJobContext(j.Name, j.Period.GetInterval())
 

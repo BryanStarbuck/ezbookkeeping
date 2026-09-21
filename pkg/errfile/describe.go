@@ -470,14 +470,17 @@ var ownFrames = []string{
 	"github.com/gin-gonic/gin.",
 }
 
-func isOwnFrame(function string, extra []string) bool {
+func isOwnFrame(function, file string, extra []string) bool {
 	if strings.HasPrefix(function, "runtime.") {
 		return true
 	}
 
-	for _, m := range ownFrames[1:] {
-		if strings.Contains(function, m) {
-			return true
+	// The library's own test files report like any caller.
+	if !strings.HasSuffix(file, "_test.go") {
+		for _, m := range ownFrames[1:] {
+			if strings.Contains(function, m) {
+				return true
+			}
 		}
 	}
 
@@ -532,7 +535,7 @@ func captureFrames(skip int, extra []string, afterPanic bool) []frame {
 			continue
 		}
 
-		if fr.Function != "" && !isOwnFrame(fr.Function, extra) {
+		if fr.Function != "" && !isOwnFrame(fr.Function, fr.File, extra) {
 			out = append(out, frame{function: shortFunction(fr.Function), file: relPath(fr.File), line: fr.Line})
 
 			if len(out) >= StackFrames {

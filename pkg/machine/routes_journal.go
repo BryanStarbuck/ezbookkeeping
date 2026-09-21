@@ -228,7 +228,7 @@ func jrExec(mc *Ctx, fn InverseExecutor, op InverseOp) (err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			log.Errorf(mc.Web, "[machine.undo] executor %q panicked: %v", op.Kind, rec)
-			err = NewFail(CodeInternal, "read log/ezbookkeeping.log for the server-side detail", "the %s step failed", op.Kind)
+			err = NewFail(CodeInternal, "read ~/T/ezbookkeeping/error.err for the server-side detail", "the %s step failed", op.Kind)
 		}
 	}()
 
@@ -1104,7 +1104,7 @@ func jrCallOp(mc *Ctx, op *jrResolvedOp, dryRun bool, confirmToken string, maxCh
 	defer func() {
 		if rec := recover(); rec != nil {
 			log.Errorf(mc.Web, "[machine.batch] panic in operation %d (%s): %v", op.index, jrOpName(op.route), rec)
-			err = NewFail(CodeInternal, "read log/ezbookkeeping.log for the server-side detail", "operation %d failed", op.index)
+			err = NewFail(CodeInternal, "read ~/T/ezbookkeeping/error.err for the server-side detail", "operation %d failed", op.index)
 		}
 	}()
 

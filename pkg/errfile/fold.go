@@ -104,7 +104,6 @@ func (f *folder) admit(key string, window time.Duration, ctx foldContext) bool {
 
 	if e != nil && now.Sub(e.firstAt) < e.window {
 		e.count++
-		e.ctx = ctx
 		f.order.MoveToBack(e.elem)
 
 		if e.timer == nil {
@@ -228,7 +227,7 @@ func SummaryText(count int, window time.Duration, firstAtClock string, headline 
 	if window > time.Minute && window%time.Minute == 0 {
 		w = strconv.Itoa(int(window/time.Minute)) + "m"
 	} else {
-		w = strconv.Itoa(int((window + time.Second/2) / time.Second)) + "s"
+		w = strconv.Itoa(int((window+time.Second/2)/time.Second)) + "s"
 	}
 
 	text := "×" + strconv.Itoa(count) + " more in the previous " + w + " (first at " + firstAtClock + ")"

@@ -2,6 +2,7 @@ package errfile
 
 import (
 	"os"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -112,11 +113,22 @@ func setSink(box *installed) {
 			TS:    time.Now(),
 			Level: LevelWarn,
 			App:   box.app,
-			Where: "pkg/errfile/sink.go",
+			Where: ownWhere(),
 			Doing: "installing the error file",
 			Error: "logged: " + itoa(overflow) + " records were dropped before the error file was installed",
 		})
 	}
+}
+
+// ownWhere is the library's own position, for the few records it writes about itself.
+func ownWhere() string {
+	_, file, line, ok := runtime.Caller(1)
+
+	if !ok {
+		return "?"
+	}
+
+	return relPath(file) + ":" + itoa(line)
 }
 
 func itoa(n int) string {

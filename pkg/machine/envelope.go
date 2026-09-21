@@ -114,7 +114,7 @@ func Upstream(e *errs.Error) *Fail {
 	case e.HttpStatusCode >= 400 && e.HttpStatusCode < 500:
 		f.Code, f.Hint = CodeInvalidInput, "check the arguments against GET /machine/v1/capabilities"
 	default:
-		f.Code, f.Hint = CodeUpstreamError, "read log/ezbookkeeping.log for the server-side detail"
+		f.Code, f.Hint = CodeUpstreamError, "read ~/T/ezbookkeeping/error.err for the server-side detail"
 		f.Message = "the server could not complete the operation"
 	}
 
@@ -139,7 +139,7 @@ func toFail(err error) *Fail {
 		return Upstream(ue)
 	}
 
-	return &Fail{Code: CodeInternal, Message: "internal error", Hint: "read log/ezbookkeeping.log for the server-side detail"}
+	return &Fail{Code: CodeInternal, Message: "internal error", Hint: "read ~/T/ezbookkeeping/error.err for the server-side detail"}
 }
 
 // UpErr converts an upstream *errs.Error into an error value that is nil when the pointer is nil.

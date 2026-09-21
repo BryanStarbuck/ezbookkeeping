@@ -146,8 +146,10 @@ import '@/styles/desktop/index.scss';
 import '@/styles/desktop/amount-color.scss';
 
 import App from './DesktopApp.vue';
+import { installBrowserErrorFile } from '@/lib/errfile/browser.ts';
 
 const app = createApp(App);
+installBrowserErrorFile({ app: 'web', edition: 'desktop', vueApp: app });
 const pinia = createPinia();
 const i18n = createI18n(getI18nOptions()) as I18n<Record<string, unknown>, Record<string, unknown>, Record<string, unknown>, string, false>;
 const vuetify = createVuetify({

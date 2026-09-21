@@ -3431,7 +3431,7 @@ func refApplyInsightFields(mc *Ctx, f refInsightFields, hidden bool) error {
 	var data map[string]any
 
 	if err := json.Unmarshal([]byte(f.Data), &data); err != nil {
-		return NewFail(CodeInternal, "read log/ezbookkeeping.log", "a stored insight definition is not JSON")
+		return NewFail(CodeInternal, "read ~/T/ezbookkeeping/error.err", "a stored insight definition is not JSON")
 	}
 
 	_, err = mc.CallUpstream(api.InsightsExplorers.InsightsExplorerModifyHandler, "POST", nil, &models.InsightsExplorerModifyRequest{Id: id, Name: f.Name, Data: data, Hidden: hidden})

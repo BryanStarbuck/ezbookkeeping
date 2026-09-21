@@ -772,7 +772,7 @@ func anFetchDaily(mc *Ctx, sel *anSelection, startUnix, endUnix int64, useTransa
 		day, err := time.ParseInLocation("2006-01-02", d.Date, mc.Loc)
 
 		if err != nil {
-			return nil, NewFail(CodeUpstreamError, "read log/ezbookkeeping.log for the server-side detail", "upstream returned an unreadable date %q", d.Date)
+			return nil, NewFail(CodeUpstreamError, "read ~/T/ezbookkeeping/error.err for the server-side detail", "upstream returned an unreadable date %q", d.Date)
 		}
 
 		amounts, err := anParseAmountInfos(d.Amounts)

@@ -43,6 +43,12 @@ var Utilities = &cli.Command{
 				},
 			},
 		},
+		{
+			Name:   "__canary",
+			Usage:  "hidden: report one deliberate fault to ~/T/ezbookkeeping/error.err (needs EZBK_ERROR_FILE_CANARY=1)",
+			Hidden: true,
+			Action: bindAction(errfileCanary),
+		},
 	},
 }
 

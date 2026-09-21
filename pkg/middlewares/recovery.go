@@ -7,6 +7,7 @@ import (
 	"runtime"
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/utils"
@@ -24,7 +25,7 @@ func Recovery(c *core.WebContext) {
 	defer func() {
 		if err := recover(); err != nil {
 			stack := stack(3)
-
+			errfile.Recovered("handling "+c.Request.Method+" "+c.FullPath(), err, errfile.F("request_id", c.GetContextId()))
 			log.ErrorfWithExtra(c, string(stack), "System Error! because %s", err)
 			utils.PrintJsonErrorResult(c, errs.ErrSystemError)
 		}
