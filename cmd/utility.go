@@ -8,6 +8,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/mail"
 	"github.com/mayswind/ezbookkeeping/pkg/requestid"
@@ -118,6 +119,7 @@ func printRequestIdInfo(requestId string, requestIdInfo *requestid.RequestIdInfo
 	if err == nil {
 		fmt.Printf("[SecondsElapsedToday] %d (%s)\n", requestIdInfo.SecondsElapsedToday, displayTime)
 	} else {
+		errfile.Expected("formatting the elapsed seconds of the request id", err)
 		fmt.Printf("[SecondsElapsedToday] %d\n", requestIdInfo.SecondsElapsedToday)
 	}
 

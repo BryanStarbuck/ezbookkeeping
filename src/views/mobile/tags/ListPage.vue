@@ -235,6 +235,9 @@ import { TransactionTag } from '@/models/transaction_tag.ts';
 
 import { scrollToSelectedItem } from '@/lib/ui/common.ts';
 import { getFirstShowingId, getLastShowingId } from '@/lib/tag.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/tags/ListPage.vue');
 
 const props = defineProps<{
     f7router: Router.Router;
@@ -303,6 +306,7 @@ function init(): void {
     }).then(() => {
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading all tags', error);
         if (error.processed) {
             loading.value = false;
         } else {
@@ -329,6 +333,7 @@ function reload(done?: () => void): void {
             showToast('Tag list has been updated');
         }
     }).catch(error => {
+        errors.caught('loading all tags', error);
         done?.();
 
         if (!error.processed) {
@@ -364,6 +369,7 @@ function save(tag: TransactionTag): void {
             newTag.value = null;
         }
     }).catch(error => {
+        errors.caught('saving the tag', error);
         hideLoading();
 
         if (!error.processed) {
@@ -390,6 +396,7 @@ function hide(tag: TransactionTag, hidden: boolean): void {
     }).then(() => {
         hideLoading();
     }).catch(error => {
+        errors.caught('hiding or showing the tag', error);
         hideLoading();
 
         if (!error.processed) {
@@ -427,6 +434,7 @@ function moveTagToGroup(tag: TransactionTag | null, targetTagGroupId?: string): 
     }).then(() => {
         hideLoading();
     }).catch(error => {
+        errors.caught('saving the tag', error);
         hideLoading();
 
         if (!error.processed) {
@@ -469,6 +477,7 @@ function remove(tag: TransactionTag | null, confirm: boolean): void {
     }).then(() => {
         hideLoading();
     }).catch(error => {
+        errors.caught('deleting the tag', error);
         hideLoading();
 
         if (!error.processed) {
@@ -516,6 +525,7 @@ function saveSortResult(): void {
         sortable.value = false;
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('updating the tag display orders', error);
         displayOrderSaving.value = false;
         hideLoading();
 
@@ -545,6 +555,7 @@ function cancelSort(): void {
         sortable.value = false;
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('loading all tags', error);
         displayOrderSaving.value = false;
         hideLoading();
 
@@ -564,6 +575,7 @@ function addTagGroup(): void {
             hideLoading();
             activeTagGroupId.value = tagGroup.id;
         }).catch(error => {
+            errors.caught('saving the tag group', error);
             hideLoading();
 
             if (!error.processed) {
@@ -592,6 +604,7 @@ function renameTagGroup(): void {
         }).then(() => {
             hideLoading();
         }).catch(error => {
+            errors.caught('saving the tag group', error);
             hideLoading();
 
             if (!error.processed) {
@@ -629,6 +642,7 @@ function removeTagGroup(): void {
                 activeTagGroupId.value = DEFAULT_TAG_GROUP_ID;
             }
         }).catch(error => {
+            errors.caught('deleting the tag group', error);
             hideLoading();
 
             if (!error.processed) {
@@ -662,6 +676,7 @@ function onSort(event: { el: { id: string }, from: number, to: number }): void {
     }).then(() => {
         displayOrderModified.value = true;
     }).catch(error => {
+        errors.caught('changing the tag display order', error);
         showToast(error.message || error);
     });
 }

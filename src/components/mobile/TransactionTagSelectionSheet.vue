@@ -110,6 +110,9 @@ import { TransactionTag } from '@/models/transaction_tag.ts';
 
 import { scrollToSelectedItem } from '@/lib/ui/common.ts';
 import { type Framework7Dom, scrollSheetToTop } from '@/lib/ui/mobile.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/components/mobile/TransactionTagSelectionSheet.vue');
 
 interface MobileransactionTagSelectionProps extends CommonTransactionTagSelectionProps {
     enableFilter?: boolean;
@@ -193,6 +196,7 @@ function saveNewTag(): void {
             clonedModelValue.value.push(tag.id);
         }
     }).catch(error => {
+        errors.caught('saving the new transaction tag', error);
         hideLoading();
 
         if (!error.processed) {

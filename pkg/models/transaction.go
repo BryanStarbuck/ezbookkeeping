@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/utils"
 )
@@ -566,6 +567,7 @@ func ParseTransactionTagFilter(tagFilterStr string) ([]*TransactionTagFilter, er
 		tagFilterType, err := utils.StringToInt(tagFilterItem[0])
 
 		if err != nil || (tagFilterType < int(TRANSACTION_TAG_FILTER_HAS_ANY) || tagFilterType > int(TRANSACTION_TAG_FILTER_NOT_HAS_ALL)) {
+			errfile.Expected("parsing the tag filter type from the request", err)
 			return nil, errs.ErrFormatInvalid
 		}
 
@@ -576,6 +578,7 @@ func ParseTransactionTagFilter(tagFilterStr string) ([]*TransactionTagFilter, er
 			tagId, err := utils.StringToInt64(tagIdStr)
 
 			if err != nil {
+				errfile.Expected("parsing a tag id in the tag filter from the request", err)
 				return nil, errs.ErrTransactionTagIdInvalid
 			}
 
@@ -617,6 +620,7 @@ func (t *Transaction) ToTransactionInfoResponse(tagIds []int64, editable bool) *
 	transactionType, err := t.Type.ToTransactionType()
 
 	if err != nil {
+		errfile.Caught("converting the transaction type for the response", err, errfile.F("transaction_id", t.TransactionId))
 		return nil
 	}
 

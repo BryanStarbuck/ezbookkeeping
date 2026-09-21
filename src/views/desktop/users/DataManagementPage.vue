@@ -202,6 +202,9 @@ import {
     mdiShapePlusOutline,
     mdiAlert
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/users/DataManagementPage.vue');
 
 type ConfirmDialogType = InstanceType<typeof ConfirmDialog>;
 type SnackBarType = InstanceType<typeof SnackBar>;
@@ -235,6 +238,7 @@ function reloadUserDataStatistics(force: boolean): void {
         dataStatistics.value = dataStatisticsResponse;
         loadingDataStatistics.value = false;
     }).catch(error => {
+        errors.caught('loading the user data statistics', error);
         loadingDataStatistics.value = false;
 
         if (!error.processed) {
@@ -254,6 +258,7 @@ function exportData(fileType: string): void {
         startDownloadFile(getExportFileName(fileType), data);
         exportingData.value = false;
     }).catch(error => {
+        errors.caught('exporting the user data', error);
         exportingData.value = false;
 
         if (!error.processed) {
@@ -284,6 +289,7 @@ function clearAllTransactions(): void {
             snackbar.value?.showMessage('All transactions has been cleared');
             reloadUserDataStatistics(false);
         }).catch(error => {
+            errors.caught('clearing all transactions', error);
             clearingData.value = false;
 
             if (!error.processed) {
@@ -315,6 +321,7 @@ function clearAllData(): void {
             snackbar.value?.showMessage('All user data has been cleared');
             reloadUserDataStatistics(false);
         }).catch(error => {
+            errors.caught('clearing all user data', error);
             clearingData.value = false;
 
             if (!error.processed) {

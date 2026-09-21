@@ -9,6 +9,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/api"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -73,6 +74,7 @@ func jrHandleKeyRotate(mc *Ctx) (any, error) {
 	credsPath, err := CredentialsPath()
 
 	if err != nil {
+		errfile.Caught("resolving the credentials file path", err)
 		return nil, NewFail(CodeInternal, "set EZBK_CREDENTIALS_FILE, or make sure the server's home directory is readable", "the credentials file path cannot be resolved")
 	}
 
@@ -104,7 +106,7 @@ func jrHandleKeyRotate(mc *Ctx) (any, error) {
 		}
 
 		preview := map[string]any{
-			"credentialsFile":        credsPath,
+			"credentialsFile":        homeRelative(credsPath),
 			"currentFileFingerprint": current,
 			"runningFingerprint":     running,
 			"runningKeySource":       jrSourceLabel(source, credsPath),
@@ -126,7 +128,7 @@ func jrHandleKeyRotate(mc *Ctx) (any, error) {
 			"rotated":            true,
 			"newFingerprint":     Fingerprint(key),
 			"runningFingerprint": p.Preview.(map[string]any)["runningFingerprint"],
-			"credentialsFile":    credsPath,
+			"credentialsFile":    homeRelative(credsPath),
 			"restartRequired":    true,
 			"hint":               "restart the server so it answers to the new key: ezbk stop && ezbk up",
 		}, nil
@@ -479,6 +481,7 @@ func jrHandleSessionRevoke(mc *Ctx) (any, error) {
 	tokenId, err := url.PathUnescape(strings.TrimSpace(mc.Param("token_id")))
 
 	if err != nil || tokenId == "" {
+		errfile.Expected("unescaping the token_id path parameter", err)
 		return nil, Invalid("pass the tokenId GET /machine/v1/admin/sessions returns", "token_id is missing or malformed")
 	}
 

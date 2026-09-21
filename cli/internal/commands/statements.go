@@ -26,6 +26,7 @@ import (
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/app"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/client"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/credentials"
+	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/errfile"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/exitcode"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/render"
 )
@@ -97,6 +98,7 @@ func asInside(root, target string) bool {
 	rel, err := filepath.Rel(root, target)
 
 	if err != nil {
+		errfile.Expected("relating the target path to the statements root", err)
 		return false
 	}
 
@@ -175,6 +177,7 @@ func asResolveRoot(flagPath, arg string) (*asRoot, error) {
 	}
 
 	if fi, err := os.Stat(root.Root); err != nil || !fi.IsDir() {
+		errfile.Expected("checking the statements root is a directory", err)
 		return nil, app.Usage(fmt.Sprintf("the statements root %s is not a readable directory", root.Root), "point --path / EZBK_STATEMENTS_DIR at the directory that holds {ENTITY}/{BANK}/{ACCOUNT}/{YYYY}/{MM}/")
 	}
 
@@ -206,6 +209,7 @@ func (r *asRoot) asRel(p string) string {
 	rel, err := filepath.Rel(r.Root, p)
 
 	if err != nil {
+		errfile.Expected("relating a statement path to the statements root", err)
 		return p
 	}
 
@@ -437,6 +441,7 @@ func asPreferPaths(c *app.Ctx, r *asRoot) ([]string, error) {
 		real, err := asRealPath(cand)
 
 		if err != nil {
+			errfile.Expected("resolving the --prefer statement path", err)
 			return nil, &app.ExitError{Code: exitcode.NotFound, Msg: "--prefer " + p + " cannot be opened", Hint: "name one of the conflicting statement files `ezbk statements dupes` listed"}
 		}
 
@@ -445,6 +450,7 @@ func asPreferPaths(c *app.Ctx, r *asRoot) ([]string, error) {
 		}
 
 		if fi, err := os.Stat(real); err != nil || fi.IsDir() {
+			errfile.Expected("checking the --prefer path is a file", err)
 			return nil, app.Usage("--prefer names a statement FILE, and "+real+" is a directory", "")
 		}
 
@@ -2479,6 +2485,7 @@ func asColumnMap(values []string) (map[string]any, error) {
 				b, err := strconv.ParseBool(val)
 
 				if err != nil {
+					errfile.Expected("parsing the --column-map has_header_line option", err)
 					return nil, app.Usage("--column-map has_header_line= must be true or false", "")
 				}
 
@@ -2507,12 +2514,14 @@ func asRunImportFile(c *app.Ctx) error {
 	real, err := asRealPath(file)
 
 	if err != nil {
+		errfile.Expected("resolving the statement FILE path", err)
 		return &app.ExitError{Code: exitcode.NotFound, Msg: "FILE " + file + " cannot be opened", Hint: "check the path"}
 	}
 
 	fi, err := os.Stat(real)
 
 	if err != nil || fi.IsDir() {
+		errfile.Expected("checking the statement FILE path is a file", err)
 		return app.Usage(real+" is not a file", "name one statement file, e.g. 20250930-statement-4021.ofx")
 	}
 
@@ -2624,6 +2633,7 @@ func asImportRoot(c *app.Ctx) string {
 	real, err := asRealPath(p)
 
 	if err != nil {
+		errfile.Expected("resolving the configured statements root for import-file", err)
 		return ""
 	}
 

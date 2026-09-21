@@ -575,7 +575,7 @@
  "statements_root": [
   {
    "root": "/home/operator/private/bank_statements",
-   "input": "open /home/operator/private/bank_statements/2026/chase/2026-03.ofx: no such file",
+   "input": "open /home/operator/private/bank_statements/2026/northbank/2026-03.ofx: no such file",
    "expect": "open <statements>/…/2026-03.ofx: no such file"
   },
   {

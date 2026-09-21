@@ -41,7 +41,7 @@ export function generate(promptText: string, sourcePath: string): string {
     }
   }
   if (unknown.size > 0) {
-    throw new Error(`${sourcePath} uses unknown token(s): ${[...unknown].map(t => `{${t}}`).join(', ')}. Known tokens: ${KNOWN_TOKENS.map(t => `{${t}}`).join(', ')}`);
+    throw new Error(`${sourcePath} uses unknown token(s): ${[...unknown].sort().map(t => `{${t}}`).join(', ')}. Known tokens: ${KNOWN_TOKENS.map(t => `{${t}}`).join(', ')}`);
   }
   if (!promptText.trimStart().startsWith(LAYER_5_FIRST_SENTENCE)) {
     throw new Error(`${sourcePath} must begin with the routing sentence of pm/mcp.mdx §3.4 layer 5 ("${LAYER_5_FIRST_SENTENCE} …")`);

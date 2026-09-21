@@ -39,6 +39,9 @@ import {
 
 import logger from '@/lib/logger.ts';
 import services from '@/lib/services.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/stores/setting.ts');
 
 export const useSettingsStore = defineStore('settings', () => {
     const appSettings = ref<ApplicationSettings>(getApplicationSettings());
@@ -143,6 +146,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
             logger.debug(`update user application cloud setting "${key}" with value "${settingValue}" successfully`);
         }).catch(error => {
+            errors.caught('updating the user application cloud setting', error, { setting: key });
             logger.debug(`failed to update user application cloud setting "${key}" with value "${settingValue}"`, error);
         });
     }

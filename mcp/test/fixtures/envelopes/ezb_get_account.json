@@ -1,0 +1,50 @@
+{
+  "tool": "ezb_get_account",
+  "args": {
+    "account_name": "Euro Card"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_get_account",
+    "data": {
+      "account": {
+        "balance": -38250,
+        "category": "credit_card",
+        "categoryCode": 3,
+        "color": "000000",
+        "comment": "",
+        "creditCardLimit": 0,
+        "creditCardStatementDate": 0,
+        "currency": "EUR",
+        "displayOrder": 1,
+        "hidden": false,
+        "icon": "1",
+        "iconType": 0,
+        "id": "3844013758313660418",
+        "isAsset": false,
+        "isLiability": true,
+        "name": "Euro Card",
+        "parentId": "0",
+        "side": "liability",
+        "type": "single"
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "name",
+        "comment"
+      ],
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

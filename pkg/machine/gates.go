@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/settings"
 )
 
@@ -29,6 +30,7 @@ func isLoopbackSocket(c *gin.Context, config *settings.Config) bool {
 	host, _, err := net.SplitHostPort(c.Request.RemoteAddr)
 
 	if err != nil {
+		errfile.Expected("splitting the remote address of the request", err)
 		host = c.Request.RemoteAddr
 	}
 

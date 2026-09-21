@@ -41,6 +41,9 @@ import { ThemeType } from '@/core/theme.ts';
 import { type TextualYearMonth } from '@/core/datetime.ts';
 
 import { getYear0BasedMonthObjectFromString } from '@/lib/datetime.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/components/desktop/MonthRangeSelectionDialog.vue');
 
 interface DesktopMonthRangeSelectionProps extends CommonMonthRangeSelectionProps {
     persistent?: boolean;
@@ -74,6 +77,7 @@ function confirm(): void {
 
         emit('dateRange:change', finalMonthRange.minYearMonth, finalMonthRange.maxYearMonth);
     } catch (ex: unknown) {
+        errors.expected('validating the chosen month range', ex);
         if (ex instanceof Error) {
             emit('error', ex.message);
         }

@@ -111,6 +111,9 @@ import {
     mdiDrag,
     mdiDeleteOutline
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/customicons/ListPage.vue');
 
 type ConfirmDialogType = InstanceType<typeof ConfirmDialog>;
 type SnackBarType = InstanceType<typeof SnackBar>;
@@ -142,6 +145,7 @@ function init(): void {
     customIconsStore.loadAllCustomIcons({ force: false }).then(() => {
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading all custom icons', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -157,6 +161,7 @@ function reload(): void {
         loading.value = false;
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('loading all custom icons', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -171,6 +176,7 @@ function add(): void {
             snackbar.value?.showMessage(result.message);
         }
     }).catch(error => {
+        errors.expected('opening the upload dialog', error);
         if (error) {
             snackbar.value?.showError(error);
         }
@@ -188,6 +194,7 @@ function deleteCustomIcon(customIcon: UserCustomIconInfoResponse): void {
             updating.value = false;
             deletingCustomIconId.value = '';
         }).catch(error => {
+            errors.caught('deleting the custom icon', error);
             updating.value = false;
             deletingCustomIconId.value = '';
 
@@ -209,6 +216,7 @@ function saveSortResult(): void {
         loading.value = false;
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('updating the custom icon display orders', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -236,6 +244,7 @@ function onMove(event: { moved: { element: { id: string }, oldIndex: number, new
     }).then(() => {
         displayOrderModified.value = true;
     }).catch(error => {
+        errors.caught('changing the custom icon display order', error);
         snackbar.value?.showError(error);
     });
 }

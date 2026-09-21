@@ -1,0 +1,51 @@
+{
+  "tool": "ezb_update_transaction",
+  "args": {
+    "transaction_id": "3844013758447878147",
+    "comment": "ACME PAYROLL SEPT",
+    "amount": 500100,
+    "dry_run": false,
+    "confirm_token": "cf_e285dd3ad2f35747134ad85c33ce3f50"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_update_transaction",
+    "data": {
+      "changes": {
+        "unchanged": 0,
+        "update": 1
+      },
+      "dry_run": false,
+      "fingerprint": "sha256:0287901bcea6dd5a",
+      "journal_id": 9,
+      "result": {
+        "ids": [
+          "3844013758447878147"
+        ],
+        "updated": 1
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 3,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name",
+        "sourceAccount.name",
+        "destinationAccount.name",
+        "category.name",
+        "tags.name"
+      ],
+      "dryRun": false,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

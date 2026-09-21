@@ -219,6 +219,9 @@ import { type LocalizedPresetCategory } from '@/core/category.ts';
 import { findDisplayNameByType, categorizedArrayToPlainArray } from '@/lib/common.ts';
 import { getCategoryIconType } from '@/lib/icon.ts';
 import { isUserLogined } from '@/lib/userstate.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/SignupPage.vue');
 
 const props = defineProps<{
     f7router: Router.Router;
@@ -308,6 +311,7 @@ function submit(): void {
 
         router.navigate('/');
     }).catch(error => {
+        errors.caught('signing up', error);
         submitting.value = false;
         hideLoading();
 

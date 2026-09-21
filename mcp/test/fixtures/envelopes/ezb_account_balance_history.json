@@ -1,0 +1,109 @@
+{
+  "tool": "ezb_account_balance_history",
+  "args": {
+    "account_id": "3844013758313660416",
+    "start": "2026-07-01",
+    "end": "2026-09-30"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_account_balance_history",
+    "data": {
+      "account": {
+        "accountId": "3844013758313660416",
+        "category": "checking",
+        "currency": "USD",
+        "hidden": false,
+        "isAsset": true,
+        "isLiability": false,
+        "name": "Northbank Checking"
+      },
+      "interval": "month",
+      "opening": [
+        {
+          "accountId": "3844013758313660416",
+          "amount": 250000,
+          "currency": "USD"
+        }
+      ],
+      "periods": [
+        {
+          "end": "2026-07-31",
+          "period": "2026-07",
+          "start": "2026-07-01"
+        },
+        {
+          "end": "2026-08-31",
+          "period": "2026-08",
+          "start": "2026-08-01"
+        },
+        {
+          "end": "2026-09-30",
+          "period": "2026-09",
+          "start": "2026-09-01"
+        }
+      ],
+      "provenance": {
+        "basis": "each point is the closing balance at the end of its period (clipped to the range); a series' total is its closing balance at the end of the range",
+        "range": {
+          "end": "2026-09-30",
+          "endUnix": 1790812799,
+          "start": "2026-07-01",
+          "startUnix": 1782864000,
+          "timezone": "UTC"
+        },
+        "rowCount": 12,
+        "timezone": "UTC",
+        "upstream": [
+          "GET /api/v1/accounts/list.json",
+          "GET /api/v1/transactions/statistics/asset_trends.json"
+        ]
+      },
+      "series": [
+        {
+          "currency": "USD",
+          "id": "3844013758313660416",
+          "key": "3844013758313660416",
+          "kind": "account",
+          "label": "Northbank Checking",
+          "points": [
+            {
+              "amount": 718750,
+              "period": "2026-07"
+            },
+            {
+              "amount": 1098050,
+              "period": "2026-08"
+            },
+            {
+              "amount": 1085250,
+              "period": "2026-09"
+            }
+          ],
+          "total": 1085250
+        }
+      ]
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 1,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "label",
+        "name",
+        "comment",
+        "variants",
+        "text"
+      ],
+      "composed": true,
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

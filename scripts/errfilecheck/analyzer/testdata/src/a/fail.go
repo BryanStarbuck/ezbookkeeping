@@ -142,3 +142,10 @@ func f18(name string) {
 		defer errfile.RecoverNet("job " + name)() // want "must be a string literal"
 	}()
 }
+
+// F19 — dynamic doing: an arbitrary method call
+func f19(c *webCtx) {
+	errfile.Caught("handling "+c.other(), errOperationFailed) // want "must be a string literal"
+}
+
+func (c *webCtx) other() string { return "" }

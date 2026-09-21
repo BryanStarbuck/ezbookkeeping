@@ -1,0 +1,94 @@
+{
+  "tool": "ezb_list_upcoming_schedules",
+  "args": {
+    "days": 60
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_list_upcoming_schedules",
+    "data": {
+      "count": 2,
+      "cronEnabled": true,
+      "notes": [
+        "computed with the cron's own calendar rule; nothing was created",
+        "hidden schedules still fire; paused (frequency disabled) ones do not"
+      ],
+      "occurrences": [
+        {
+          "at": "2026-10-01T00:00:00Z",
+          "categoryId": "3844013758582095880",
+          "categoryName": "Other",
+          "comment": "RENT",
+          "date": "2026-10-01",
+          "hidden": false,
+          "localDate": "2026-10-01",
+          "sourceAccountId": "3844013758313660416",
+          "sourceAccountName": "Northbank Checking",
+          "sourceAmount": 240000,
+          "sourceCurrency": "USD",
+          "tagNames": [],
+          "templateId": "3844013761132232704",
+          "templateName": "Rent",
+          "time": 1790812800,
+          "type": "expense"
+        },
+        {
+          "at": "2026-11-01T00:00:00Z",
+          "categoryId": "3844013758582095880",
+          "categoryName": "Other",
+          "comment": "RENT",
+          "date": "2026-11-01",
+          "hidden": false,
+          "localDate": "2026-11-01",
+          "sourceAccountId": "3844013758313660416",
+          "sourceAccountName": "Northbank Checking",
+          "sourceAmount": 240000,
+          "sourceCurrency": "USD",
+          "tagNames": [],
+          "templateId": "3844013761132232704",
+          "templateName": "Rent",
+          "time": 1793491200,
+          "type": "expense"
+        }
+      ],
+      "templates": [
+        {
+          "describe": "monthly on day 1",
+          "hidden": false,
+          "name": "Rent",
+          "occurrences": 2,
+          "paused": false,
+          "problems": null,
+          "templateId": "3844013761132232704"
+        }
+      ],
+      "truncated": false,
+      "window": {
+        "days": 60,
+        "end": "2026-11-19",
+        "endUnix": 1795132799,
+        "start": "2026-09-21",
+        "startUnix": 1789948800,
+        "timezone": "UTC"
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 1,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "templateName",
+        "comment"
+      ],
+      "composed": true,
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

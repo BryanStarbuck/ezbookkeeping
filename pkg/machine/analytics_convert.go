@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mayswind/ezbookkeeping/pkg/api"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 	"github.com/mayswind/ezbookkeeping/pkg/services"
 )
@@ -87,6 +88,7 @@ func anNewConverter(target string, resp *models.LatestExchangeRateResponse, cust
 		r, err := ParseRate(rate)
 
 		if err != nil {
+			errfile.Warn("parsing an exchange rate from the rates response", err, errfile.F("currency", currency))
 			return
 		}
 

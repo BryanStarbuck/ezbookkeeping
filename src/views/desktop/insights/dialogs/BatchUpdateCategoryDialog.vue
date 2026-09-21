@@ -107,6 +107,9 @@ import {
 import {
     mdiRefresh
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/insights/dialogs/BatchUpdateCategoryDialog.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -166,6 +169,7 @@ function reload(): void {
     transactionCategoriesStore.loadAllCategories({ force: true }).then(() => {
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading all categories', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -185,6 +189,7 @@ function confirm(): void {
         showState.value = false;
         resolveFunc?.(updateIds.value.length);
     }).catch(error => {
+        errors.caught('changing the category of the selected transactions', error);
         submitting.value = false;
 
         if (!error.processed) {

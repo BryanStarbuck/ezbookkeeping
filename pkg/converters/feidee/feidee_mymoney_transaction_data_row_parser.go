@@ -2,6 +2,7 @@ package feidee
 
 import (
 	"github.com/mayswind/ezbookkeeping/pkg/converters/datatable"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 	"github.com/mayswind/ezbookkeeping/pkg/utils"
@@ -43,6 +44,7 @@ func (p *feideeMymoneyTransactionDataRowParser) Parse(data map[datatable.Transac
 		amount, err := utils.ParseAmount(rowData[datatable.TRANSACTION_DATA_TABLE_AMOUNT])
 
 		if err != nil {
+			errfile.Expected("parsing the amount of the imported row", err)
 			return nil, false, errs.ErrAmountInvalid
 		}
 
@@ -57,6 +59,7 @@ func (p *feideeMymoneyTransactionDataRowParser) Parse(data map[datatable.Transac
 		amount, err := utils.ParseAmount(rowData[datatable.TRANSACTION_DATA_TABLE_AMOUNT])
 
 		if err != nil {
+			errfile.Expected("parsing the amount of the imported row", err)
 			return nil, false, errs.ErrAmountInvalid
 		}
 
@@ -71,6 +74,7 @@ func (p *feideeMymoneyTransactionDataRowParser) Parse(data map[datatable.Transac
 		amount, err := utils.ParseAmount(rowData[datatable.TRANSACTION_DATA_TABLE_AMOUNT])
 
 		if err != nil {
+			errfile.Expected("parsing the amount of the imported row", err)
 			return nil, false, errs.ErrAmountInvalid
 		}
 
@@ -85,6 +89,7 @@ func (p *feideeMymoneyTransactionDataRowParser) Parse(data map[datatable.Transac
 		amount, err := utils.ParseAmount(rowData[datatable.TRANSACTION_DATA_TABLE_AMOUNT])
 
 		if err != nil {
+			errfile.Expected("parsing the amount of the imported row", err)
 			return nil, false, errs.ErrAmountInvalid
 		}
 

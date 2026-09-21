@@ -60,6 +60,9 @@ import { type TokenInfoResponse, SessionDeviceType, SessionInfo } from '@/models
 import { isEquals } from '@/lib/common.ts';
 import { parseDateTimeFromUnixTime } from '@/lib/datetime.ts';
 import { parseSessionInfo } from '@/lib/session.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/users/SessionListPage.vue');
 
 class MobilePageSessionInfo extends SessionInfo {
     public readonly domId: string;
@@ -138,6 +141,7 @@ function init(): void {
         tokens.value = response;
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading the session list', error);
         if (error.processed) {
             loading.value = false;
         } else {
@@ -159,6 +163,7 @@ function reload(done?: () => void): void {
 
         tokens.value = response;
     }).catch(error => {
+        errors.caught('loading the session list', error);
         done?.();
 
         if (!error.processed) {
@@ -184,6 +189,7 @@ function revoke(session: SessionInfo): void {
                 }
             });
         }).catch(error => {
+            errors.caught('revoking the session', error);
             hideLoading();
 
             if (!error.processed) {
@@ -212,6 +218,7 @@ function revokeAll(): void {
 
             showToast('You have logged out all other sessions');
         }).catch(error => {
+            errors.caught('revoking all other sessions', error);
             hideLoading();
 
             if (!error.processed) {

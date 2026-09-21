@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -174,11 +175,12 @@ func ingRunsDir(uid int64) string {
 }
 
 func ingSaveRunReport(uid int64, rep *ingRunReport) {
-	defer func() { _ = recover() }()
+	defer errfile.RecoverNet("saving the ingest run report")()
 
 	dir := ingRunsDir(uid)
 
 	if err := os.MkdirAll(dir, 0o700); err != nil {
+		errfile.Caught("creating the ingest runs directory", err)
 		return
 	}
 
@@ -199,12 +201,14 @@ func ingLoadRunReport(uid int64, runId string) (*ingRunReport, error) {
 	}
 
 	if err != nil {
+		errfile.Caught("reading the ingest run report", err, errfile.F("run_id", runId))
 		return nil, NewFail(CodeInternal, "check the state directory's permissions", "cannot read the run report")
 	}
 
 	rep := &ingRunReport{}
 
 	if err := json.Unmarshal(data, rep); err != nil {
+		errfile.Caught("parsing the ingest run report", err, errfile.F("run_id", runId))
 		return nil, NewFail(CodeInternal, "the run report is damaged", "cannot parse the run report")
 	}
 
@@ -355,6 +359,7 @@ func ingApplyChanges(mc *Ctx, plan *ingPlanResult, fingerprint string, prog *ing
 		}
 
 		if failure != nil {
+			reportLost("building the transaction models for the import", failure)
 			break
 		}
 
@@ -466,8 +471,10 @@ func ingApplyChanges(mc *Ctx, plan *ingPlanResult, fingerprint string, prog *ing
 		op, err := ingBuildImportInverse(mc, runId, created, createdOf, linked)
 
 		if err != nil {
+			errfile.Caught("preparing the undo journal entry for the import", err, errfile.F("run_id", runId))
 			res.Warnings = append(res.Warnings, "the undo journal entry could not be prepared; undo this run by deleting its transactions (GET /ingest/runs/"+runId+")")
 		} else if jid, jerr := RecordJournal(mc, "ingest "+plan.Kind+" "+runId+": "+strconv.Itoa(len(created))+" created, "+strconv.Itoa(len(linked))+" linked", len(created)+len(linked), []InverseOp{op}); jerr != nil {
+			errfile.Caught("writing the undo journal entry for the import", jerr, errfile.F("run_id", runId))
 			res.Warnings = append(res.Warnings, "the undo journal entry could not be written; undo this run by deleting its transactions (GET /ingest/runs/"+runId+")")
 		} else {
 			report.JournalId = jid
@@ -680,6 +687,7 @@ func ingUndoImport(mc *Ctx, payload json.RawMessage, check json.RawMessage) erro
 	var p ingImportInverse
 
 	if err := json.Unmarshal(payload, &p); err != nil {
+		errfile.Caught("decoding the import inverse from the journal", err)
 		return NewFail(CodeInternal, "the journal entry is damaged", "cannot read the import's inverse")
 	}
 
@@ -764,10 +772,12 @@ func ingUndoImport(mc *Ctx, payload json.RawMessage, check json.RawMessage) erro
 	}
 
 	if err := ingDeleteRecords(mc, drop); err != nil {
+		errfile.Caught("removing the import records during undo", err)
 		return NewFail(CodeUpstreamError, "retry POST /undo", "could not remove the import records")
 	}
 
 	if err := ingRelinkRecords(mc, restore); err != nil {
+		errfile.Caught("restoring the import records during undo", err)
 		return NewFail(CodeUpstreamError, "retry POST /undo", "could not restore the import records")
 	}
 
@@ -777,13 +787,14 @@ func ingUndoImport(mc *Ctx, payload json.RawMessage, check json.RawMessage) erro
 // ingStagingRunLog appends the run to {staging}/_run.log (counts and outcome only) and writes the
 // unmapped list, when the run belongs to a statements root
 func ingStagingRunLog(plan *ingPlanResult, rep *ingRunReport) {
-	defer func() { _ = recover() }()
+	defer errfile.RecoverNet("writing the staging run log")()
 
 	if plan.staging == nil {
 		return
 	}
 
 	if err := plan.staging.Ensure(); err != nil {
+		errfile.Caught("ensuring the staging directory for the run log", err)
 		return
 	}
 
@@ -813,6 +824,7 @@ func ingListRuns(uid int64, limit int) ([]map[string]any, int, error) {
 	}
 
 	if err != nil {
+		errfile.Caught("listing the ingest run reports", err)
 		return nil, 0, NewFail(CodeInternal, "check the state directory's permissions", "cannot list run reports")
 	}
 
@@ -837,6 +849,7 @@ func ingListRuns(uid int64, limit int) ([]map[string]any, int, error) {
 		rep, err := ingLoadRunReport(uid, n)
 
 		if err != nil {
+			errfile.Expected("loading a run report while listing the runs", err)
 			continue
 		}
 

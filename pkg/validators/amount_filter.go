@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-playground/validator/v10"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/utils"
 )
 
@@ -24,6 +25,7 @@ func ValidAmountFilter(fl validator.FieldLevel) bool {
 		amount1, err := utils.StringToInt64(amountFilterItems[1])
 
 		if err != nil {
+			errfile.Expected("parsing the amount filter", err)
 			return false
 		}
 
@@ -39,6 +41,7 @@ func ValidAmountFilter(fl validator.FieldLevel) bool {
 			amount2, err := utils.StringToInt64(amountFilterItems[2])
 
 			if err != nil {
+				errfile.Expected("parsing the amount filter", err)
 				return false
 			}
 

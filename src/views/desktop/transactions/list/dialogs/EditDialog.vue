@@ -576,6 +576,9 @@ import {
     mdiTrashCanOutline,
     mdiFullscreen
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/transactions/list/dialogs/EditDialog.vue');
 
 export interface TransactionEditOptions extends SetTransactionOptions {
     id?: string;
@@ -935,6 +938,7 @@ function save(afterAction: AfterSaveAction): void {
                     showState.value = false;
                 }
             }).catch(error => {
+                errors.caught('saving the transaction', error);
                 submitting.value = false;
 
                 if (error.error && (error.error.errorCode === KnownErrorCode.TransactionCannotCreateInThisTime || error.error.errorCode === KnownErrorCode.TransactionCannotModifyInThisTime)) {
@@ -948,6 +952,7 @@ function save(afterAction: AfterSaveAction): void {
 
                             snackbar.value?.showMessage('Your editable transaction range has been set to All');
                         }).catch(error => {
+                            errors.caught('updating the transaction edit scope', error);
                             submitting.value = false;
 
                             if (!error.processed) {
@@ -992,6 +997,7 @@ function save(afterAction: AfterSaveAction): void {
 
             showState.value = false;
         }).catch(error => {
+            errors.caught('saving the template content', error);
             submitting.value = false;
 
             if (!error.processed) {
@@ -1016,6 +1022,7 @@ function recognizeText(text: string): void {
         updateTransactionModelFromRecognizedResponse(response);
         recognizing.value = false;
     }).catch(error => {
+        errors.caught('recognizing the transaction text', error);
         recognizing.value = false;
 
         if (!error.processed) {
@@ -1098,6 +1105,7 @@ function remove(): void {
             submitting.value = false;
             showState.value = false;
         }).catch(error => {
+            errors.caught('deleting the transaction', error);
             submitting.value = false;
 
             if (!error.processed) {
@@ -1130,7 +1138,8 @@ function cancel(): void {
             confirmDialog.value?.open('Do you want to save this transaction draft?').then(() => {
                 transactionsStore.saveTransactionDraft(transaction.value, initOptions.value?.amount, initOptions.value?.categoryId, initOptions.value?.accountId, initOptions.value?.tagIds, firstVisibleAccountId.value);
                 doClose();
-            }).catch(() => {
+            }).catch(error => {
+                errors.expected('confirming whether to save the transaction draft', error);
                 transactionsStore.clearTransactionDraft();
                 doClose();
             });
@@ -1223,6 +1232,7 @@ function uploadPicture(file: File): void {
         uploadingPicture.value = false;
         submitting.value = false;
     }).catch(error => {
+        errors.caught('compressing the transaction picture', error);
         uploadingPicture.value = false;
         submitting.value = false;
 
@@ -1250,6 +1260,7 @@ function viewOrRemovePicture(pictureInfo: TransactionPictureInfoBasicResponse): 
             removingPictureId.value = '';
             submitting.value = false;
         }).catch(error => {
+            errors.caught('removing the unused transaction picture', error);
             if (error.error && error.error.errorCode === KnownErrorCode.TransactionPictureNotFound) {
                 transaction.value.removePicture(pictureInfo);
             } else if (!error.processed) {

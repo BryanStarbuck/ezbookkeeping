@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 	"github.com/mayswind/ezbookkeeping/pkg/services"
 )
@@ -285,6 +287,7 @@ func ingLoadCategories(mc *Ctx) (*ingCategoryIndex, error) {
 	cats, err := services.TransactionCategories.GetAllCategoriesByUid(mc.Web, mc.Uid, 0, -1)
 
 	if err != nil {
+		errfile.Caught("reading the bound user's categories", err)
 		return nil, NewFail(CodeUpstreamError, "check ~/T/ezbookkeeping/error.err", "cannot read the bound user's categories")
 	}
 
@@ -488,6 +491,7 @@ func ingLoadExisting(mc *Ctx, accountIds []int64, first, last string) (map[int64
 	if err := db.NewSession(mc.Web).Cols("transaction_id", "uid", "deleted", "type", "account_id", "amount", "transaction_time", "timezone_utc_offset", "comment").
 		Where("uid=? AND deleted=? AND transaction_time>=? AND transaction_time<=?", mc.Uid, false, minMs, maxMs).
 		In("account_id", accountIds).Find(&txns); err != nil {
+		errfile.Caught("reading the existing transactions for matching", err)
 		return nil, NewFail(CodeUpstreamError, "check ~/T/ezbookkeeping/error.err", "cannot read existing transactions")
 	}
 
@@ -526,6 +530,7 @@ func ingDaysApart(a, b string) int {
 	tb, err2 := time.Parse("2006-01-02", b)
 
 	if err1 != nil || err2 != nil {
+		errfile.Expected("parsing the two row dates for the days-apart check", errors.Join(err1, err2))
 		return 1 << 20
 	}
 
@@ -559,6 +564,8 @@ func ingParseAcceptMatches(raw []json.RawMessage) (map[string]int64, error) {
 
 			importId, txn = s[:i], s[i+1:]
 		} else {
+			errfile.Expected("reading an accept_matches entry as a string", err)
+
 			var obj struct {
 				ImportId      string `json:"import_id"`
 				RowId         string `json:"row_id"`
@@ -566,6 +573,7 @@ func ingParseAcceptMatches(raw []json.RawMessage) (map[string]int64, error) {
 			}
 
 			if err := json.Unmarshal(r, &obj); err != nil {
+				errfile.Expected("reading an accept_matches entry as an object", err)
 				return nil, Invalid("pass accept_matches as [{\"import_id\": \"…\", \"transaction_id\": \"…\"}]", "an accept_matches entry is malformed")
 			}
 
@@ -1597,6 +1605,7 @@ func ingPreparedInputs(mc *Ctx, ctx *ingContext, filter []string, prefer map[str
 		shelf, err := ingScanAccountShelf(ctx.Root, row, qifOrder)
 
 		if err != nil {
+			errfile.Expected("resolving the manifest row's account path", err)
 			in.PreBlocked = append(in.PreBlocked, "the account path is outside the statements root")
 			inputs = append(inputs, in)
 			continue
@@ -1631,6 +1640,7 @@ func ingPreparedInputs(mc *Ctx, ctx *ingContext, filter []string, prefer map[str
 			data, err := ingReadFileBytes(f.Real, 0)
 
 			if err != nil {
+				errfile.Caught("reading a statement file for the plan", err, errfile.F("file", filepath.Base(f.Rel)))
 				in.Conflicts = append(in.Conflicts, &ingConflict{AccountKey: in.AccountKey, Kind: "unreadable_file", Files: []string{f.Rel}, Message: "the file cannot be read", Hint: "check the file's permissions and size"})
 				continue
 			}

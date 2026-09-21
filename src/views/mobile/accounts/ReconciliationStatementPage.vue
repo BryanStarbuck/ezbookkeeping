@@ -390,6 +390,9 @@ import {
     getDateRangeByLastReconciledTimeRangeDateType
 } from '@/lib/datetime.ts';
 import { getCategoryIconType } from '@/lib/icon.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/accounts/ReconciliationStatementPage.vue');
 
 interface ReconciliationStatementVirtualListData {
     items: ReconciliationStatementVirtualListItem[],
@@ -545,6 +548,7 @@ function init(): void {
         accountsStore.loadAllAccounts({ force: false }),
         transactionCategoriesStore.loadAllCategories({ force: false })
     ]).catch(error => {
+        errors.caught('loading the reconciliation statement page', error);
         loadingError.value = error;
         showToast(error.message || error);
     });
@@ -631,6 +635,7 @@ function reload(force: boolean): void {
         loading.value = false;
         setReconciliationStatements(result);
     }).catch(error => {
+        errors.caught('loading the reconciliation statements', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -721,6 +726,7 @@ function updateLastReconciledTime(): void {
         hideLoading();
         showToast('Last reconciled time have been updated');
     }).catch(error => {
+        errors.caught('updating the last reconciled time of the account', error);
         updatingLastReconciledTime.value = false;
         hideLoading();
 
@@ -756,6 +762,7 @@ function removeTransaction(transaction: TransactionReconciliationStatementRespon
         hideLoading();
         reload(false);
     }).catch(error => {
+        errors.caught('deleting the transaction', error);
         hideLoading();
 
         if (!error.processed) {

@@ -184,6 +184,9 @@ import {
     mdiMenu,
     mdiDeleteOutline
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/exchangerates/ListPage.vue');
 
 type ConfirmDialogType = InstanceType<typeof ConfirmDialog>;
 type SnackBarType = InstanceType<typeof SnackBar>;
@@ -247,6 +250,7 @@ function reload(force: boolean): void {
             }
         }
     }).catch(error => {
+        errors.caught('loading the latest exchange rates', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -261,6 +265,7 @@ function update(): void {
             snackbar.value?.showMessage(result.message);
         }
     }).catch(error => {
+        errors.expected('opening the update dialog', error);
         if (error) {
             snackbar.value?.showError(error);
         }
@@ -282,6 +287,7 @@ function remove(currency: string): void {
             updating.value = false;
             customExchangeRateRemoving.value[currency] = false;
         }).catch(error => {
+            errors.caught('deleting the custom exchange rate', error);
             updating.value = false;
             customExchangeRateRemoving.value[currency] = false;
 

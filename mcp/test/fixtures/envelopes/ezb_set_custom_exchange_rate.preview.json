@@ -1,0 +1,48 @@
+{
+  "tool": "ezb_set_custom_exchange_rate",
+  "args": {
+    "currency": "EUR",
+    "rate": "0.93"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_set_custom_exchange_rate",
+    "data": {
+      "changes": {
+        "create": 1
+      },
+      "confirm_token": "cf_522436fbc96cf509ef1b9ad57eb9a8b2",
+      "dry_run": true,
+      "expires_at": "2026-09-21T16:43:16Z",
+      "fingerprint": "sha256:4812a327ae0590da",
+      "preview": {
+        "currency": "EUR",
+        "from": null,
+        "meaning": "1 USD = 0.93 EUR (so 1 EUR = 1.075268817204 USD)",
+        "relativeTo": "USD",
+        "to": "0.93"
+      },
+      "warnings": [
+        "this server's rate source is euro_central_bank: upstream uses custom rates only with [exchange_rates] data_source = user_custom, so this row is stored but conversions keep using the provider's rate"
+      ]
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 1,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name"
+      ],
+      "dryRun": true,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

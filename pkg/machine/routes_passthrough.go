@@ -8,6 +8,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/api"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/settings"
 )
 
@@ -382,6 +383,7 @@ func jrCheckProfileBody(body []byte) error {
 	var fields map[string]json.RawMessage
 
 	if err := json.Unmarshal(body, &fields); err != nil {
+		errfile.Expected("parsing the profile update body", err)
 		return Invalid("send a JSON object", "the profile update body is not a JSON object")
 	}
 

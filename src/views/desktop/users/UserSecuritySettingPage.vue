@@ -245,6 +245,9 @@ import {
     mdiCreationOutline,
     mdiDevices
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/users/UserSecuritySettingPage.vue');
 
 class DesktopPageLinkedThirdPartyLogin {
     public readonly externalAuthType: string;
@@ -417,6 +420,7 @@ function updatePassword(): void {
 
         snackbar.value?.showMessage('Your profile has been successfully updated');
     }).catch(error => {
+        errors.caught('changing the password', error);
         updatingPassword.value = false;
         currentPassword.value = '';
 
@@ -445,6 +449,7 @@ function reloadExternalAuth(silent?: boolean): void {
         externalAuths.value = response;
         loadingExternalAuth.value = false;
     }).catch(error => {
+        errors.caught('loading the linked third-party logins', error);
         loadingExternalAuth.value = false;
 
         if (error.error && error.error.errorCode === KnownErrorCode.ApiNotFound) {
@@ -487,6 +492,7 @@ function reloadSessions(silent?: boolean): void {
         tokens.value = response;
         loadingSession.value = false;
     }).catch(error => {
+        errors.caught('loading the session list', error);
         loadingSession.value = false;
 
         if (!error.processed) {
@@ -510,6 +516,7 @@ function revokeSession(session: SessionInfo): void {
                 }
             }
         }).catch(error => {
+            errors.caught('revoking the session', error);
             loadingSession.value = false;
 
             if (!error.processed) {
@@ -538,6 +545,7 @@ function revokeAllSessions(): void {
 
             snackbar.value?.showMessage('You have logged out all other sessions');
         }).catch(error => {
+            errors.caught('revoking all other sessions', error);
             loadingSession.value = false;
 
             if (!error.processed) {

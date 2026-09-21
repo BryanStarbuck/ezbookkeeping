@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mayswind/ezbookkeeping/pkg/api"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 )
 
@@ -772,6 +773,7 @@ func anFetchDaily(mc *Ctx, sel *anSelection, startUnix, endUnix int64, useTransa
 		day, err := time.ParseInLocation("2006-01-02", d.Date, mc.Loc)
 
 		if err != nil {
+			errfile.Caught("parsing a date from the upstream daily amounts response", err)
 			return nil, NewFail(CodeUpstreamError, "read ~/T/ezbookkeeping/error.err for the server-side detail", "upstream returned an unreadable date %q", d.Date)
 		}
 

@@ -1,0 +1,52 @@
+{
+  "tool": "ezb_add_category",
+  "args": {
+    "name": "Travel",
+    "type": "expense"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_add_category",
+    "data": {
+      "changes": {
+        "create": 1
+      },
+      "confirm_token": "cf_7411bf483044dbd0ff161d08e7c6e043",
+      "dry_run": true,
+      "expires_at": "2026-09-21T16:43:16Z",
+      "fingerprint": "sha256:fc33fad56e538000",
+      "preview": {
+        "action": "create",
+        "color": "000000",
+        "comment": "",
+        "icon": "1",
+        "level": "primary",
+        "name": "Travel",
+        "parentId": "0",
+        "parentName": "",
+        "type": "expense"
+      },
+      "warnings": [
+        "this is a PRIMARY category; transactions use secondary categories, so add at least one under it"
+      ]
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 1,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name"
+      ],
+      "dryRun": true,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

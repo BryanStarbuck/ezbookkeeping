@@ -1,0 +1,55 @@
+{
+  "tool": "ezb_whoami",
+  "args": {},
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_whoami",
+    "data": {
+      "apiVersion": "v1",
+      "app": "ezbookkeeping",
+      "armedAt": "2026-09-21T16:33:15Z",
+      "commit": "",
+      "credentialsFile": "{CREDENTIALS}",
+      "installPath": "{REPO}",
+      "keyFingerprint": "7cd1…/sha256:4190",
+      "serverVersion": "",
+      "statementsRoot": null,
+      "tiers": {
+        "admin": false,
+        "read": true,
+        "write": true
+      },
+      "timezone": "UTC",
+      "user": {
+        "defaultCurrency": "USD",
+        "firstDayOfWeek": 0,
+        "nickname": "Operator",
+        "username": "operator"
+      },
+      "mcp": {
+        "server": "ezbookkeeping",
+        "version": "0.1.0",
+        "target": "local",
+        "apiUrl": "http://127.0.0.1:51205",
+        "allowWrite": true,
+        "writeSwitches": {
+          "server": "EZBK_MACHINE_ALLOW_WRITE=1 (ezbk up --allow-write)",
+          "mcp": "EZBKMCP_ALLOW_WRITE=1"
+        }
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 6,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

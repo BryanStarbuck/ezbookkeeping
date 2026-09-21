@@ -74,6 +74,9 @@ import {
     mdiHistory,
     mdiPencilBoxOutline
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/overview/widgets/RecentTransactionsWidget.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 type EditDialogType = InstanceType<typeof EditDialog>;
@@ -178,6 +181,7 @@ function showTransaction(transaction: TransactionInfoResponse): void {
 
         emit('refresh');
     }).catch(error => {
+        errors.expected('opening the edit dialog', error);
         if (error) {
             snackbar.value?.showError(error);
         }

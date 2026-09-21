@@ -1,6 +1,9 @@
 import CryptoJS from 'crypto-js';
 
 import { base64encode } from './common.ts';
+import { errorFileFor } from './errfile/index.ts';
+
+const errors = errorFileFor('src/lib/misc.ts');
 
 export interface AsyncLoadAssetsResult {
     readonly type: string;
@@ -64,6 +67,7 @@ export function asyncLoadAssets(type: string, assetUrl: string): Promise<AsyncLo
             });
         });
         el.addEventListener('error', () => {
+            errors.warn('loading the external asset', undefined, { type });
             reject({
                 type: type,
                 assetUrl: assetUrl,

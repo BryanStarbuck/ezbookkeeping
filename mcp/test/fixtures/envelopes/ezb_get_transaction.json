@@ -1,0 +1,78 @@
+{
+  "tool": "ezb_get_transaction",
+  "args": {
+    "transaction_id": "3844013758447878147"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_get_transaction",
+    "data": {
+      "transaction": {
+        "category": {
+          "color": "000000",
+          "comment": "",
+          "displayOrder": 1,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013758582095876",
+          "name": "Paycheck",
+          "parentId": "3844013758582095872",
+          "type": 1
+        },
+        "categoryId": "3844013758582095876",
+        "comment": "ACME PAYROLL",
+        "date": "2026-07-01",
+        "editable": true,
+        "hideAmount": false,
+        "id": "3844013758447878147",
+        "sourceAccount": {
+          "balance": 1085250,
+          "category": 2,
+          "color": "000000",
+          "comment": "",
+          "currency": "USD",
+          "displayOrder": 1,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013758313660416",
+          "isAsset": true,
+          "name": "Northbank Checking",
+          "parentId": "0",
+          "type": 1
+        },
+        "sourceAccountId": "3844013758313660416",
+        "sourceAmount": 500000,
+        "sourceCurrency": "USD",
+        "tagIds": [],
+        "time": 1782907200,
+        "timeSequenceId": "1782907200000",
+        "type": 2,
+        "typeName": "income",
+        "utcOffset": 0
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name",
+        "sourceAccount.name",
+        "destinationAccount.name",
+        "category.name",
+        "tags.name"
+      ],
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

@@ -153,6 +153,9 @@ import {
     mdiEyeOffOutline,
     mdiDotsVertical
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/common/dialogs/AccountFilterSettingsDialog.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -210,6 +213,7 @@ function init(): void {
             snackbar.value?.showError('Parameter Invalid');
         }
     }).catch(error => {
+        errors.caught('loading the account list', error);
         loading.value = false;
 
         if (!error.processed) {

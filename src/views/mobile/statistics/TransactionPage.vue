@@ -428,6 +428,9 @@ import {
 import { getIconType } from '@/lib/icon.ts';
 import { scrollToSelectedItem } from '@/lib/ui/common.ts';
 import { type Framework7Dom, useI18nUIComponents } from '@/lib/ui/mobile.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/statistics/TransactionPage.vue');
 
 const props = defineProps<{
     f7router: Router.Router;
@@ -549,6 +552,7 @@ function init(): void {
     }).then(() => {
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading the statistics page', error);
         if (error.processed) {
             loading.value = false;
         } else {
@@ -617,6 +621,7 @@ function reload(done?: () => void): void {
                 showToast('Data has been updated');
             }
         }).catch(error => {
+            errors.caught('reloading the statistics', error);
             reloading.value = false;
 
             done?.();

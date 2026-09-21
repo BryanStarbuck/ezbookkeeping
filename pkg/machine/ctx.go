@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 	"github.com/mayswind/ezbookkeeping/pkg/settings"
@@ -106,6 +107,7 @@ func (mc *Ctx) QueryInt(name string, def int64) (int64, error) {
 	n, err := strconv.ParseInt(v, 10, 64)
 
 	if err != nil {
+		errfile.Expected("parsing an integer query argument", err)
 		return 0, Invalid("pass "+name+" as a whole number", "%s must be an integer, got %q", name, v)
 	}
 
@@ -143,6 +145,7 @@ func (mc *Ctx) RawBody() ([]byte, error) {
 	data, err := io.ReadAll(io.LimitReader(mc.Gin.Request.Body, MaxBodyBytes+1))
 
 	if err != nil {
+		errfile.Warn("reading the request body", err)
 		return nil, Invalid("send a JSON body", "cannot read the request body")
 	}
 
@@ -394,6 +397,7 @@ func ResolveId(name, v string) (int64, error) {
 	n, err := strconv.ParseInt(v, 10, 64)
 
 	if err != nil || n <= 0 {
+		errfile.Expected("parsing an id argument", err)
 		return 0, Invalid("ids are the decimal strings the list routes return", "%s %q is not an ezBookkeeping id", name, v)
 	}
 

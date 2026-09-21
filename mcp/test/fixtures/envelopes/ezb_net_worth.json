@@ -1,0 +1,184 @@
+{
+  "tool": "ezb_net_worth",
+  "args": {
+    "start": "2026-07-01",
+    "end": "2026-09-30",
+    "interval": "none"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_net_worth",
+    "data": {
+      "accounts": [
+        {
+          "currency": "USD",
+          "id": "3844013758313660416",
+          "key": "3844013758313660416",
+          "kind": "account",
+          "label": "Northbank Checking",
+          "points": [
+            {
+              "amount": 1085250,
+              "period": "2026-07-01..2026-09-30"
+            }
+          ],
+          "total": 1085250
+        },
+        {
+          "currency": "EUR",
+          "id": "3844013758313660418",
+          "key": "3844013758313660418",
+          "kind": "account",
+          "label": "Euro Card",
+          "points": [
+            {
+              "amount": -38250,
+              "period": "2026-07-01..2026-09-30"
+            }
+          ],
+          "total": -38250
+        },
+        {
+          "currency": "USD",
+          "id": "3844013758313660417",
+          "key": "3844013758313660417",
+          "kind": "account",
+          "label": "Meridian Savings",
+          "points": [
+            {
+              "amount": 1100000,
+              "period": "2026-07-01..2026-09-30"
+            }
+          ],
+          "total": 1100000
+        }
+      ],
+      "interval": "none",
+      "periods": [
+        {
+          "end": "2026-09-30",
+          "period": "2026-07-01..2026-09-30",
+          "start": "2026-07-01"
+        }
+      ],
+      "provenance": {
+        "absentPeriodsAreOmitted": true,
+        "accountIds": [
+          "3844013758313660416",
+          "3844013758313660418",
+          "3844013758313660417"
+        ],
+        "accountsExplicit": false,
+        "amountUnit": "integer hundredths of the currency named beside each figure",
+        "convertedFiguresRounding": null,
+        "filters": {
+          "balanceModifications": "excluded",
+          "categoryIds": [],
+          "excludeCategoryIds": [],
+          "includeHiddenAccounts": false,
+          "includeTransfers": false,
+          "interval": "none",
+          "tagFilter": "",
+          "useTransactionTimezone": false
+        },
+        "hiddenAccountsExcluded": [],
+        "notes": [
+          "liabilities are signed as the app stores them (money owed is negative), so net = assets + liabilities; per-account series stay in each account's own currency",
+          "a balance is a point in time: each series' total is its closing balance at the end of the range, not a sum of points"
+        ],
+        "range": {
+          "end": "2026-09-30",
+          "endUnix": 1790812799,
+          "start": "2026-07-01",
+          "startUnix": 1782864000,
+          "timezone": "UTC"
+        },
+        "rates": [],
+        "rowCount": 12,
+        "signConvention": "signed: money in is positive, money out is negative",
+        "timezone": "UTC",
+        "upstream": [
+          "GET /api/v1/accounts/list.json",
+          "GET /api/v1/transaction/categories/list.json",
+          "GET /api/v1/transactions/statistics/asset_trends.json"
+        ]
+      },
+      "series": [
+        {
+          "currency": "EUR",
+          "key": "liabilities",
+          "kind": "liabilities",
+          "label": "Liabilities",
+          "points": [
+            {
+              "amount": -38250,
+              "period": "2026-07-01..2026-09-30"
+            }
+          ],
+          "total": -38250
+        },
+        {
+          "currency": "EUR",
+          "key": "net",
+          "kind": "net",
+          "label": "Net worth",
+          "points": [
+            {
+              "amount": -38250,
+              "period": "2026-07-01..2026-09-30"
+            }
+          ],
+          "total": -38250
+        },
+        {
+          "currency": "USD",
+          "key": "assets",
+          "kind": "assets",
+          "label": "Assets",
+          "points": [
+            {
+              "amount": 2185250,
+              "period": "2026-07-01..2026-09-30"
+            }
+          ],
+          "total": 2185250
+        },
+        {
+          "currency": "USD",
+          "key": "net",
+          "kind": "net",
+          "label": "Net worth",
+          "points": [
+            {
+              "amount": 2185250,
+              "period": "2026-07-01..2026-09-30"
+            }
+          ],
+          "total": 2185250
+        }
+      ],
+      "unconverted": []
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "label",
+        "name",
+        "comment",
+        "variants",
+        "text"
+      ],
+      "composed": true,
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

@@ -116,6 +116,9 @@ import { parseDateTimeFromUnixTime } from '@/lib/datetime.ts';
 import { getClientDisplayVersion, getDesktopVersionPath } from '@/lib/version.ts';
 import { isUserScheduledTransactionEnabled } from '@/lib/server_settings.ts';
 import { setExpenseAndIncomeAmountColor } from '@/lib/ui/common.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/SettingsPage.vue');
 
 const props = defineProps<{
     f7router: Router.Router;
@@ -213,6 +216,7 @@ function logout(): void {
 
             props.f7router.navigate('/');
         }).catch(error => {
+            errors.caught('logging out', error);
             logouting.value = false;
             hideLoading();
 

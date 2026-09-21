@@ -150,6 +150,9 @@ import { isAllAccountsChecked } from '@/lib/account.ts';
 import { isAllCategoriesChecked } from '@/lib/category.ts';
 import { cloneWidget } from '@/lib/overview_layout.ts';
 import { scrollToSelectedItem } from '@/lib/ui/common.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/overview/WidgetSettingsPopup.vue');
 
 const props = defineProps<{
     modelValue: MobileOverviewWidgetLayout | null;
@@ -431,6 +434,7 @@ function onPopupOpen(): void {
         Promise.all(promises).then(() => {
             loading.value = false;
         }).catch(error => {
+            errors.caught('loading the widget settings', error);
             loading.value = false;
 
             if (!error.processed) {

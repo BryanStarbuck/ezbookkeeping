@@ -1,0 +1,61 @@
+{
+  "tool": "ezb_update_account",
+  "args": {
+    "account_id": "3844013760461144064",
+    "comment": "wallet",
+    "dry_run": false,
+    "confirm_token": "cf_125ae0088a9a309100e34fd10c5cc020"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_update_account",
+    "data": {
+      "changes": {
+        "update": 1
+      },
+      "dry_run": false,
+      "fingerprint": "sha256:a85c13b03b2f1bb9",
+      "journal_id": 11,
+      "result": {
+        "account": {
+          "balance": 500000,
+          "category": "cash",
+          "categoryCode": 1,
+          "color": "000000",
+          "comment": "wallet",
+          "currency": "JPY",
+          "displayOrder": 1,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013760461144064",
+          "isAsset": true,
+          "isLiability": false,
+          "name": "Yen Cash",
+          "parentId": "0",
+          "side": "asset",
+          "type": "single"
+        },
+        "updated": 1
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name"
+      ],
+      "dryRun": false,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

@@ -9,6 +9,7 @@ import (
 	"github.com/pquerna/otp/totp"
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -102,6 +103,7 @@ func (a *TwoFactorAuthorizationsApi) TwoFactorEnableRequestHandler(c *core.WebCo
 	imgData := &bytes.Buffer{}
 
 	if err = png.Encode(imgData, img); err != nil {
+		errfile.Caught("encoding the two-factor qrcode as png", err)
 		return nil, errs.ErrOperationFailed
 	}
 

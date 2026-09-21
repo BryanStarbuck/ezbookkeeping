@@ -85,6 +85,9 @@ import type { ComponentDensity, InputVariant } from '@/lib/ui/desktop.ts';
 import {
     mdiPound
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/components/desktop/TransactionTagAutoComplete.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -128,6 +131,7 @@ function saveNewTag(tagName: string): void {
             updateModelValue(newValue);
         }
     }).catch(error => {
+        errors.caught('saving the new transaction tag', error);
         emit('tag:saving', false, tagName);
 
         if (!error.processed) {

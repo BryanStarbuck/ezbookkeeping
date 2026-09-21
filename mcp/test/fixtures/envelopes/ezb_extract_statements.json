@@ -1,0 +1,143 @@
+{
+  "tool": "ezb_extract_statements",
+  "args": {},
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_extract_statements",
+    "data": {
+      "accounts": [
+        {
+          "account_key": "acme_llc/Meridian/5520",
+          "blocked_months": null,
+          "collapsed": 0,
+          "currency": "USD",
+          "currency_source": "default",
+          "dir": ".ezbk-staging/acme_llc/Meridian/Savings_x5520",
+          "months": 0,
+          "rows": 0,
+          "statements": 0,
+          "zero_row_statements": 0
+        },
+        {
+          "account_key": "household/Northbank/4021",
+          "blocked_months": null,
+          "collapsed": 0,
+          "currency": "USD",
+          "currency_source": "manifest",
+          "dir": ".ezbk-staging/household/Northbank/Checking_x4021",
+          "months": 0,
+          "rows": 0,
+          "statements": 0,
+          "zero_row_statements": 0
+        },
+        {
+          "account_key": "household/Northbank/7734",
+          "blocked_months": null,
+          "collapsed": 0,
+          "currency": "USD",
+          "currency_source": "manifest",
+          "dir": ".ezbk-staging/household/Northbank/Card_x7734",
+          "months": 0,
+          "rows": 0,
+          "statements": 0,
+          "zero_row_statements": 0
+        }
+      ],
+      "conflicts": [],
+      "date_order": "mdy",
+      "force": false,
+      "mode": "raw",
+      "no_usable_extraction": [
+        {
+          "account_key": "acme_llc/Meridian/5520",
+          "reason": "no text sidecar",
+          "rows": 0,
+          "statement": "bank/acme_llc/Meridian/Savings_x5520/2025/09/20250930-statement-5520",
+          "status": "no_usable_extraction",
+          "unreadable_lines": 0
+        },
+        {
+          "account_key": "household/Northbank/4021",
+          "reason": "no text sidecar",
+          "rows": 0,
+          "statement": "bank/household/Northbank/Checking_x4021/Checking_x4021_ALL",
+          "status": "no_usable_extraction",
+          "unreadable_lines": 0
+        },
+        {
+          "account_key": "household/Northbank/4021",
+          "reason": "no text sidecar",
+          "rows": 0,
+          "statement": "bank/household/Northbank/Checking_x4021/2025/09/20250930-statement-4021",
+          "status": "no_usable_extraction",
+          "unreadable_lines": 0
+        },
+        {
+          "account_key": "household/Northbank/4021",
+          "reason": "no text sidecar",
+          "rows": 0,
+          "statement": "bank/household/Northbank/Checking_x4021/2025/10/20251031-statement-4021",
+          "status": "no_usable_extraction",
+          "unreadable_lines": 0
+        },
+        {
+          "account_key": "household/Northbank/7734",
+          "reason": "no text sidecar",
+          "rows": 0,
+          "statement": "bank/household/Northbank/Card_x7734/2025/10/20251014-statement-7734",
+          "status": "no_usable_extraction",
+          "unreadable_lines": 0
+        }
+      ],
+      "ok_every_statement_yielded_rows": true,
+      "removed": [],
+      "root": "{ROOT}",
+      "staging": ".ezbk-staging",
+      "statements": [],
+      "timezone": "UTC",
+      "totals": {
+        "account_months": 0,
+        "blocked_months": 0,
+        "collapsed": 0,
+        "conflicts": 0,
+        "no_usable_extraction": 5,
+        "rows": 0,
+        "statements": 5,
+        "unreadable_lines": 0,
+        "zero_row_statements": 0
+      },
+      "unchanged": 0,
+      "unreadable_lines": [],
+      "unreadable_total": 0,
+      "warnings": [
+        "numeric dates were read month-first (date_order=mdy); pass date_order=dmy for statements that write day-first"
+      ],
+      "written": [
+        ".ezbk-staging/_accounts.json",
+        ".ezbk-staging/_conflicts.csv",
+        ".ezbk-staging/_dupes.csv",
+        ".ezbk-staging/_manifest.csv",
+        ".ezbk-staging/_rows.csv"
+      ],
+      "zero_row_statements": []
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 60,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "text",
+        "description"
+      ],
+      "composed": true,
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

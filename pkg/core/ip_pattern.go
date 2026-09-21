@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 )
 
@@ -105,6 +106,7 @@ func ParseIPv4Pattern(ipPattern string) (*IPPattern, error) {
 			num, err := strconv.Atoi(item)
 
 			if err != nil || num < 0 || num > 255 {
+				errfile.Expected("parsing an ipv4 address pattern segment", err)
 				return nil, errs.ErrInvalidIpAddressPattern
 			}
 
@@ -121,6 +123,7 @@ func ParseIPv4Pattern(ipPattern string) (*IPPattern, error) {
 	regex, err := regexp.Compile(regexBuilder.String())
 
 	if err != nil {
+		errfile.Caught("compiling the ipv4 address pattern regex", err)
 		return nil, errs.ErrInvalidIpAddressPattern
 	}
 
@@ -152,6 +155,7 @@ func ParseIPv6Pattern(ipPattern string) (*IPPattern, error) {
 			num, err := strconv.ParseInt(item, 16, 32)
 
 			if err != nil || num < 0 || num > 0xFFFF {
+				errfile.Expected("parsing an ipv6 address pattern segment", err)
 				return nil, errs.ErrInvalidIpAddressPattern
 			}
 
@@ -167,6 +171,7 @@ func ParseIPv6Pattern(ipPattern string) (*IPPattern, error) {
 	regex, err := regexp.Compile(regexBuilder.String())
 
 	if err != nil {
+		errfile.Caught("compiling the ipv6 address pattern regex", err)
 		return nil, errs.ErrInvalidIpAddressPattern
 	}
 

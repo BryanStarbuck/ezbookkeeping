@@ -1,0 +1,75 @@
+{
+  "tool": "ezb_apply_accounts",
+  "args": {
+    "dry_run": false,
+    "confirm_token": "cf_3bcbdeef381e1f493d005d55581695eb"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_apply_accounts",
+    "data": {
+      "changes": {
+        "ambiguous": 0,
+        "create": 3,
+        "link": 0,
+        "skip": 0
+      },
+      "dry_run": false,
+      "fingerprint": "sha256:670270ee39c517ca",
+      "journal_id": 18,
+      "result": {
+        "ambiguous": 0,
+        "created": [
+          {
+            "account_id": "3844013760461144065",
+            "account_key": "acme_llc/Meridian/5520",
+            "category": "savings",
+            "currency": "USD",
+            "name": "Acme LLC · Meridian Savings ••5520",
+            "side": "asset"
+          },
+          {
+            "account_id": "3844013760461144066",
+            "account_key": "household/Northbank/4021",
+            "category": "checking",
+            "currency": "USD",
+            "name": "Household · Northbank Checking ••4021",
+            "side": "asset"
+          },
+          {
+            "account_id": "3844013760461144067",
+            "account_key": "household/Northbank/7734",
+            "category": "credit_card",
+            "currency": "USD",
+            "name": "Household · Northbank Card ••7734",
+            "side": "liability"
+          }
+        ],
+        "linked": [],
+        "map": {
+          "entries": 3,
+          "path": ".ezbk-staging/_map.json"
+        },
+        "skipped": 0
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 11,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "name"
+      ],
+      "composed": true,
+      "dryRun": false,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

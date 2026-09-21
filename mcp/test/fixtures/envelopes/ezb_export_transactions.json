@@ -1,0 +1,23 @@
+{
+  "tool": "ezb_export_transactions",
+  "args": {
+    "start": "2026-09-01",
+    "format": "csv"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_export_transactions",
+    "data": {
+      "contentType": "text/csv; charset=utf-8",
+      "fileName": "operator_2026_09_21_16_33.csv",
+      "content": "Time,Timezone,Type,Category,Sub Category,Account,Account Currency,Amount,Account2,Account2 Currency,Account2 Amount,Geographic Location,Tags,Description\n2026-09-02 12:00:00,+00:00,Expense,Food,Groceries,Northbank Checking,USD,128.00,,,,,,NORTHSIDE MARKET\n"
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15.791Z",
+      "tookMs": 2,
+      "truncated": false
+    }
+  }
+}

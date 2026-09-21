@@ -93,6 +93,9 @@ import { getClientDisplayVersion } from '@/lib/version.ts';
 import {
     mdiChevronLeft
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/ForgetPasswordPage.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -122,6 +125,7 @@ function requestResetPassword(): void {
         requesting.value = false;
         snackbar.value?.showMessage('Password reset email has been sent');
     }).catch(error => {
+        errors.caught('requesting the password reset email', error);
         requesting.value = false;
 
         if (!error.processed) {

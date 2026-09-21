@@ -1,0 +1,35 @@
+{
+  "tool": "ezb_list_templates",
+  "args": {},
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_list_templates",
+    "data": {
+      "count": 0,
+      "cronCreatesTransactions": true,
+      "filters": {
+        "includeHidden": false,
+        "kind": "all"
+      },
+      "scheduledTransactionsEnabled": true,
+      "templates": []
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "name",
+        "comment"
+      ],
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

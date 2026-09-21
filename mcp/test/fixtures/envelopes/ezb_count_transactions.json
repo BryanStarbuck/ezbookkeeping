@@ -1,0 +1,32 @@
+{
+  "tool": "ezb_count_transactions",
+  "args": {
+    "start": "2026-07-01"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_count_transactions",
+    "data": {
+      "count": 9,
+      "filter": {
+        "endUnix": 0,
+        "start": "2026-07-01",
+        "startUnix": 1782864000,
+        "timezone": "UTC"
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

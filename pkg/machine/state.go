@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 )
 
 // Limits (apis.mdx §18)
@@ -57,6 +59,7 @@ func StateDir() string {
 	home, err := os.UserHomeDir()
 
 	if err != nil {
+		errfile.Warn("resolving the home directory for the machine state dir", err)
 		return filepath.Join(os.TempDir(), "_ezbookkeeping")
 	}
 

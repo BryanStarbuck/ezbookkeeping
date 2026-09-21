@@ -1,0 +1,34 @@
+{
+  "tool": "ezb_get_data_summary",
+  "args": {},
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_get_data_summary",
+    "data": {
+      "statistics": {
+        "totalAccountCount": 0,
+        "totalCustomIconCount": 0,
+        "totalExplorationCount": 0,
+        "totalScheduledTransactionCount": 0,
+        "totalTransactionCategoryCount": 10,
+        "totalTransactionCount": 0,
+        "totalTransactionPictureCount": 0,
+        "totalTransactionTagCount": 0,
+        "totalTransactionTemplateCount": 0
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 1,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

@@ -68,6 +68,9 @@ import { useAccountsStore } from '@/stores/account.ts';
 import { useTransactionsStore } from '@/stores/transaction.ts';
 
 import { Account } from '@/models/account.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/accounts/MoveAllTransactionsPage.vue');
 
 const props = defineProps<{
     f7route: Router.Route;
@@ -122,6 +125,7 @@ function init(): void {
 
         fromAccount.value = account;
     }).catch(error => {
+        errors.caught('loading all accounts', error);
         if (error.processed) {
             loading.value = false;
         } else {
@@ -151,6 +155,7 @@ function confirm(): void {
         showToast('All transactions in this account have been moved.');
         router.back();
     }).catch(error => {
+        errors.caught('moving all transactions between accounts', error);
         moving.value = false;
         hideLoading();
 

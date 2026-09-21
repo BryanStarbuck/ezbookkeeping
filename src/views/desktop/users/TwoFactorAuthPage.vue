@@ -118,6 +118,9 @@ import { copyTextToClipboard } from '@/lib/ui/common.ts';
 import {
     mdiContentCopy
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/users/TwoFactorAuthPage.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -146,6 +149,7 @@ function init(): void {
         status.value = response.enable;
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading the two-factor status', error);
         loading.value = false;
 
         if (error.error && error.error.errorCode === KnownErrorCode.ApiNotFound) {
@@ -170,6 +174,7 @@ function enable(): void {
         new2FAQRCode.value = response.qrcode;
         new2FASecret.value = response.secret;
     }).catch(error => {
+        errors.caught('enabling two-factor authentication', error);
         enabling.value = false;
 
         if (!error.processed) {
@@ -210,6 +215,7 @@ function enableConfirm(): void {
             currentBackupCode.value = response.recoveryCodes.join('\n');
         }
     }).catch(error => {
+        errors.caught('confirming the two-factor setup', error);
         enableConfirming.value = false;
 
         if (!error.processed) {
@@ -243,6 +249,7 @@ function disable(): void {
         status.value = false;
         snackbar.value?.showMessage('Two-factor authentication has been disabled');
     }).catch(error => {
+        errors.caught('disabling two-factor authentication', error);
         disabling.value = false;
 
         if (!error.processed) {
@@ -275,6 +282,7 @@ function regenerateBackupCode(): void {
 
         currentBackupCode.value = response.recoveryCodes.join('\n');
     }).catch(error => {
+        errors.caught('regenerating the two-factor recovery codes', error);
         regenerating.value = false;
 
         if (!error.processed) {

@@ -20,6 +20,9 @@ import type { Account } from '@/models/account.ts';
 import type { TransactionCategory } from '@/models/transaction_category.ts';
 import type { TransactionTag } from '@/models/transaction_tag.ts';
 import type { ImportTransaction } from '@/models/imported_transaction.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/models/rule.ts');
 
 export interface ImportTransactionReplaceRuleMatchData {
     readonly type: TransactionType;
@@ -286,7 +289,8 @@ export class ImportTransactionReplaceRules {
             }
 
             return result;
-        } catch {
+        } catch (e) {
+            errors.expected('parsing the saved replace rules', e);
             return null;
         }
     }

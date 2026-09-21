@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/client"
+	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/errfile"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/logger"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/progress"
 )
@@ -106,16 +107,19 @@ func ReadPid() (int, bool) {
 	data, err := os.ReadFile(PidFile())
 
 	if err != nil {
+		errfile.Expected("reading the optional server pid file", err)
 		return 0, false
 	}
 
 	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
 
 	if err != nil || pid <= 0 {
+		errfile.Expected("parsing the server pid file", err)
 		return 0, false
 	}
 
-	if syscall.Kill(pid, 0) != nil {
+	if err := syscall.Kill(pid, 0); err != nil {
+		errfile.Expected("probing the recorded server pid", err)
 		return pid, false
 	}
 
@@ -127,6 +131,7 @@ func PortHolder(port int) (int, string) {
 	out, err := exec.Command("lsof", "-nP", "-iTCP:"+strconv.Itoa(port), "-sTCP:LISTEN", "-Fpc").Output()
 
 	if err != nil {
+		errfile.Expected("probing the port holder with lsof", err)
 		return 0, ""
 	}
 
@@ -151,6 +156,7 @@ func PortOpen(port int) bool {
 	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(port), 500*time.Millisecond)
 
 	if err != nil {
+		errfile.Expected("probing whether the port is open", err)
 		return false
 	}
 
@@ -185,10 +191,12 @@ func (e *Error) Error() string { return e.Msg }
 // needsBuild reports whether the binary or the UI bundle is missing
 func needsBuild(root string) bool {
 	if _, err := os.Stat(filepath.Join(root, "ezbookkeeping")); err != nil {
+		errfile.Expected("probing for the server binary", err)
 		return true
 	}
 
 	if _, err := os.Stat(filepath.Join(root, "dist", "index.html")); err != nil {
+		errfile.Expected("probing for the built UI bundle", err)
 		return true
 	}
 
@@ -230,6 +238,7 @@ func Up(opts Options) error {
 		cmd := exec.Command("just", "build")
 
 		if _, err := exec.LookPath("just"); err != nil {
+			errfile.Caught("looking up the just binary for the build", err)
 			sp.Stop()
 			return &Error{Msg: "the server is not built and `just` is not installed", Hint: "cd " + root + " && just build"}
 		}
@@ -250,6 +259,7 @@ func Up(opts Options) error {
 		sp.Stop()
 
 		if err != nil {
+			errfile.Caught("running just build", err)
 			return &Error{Msg: "just build failed", LogTail: tail(ServerLog(), 30), Hint: "cd " + root + " && just build"}
 		}
 	}
@@ -261,10 +271,12 @@ func Up(opts Options) error {
 	secretPath := filepath.Join(root, "data", ".secret_key")
 
 	if info, err := os.Stat(secretPath); err != nil || info.Size() == 0 {
+		errfile.Expected("probing for the existing data/.secret_key", err)
 		// upstream's [security] secret_key (NOT the API secret key, apis.mdx §5.2)
 		out, err := exec.Command("openssl", "rand", "-hex", "24").Output()
 
 		if err != nil {
+			errfile.Caught("generating data/.secret_key with openssl", err)
 			return &Error{Msg: "cannot generate data/.secret_key (openssl missing?)", Hint: "cd " + root + " && just run once"}
 		}
 
@@ -369,7 +381,8 @@ func Stop() (int, error) {
 	_ = syscall.Kill(pid, syscall.SIGTERM)
 
 	for i := 0; i < 50; i++ {
-		if syscall.Kill(pid, 0) != nil {
+		if err := syscall.Kill(pid, 0); err != nil {
+			errfile.Expected("probing whether the stopped server has exited", err)
 			_ = os.Remove(PidFile())
 			return pid, nil
 		}
@@ -391,6 +404,7 @@ func tail(path string, n int) string {
 	data, err := os.ReadFile(path)
 
 	if err != nil {
+		errfile.Expected("reading the log file to tail", err)
 		return ""
 	}
 

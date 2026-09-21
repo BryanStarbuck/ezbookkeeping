@@ -82,6 +82,9 @@ import {
     mdiSelectInverse,
     mdiDotsVertical
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/transactions/import/dialogs/BatchCreateDialog.vue');
 
 export type BatchCreateDialogDataType = 'expenseCategory' | 'incomeCategory' | 'transferCategory' | 'tag';
 
@@ -272,6 +275,7 @@ function confirm(): void {
 
                 resolveFunc?.(buildBatchCreateCategoryResponse(response));
             }).catch(error => {
+                errors.caught('loading all categories', error);
                 submitting.value = false;
 
                 if (!error.processed) {
@@ -279,6 +283,7 @@ function confirm(): void {
                 }
             });
         }).catch(error => {
+            errors.caught('creating the missing categories', error);
             submitting.value = false;
 
             if (!error.processed) {
@@ -306,6 +311,7 @@ function confirm(): void {
 
                 resolveFunc?.(buildBatchCreateTagResponse(response));
             }).catch(error => {
+                errors.caught('loading all tags', error);
                 submitting.value = false;
 
                 if (!error.processed) {
@@ -313,6 +319,7 @@ function confirm(): void {
                 }
             });
         }).catch(error => {
+            errors.caught('creating the missing tags', error);
             submitting.value = false;
 
             if (!error.processed) {

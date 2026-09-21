@@ -6,6 +6,7 @@ import (
 
 	"gopkg.in/mail.v2"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/settings"
 	"github.com/mayswind/ezbookkeeping/pkg/utils"
@@ -22,12 +23,14 @@ func NewDefaultMailer(smtpConfig *settings.SMTPConfig) (*DefaultMailer, error) {
 	host, portStr, err := net.SplitHostPort(smtpConfig.SMTPHost)
 
 	if err != nil {
+		errfile.Caught("splitting the SMTP server host and port from the configuration", err)
 		return nil, errs.ErrSMTPServerHostInvalid
 	}
 
 	port, err := utils.StringToInt(portStr)
 
 	if err != nil {
+		errfile.Caught("parsing the SMTP server port from the configuration", err)
 		return nil, errs.ErrSMTPServerHostInvalid
 	}
 

@@ -229,6 +229,9 @@ import {
     mdiDrag,
     mdiDotsVertical
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/categories/ListPage.vue');
 
 type ConfirmDialogType = InstanceType<typeof ConfirmDialog>;
 type SnackBarType = InstanceType<typeof SnackBar>;
@@ -339,6 +342,7 @@ function reload(force: boolean): void {
 
         updateCardMinHeight();
     }).catch(error => {
+        errors.caught('loading the category list', error);
         loading.value = false;
 
         if (error && error.isUpToDate) {
@@ -364,6 +368,7 @@ function add(): void {
 
         updateCardMinHeight();
     }).catch(error => {
+        errors.caught('opening the category edit dialog', error);
         if (error) {
             snackbar.value?.showError(error);
         }
@@ -385,6 +390,7 @@ function edit(category: TransactionCategory): void {
 
         updateCardMinHeight();
     }).catch(error => {
+        errors.caught('opening the category edit dialog', error);
         if (error) {
             snackbar.value?.showError(error);
         }
@@ -404,6 +410,7 @@ function hide(category: TransactionCategory, hidden: boolean): void {
 
         updateCardMinHeight();
     }).catch(error => {
+        errors.caught('hiding the category', error);
         updating.value = false;
         categoryHiding.value[category.id] = false;
 
@@ -426,6 +433,7 @@ function remove(category: TransactionCategory): void {
 
             updateCardMinHeight();
         }).catch(error => {
+            errors.caught('deleting the category', error);
             updating.value = false;
             categoryRemoving.value[category.id] = false;
 
@@ -450,6 +458,7 @@ function saveSortResult(): void {
         loading.value = false;
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('updating the category display orders', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -477,6 +486,7 @@ function onMove(event: { moved: { element: { id: string }, oldIndex: number, new
     }).then(() => {
         displayOrderModified.value = true;
     }).catch(error => {
+        errors.caught('changing the category display order', error);
         snackbar.value?.showError(error);
     });
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/boombuler/barcode/qr"
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/settings"
 )
@@ -49,6 +50,7 @@ func (a *QrCodesApi) generateUrlQrCode(c *core.WebContext, url string) ([]byte, 
 	imgData := &bytes.Buffer{}
 
 	if err := png.Encode(imgData, qrCodeImg); err != nil {
+		errfile.Caught("encoding the login qr code image", err)
 		return nil, errs.ErrOperationFailed
 	}
 

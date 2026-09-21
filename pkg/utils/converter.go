@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 )
 
@@ -24,6 +25,7 @@ func StringTryToInt(str string, defaultValue int) int {
 	num, err := StringToInt(str)
 
 	if err != nil {
+		errfile.Expected("parsing the number with a default", err)
 		return defaultValue
 	}
 
@@ -85,6 +87,7 @@ func StringTryToInt64(str string, defaultValue int64) int64 {
 	num, err := StringToInt64(str)
 
 	if err != nil {
+		errfile.Expected("parsing the number with a default", err)
 		return defaultValue
 	}
 

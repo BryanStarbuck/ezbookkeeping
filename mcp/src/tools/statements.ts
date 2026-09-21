@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { ACCOUNT_REF_PROPERTIES, zAccountRef } from './accounts.js';
 import { listImportFallout } from './analytics.js';
 import { boolField, clampLimit, dateField, describe, enumField, fromPlane, intField, objectSchema, strField, zDate, zId } from './tool.js';
-import type { ToolDef, ToolResult } from './tool.js';
+import type { ToolContext, ToolDef, ToolResult } from './tool.js';
 
 const STATEMENT_UNTRUSTED = ['description', 'comment', 'label', 'name', 'entity', 'institution'];
 
@@ -24,6 +24,18 @@ const zRoot = { root: z.string().min(1).optional(), manifest_path: z.string().mi
 type RootArgs = { root?: string; manifest_path?: string };
 
 const MODES = ['prepared', 'raw'] as const;
+
+/**
+ * The statements root when the call did not name one: EZBK_STATEMENTS_DIR, shared with the CLI
+ * (§14). The plane's own fallback is ezbookkeeping.statements.root in the credentials file; the CLI
+ * passes its --path / EZBK_STATEMENTS_DIR as `root`, and so does this server.
+ */
+export function withRoot<T extends { root?: string | undefined }>(args: T, ctx: ToolContext): T {
+  if (args.root === undefined && ctx.config.statementsDir !== undefined) {
+    return { ...args, root: ctx.config.statementsDir };
+  }
+  return args;
+}
 const QIF_ORDERS = ['ymd', 'mdy', 'dmy'] as const;
 
 /** Optional `staging` on the routes that take it (never inside the manifest's own directory). */
@@ -41,7 +53,7 @@ export const getStatementManifest: ToolDef = {
   inputSchema: objectSchema(ROOT_PROPERTIES),
   schema: z.object(zRoot).strict(),
   async run(args, ctx) {
-    const a = args as RootArgs;
+    const a = withRoot(args as RootArgs, ctx);
     const res = await ctx.client.request('/ingest/manifest', { query: { root: a.root, manifest_path: a.manifest_path } });
     return fromPlane(res, STATEMENT_UNTRUSTED);
   },
@@ -79,7 +91,7 @@ export const scanStatements: ToolDef = {
     })
     .strict(),
   async run(args, ctx) {
-    const res = await ctx.client.request('/ingest/scan', { method: 'POST', body: args });
+    const res = await ctx.client.request('/ingest/scan', { method: 'POST', body: withRoot(args as RootArgs, ctx) });
     return fromPlane(res, STATEMENT_UNTRUSTED);
   },
 };
@@ -100,7 +112,7 @@ export const listMissingStatements: ToolDef = {
   }),
   schema: z.object({ ...zRoot, account: z.string().min(1).optional(), from_rows: z.boolean().optional() }).strict(),
   async run(args, ctx) {
-    const a = args as RootArgs & { account?: string; from_rows?: boolean };
+    const a = withRoot(args as RootArgs & { account?: string; from_rows?: boolean }, ctx);
     const res = await ctx.client.request('/ingest/coverage', { query: { root: a.root, manifest_path: a.manifest_path, account: a.account, from_rows: a.from_rows } });
     return fromPlane(res, STATEMENT_UNTRUSTED);
   },
@@ -124,7 +136,7 @@ export const listStatementDuplicates: ToolDef = {
   }),
   schema: z.object({ ...zRoot, mode: z.enum(MODES).optional(), account: z.string().min(1).optional(), prefer: z.array(z.string().min(1)).optional(), date_order: z.enum(QIF_ORDERS).optional() }).strict(),
   async run(args, ctx) {
-    const a = args as RootArgs & { mode?: string; account?: string; prefer?: string[]; date_order?: string };
+    const a = withRoot(args as RootArgs & { mode?: string; account?: string; prefer?: string[]; date_order?: string }, ctx);
     const res = await ctx.client.request('/ingest/dupes', { query: { root: a.root, manifest_path: a.manifest_path, mode: a.mode, account: a.account, prefer: a.prefer, date_order: a.date_order } });
     return fromPlane(res, STATEMENT_UNTRUSTED);
   },
@@ -153,7 +165,7 @@ export const getStatementRows: ToolDef = {
   ),
   schema: z.object({ ...zRoot, account: z.string().min(1), start: zDate.optional(), end: zDate.optional(), status: z.string().min(1).optional(), limit: z.number().int().positive().optional(), offset: z.number().int().min(0).optional() }).strict(),
   async run(args, ctx) {
-    const a = args as RootArgs & { account: string; start?: string; end?: string; status?: string; limit?: number; offset?: number };
+    const a = withRoot(args as RootArgs & { account: string; start?: string; end?: string; status?: string; limit?: number; offset?: number }, ctx);
     const { limit, clamped } = clampLimit(a.limit, ctx.config);
     const res = await ctx.client.request('/ingest/rows', { query: { root: a.root, manifest_path: a.manifest_path, account: a.account, start: a.start, end: a.end, status: a.status, limit, offset: a.offset } });
     const out: ToolResult = fromPlane(res, STATEMENT_UNTRUSTED);
@@ -177,7 +189,7 @@ export const describeStatementMap: ToolDef = {
   inputSchema: objectSchema(ROOT_PROPERTIES),
   schema: z.object(zRoot).strict(),
   async run(args, ctx) {
-    const a = args as RootArgs;
+    const a = withRoot(args as RootArgs, ctx);
     const res = await ctx.client.request('/ingest/map', { query: { root: a.root, manifest_path: a.manifest_path } });
     return fromPlane(res, STATEMENT_UNTRUSTED);
   },
@@ -214,7 +226,7 @@ export const extractStatements: ToolDef = {
     })
     .strict(),
   async run(args, ctx) {
-    const res = await ctx.client.request('/ingest/extract', { method: 'POST', body: args, noTimeout: true });
+    const res = await ctx.client.request('/ingest/extract', { method: 'POST', body: withRoot(args as RootArgs, ctx), noTimeout: true });
     return fromPlane(res, STATEMENT_UNTRUSTED);
   },
 };
@@ -261,7 +273,7 @@ export const planAccounts: ToolDef = {
     })
     .strict(),
   async run(args, ctx) {
-    const res = await ctx.client.request('/ingest/accounts/plan', { method: 'POST', body: args });
+    const res = await ctx.client.request('/ingest/accounts/plan', { method: 'POST', body: withRoot(args as RootArgs, ctx) });
     return fromPlane(res, STATEMENT_UNTRUSTED);
   },
 };
@@ -330,7 +342,7 @@ export const planStatementImport: ToolDef = {
   inputSchema: objectSchema(PLAN_IMPORT_PROPERTIES),
   schema: z.object(zPlanImport).strict(),
   async run(args, ctx) {
-    const res = await ctx.client.request('/ingest/plan', { method: 'POST', body: args, noTimeout: true });
+    const res = await ctx.client.request('/ingest/plan', { method: 'POST', body: withRoot(args as RootArgs, ctx), noTimeout: true });
     return fromPlane(res, STATEMENT_UNTRUSTED);
   },
 };
@@ -385,7 +397,7 @@ export const planFileImport: ToolDef = {
   inputSchema: objectSchema(PLAN_FILE_PROPERTIES, ['path']),
   schema: z.object({ ...zPlanFile, path: z.string().min(1) }).strict(),
   async run(args, ctx) {
-    const res = await ctx.client.request('/ingest/file/plan', { method: 'POST', body: args, noTimeout: true });
+    const res = await ctx.client.request('/ingest/file/plan', { method: 'POST', body: withRoot(args as RootArgs, ctx), noTimeout: true });
     return fromPlane(res, STATEMENT_UNTRUSTED);
   },
 };

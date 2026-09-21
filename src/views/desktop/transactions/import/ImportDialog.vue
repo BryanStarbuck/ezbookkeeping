@@ -398,6 +398,9 @@ import {
     mdiImagePlusOutline,
     mdiTrashCanOutline
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/transactions/import/ImportDialog.vue');
 
 type ConfirmDialogType = InstanceType<typeof ConfirmDialog>;
 type SnackBarType = InstanceType<typeof SnackBar>;
@@ -777,7 +780,8 @@ function setImportFile(event: Event): void {
             detectFileEncoding(importFile.value).then(detectedEncoding => {
                 detectingFileEncoding.value = false;
                 autoDetectedFileEncoding.value = detectedEncoding;
-            }).catch(() => {
+            }).catch(error => {
+                errors.expected('detecting the file encoding', error);
                 detectingFileEncoding.value = false;
                 autoDetectedFileEncoding.value = undefined;
             });
@@ -859,6 +863,7 @@ function recognizeImage(item: BatchImportImageItem, additionalPrompt?: string): 
             }).then(response => {
                 resolve(response.items || []);
             }).catch(error => {
+                errors.caught('recognizing the imported image', error);
                 reject(error);
             });
         }).catch(error => {
@@ -923,6 +928,7 @@ function batchRecognizeImages(): Promise<void> {
 
                 recurseRecognizeImage(index + 1);
             }).catch(error => {
+                errors.caught('recognizing the imported image', error);
                 if (submitting.value) {
                     item.status = 'failed';
                     item.failureReason = te(error.message || error || 'An error occurred');
@@ -990,7 +996,8 @@ function parseData(): void {
             }
 
             submitting.value = false;
-        }).catch(() => {
+        }).catch(error => {
+            errors.caught('recognizing the imported images', error);
             submitting.value = false;
         });
 
@@ -1077,6 +1084,7 @@ function parseData(): void {
 
             submitting.value = false;
         }).catch(error => {
+            errors.caught('parsing the imported custom file', error);
             submitting.value = false;
 
             if (!error.processed) {
@@ -1164,6 +1172,7 @@ function parseData(): void {
             currentStep.value = 'checkData';
             submitting.value = false;
         }).catch(error => {
+            errors.caught('parsing the imported transactions', error);
             submitting.value = false;
 
             if (!error.processed) {
@@ -1231,7 +1240,8 @@ function submit(): void {
                                 clearInterval(showProcessTimer);
                                 showProcessTimer = undefined;
                             }
-                        }).catch(() => {
+                        }).catch(error => {
+                            errors.caught('polling the import progress', error);
                             importProcess.value = 0;
                             clearInterval(showProcessTimer);
                             showProcessTimer = undefined;
@@ -1261,6 +1271,7 @@ function submit(): void {
 
             submitting.value = false;
         }).catch(error => {
+            errors.caught('importing the transactions', error);
             if (showProcessTimer) {
                 importProcess.value = 0;
                 clearInterval(showProcessTimer);

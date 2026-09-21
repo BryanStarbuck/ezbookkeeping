@@ -1,9 +1,12 @@
 package machine
 
 import (
+	"errors"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 )
 
 // ingest_dedupe.go — the two de-duplication layers (apis.mdx §14.5).
@@ -111,6 +114,7 @@ func ingDays(first, last string) int {
 	b, err2 := time.Parse("2006-01-02", last)
 
 	if err1 != nil || err2 != nil {
+		errfile.Expected("parsing the first and last row dates of a statement", errors.Join(err1, err2))
 		return 0
 	}
 
@@ -168,6 +172,7 @@ func ingMonthsBetween(first, last string) []string {
 	b, err2 := time.Parse("2006-01", last[:7])
 
 	if err1 != nil || err2 != nil || b.Before(a) {
+		errfile.Expected("parsing the first and last months of a statement", errors.Join(err1, err2))
 		return nil
 	}
 

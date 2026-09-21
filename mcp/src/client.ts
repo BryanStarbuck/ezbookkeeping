@@ -189,65 +189,76 @@ export class MachinePlaneClient {
       );
     }
 
-    if (typeof parsed !== 'object' || parsed === null || !('ok' in parsed)) {
-      // Upstream's own {success, errorCode} shape: the binary predates the machine plane (§13).
-      throw fail(
-        'not_ready',
-        'The app answered without the machine-plane envelope; this build of ezBookkeeping predates the machine plane.',
-        'rebuild and restart the app: `just build` then `ezbk stop && ezbk up`',
-      );
-    }
-
-    if (parsed.ok) {
-      return parsed;
-    }
-
-    const code = parsed.error?.code ?? '';
-    const message = parsed.error?.message;
-    const details = parsed.error?.details;
-
-    if (code === 'unauthorized') {
-      // Distinct from not_ready on purpose: the app IS running, it is holding a different key.
-      throw fail(
-        'unauthorized',
-        "The app rejected this server's API secret key.",
-        'the app is holding an older key than the credentials file — ask the operator to restart it: `ezbk stop && ezbk up`',
-      );
-    }
-
-    if (code === 'not_found' && (message === undefined || message === '')) {
-      // The gate ladder's bare 404: the plane is not armed, or refused this socket (apis.mdx §5.7).
-      throw fail(
-        'not_ready',
-        'The machine plane refused the call before reading it (not armed, or the request did not arrive on loopback).',
-        'ask the operator to restart the app (`ezbk stop && ezbk up`) and read ~/T/_ezbookkeeping/server.log',
-      );
-    }
-
-    // The ceiling (apis.mdx §9.1) arrives as conflict with the real count; the MCP names it (§12.3).
-    if (code === 'conflict' && details !== null && typeof details === 'object' && 'would_change' in (details as object)) {
-      const d = details as { would_change?: number; max_changes?: number };
-      throw fail(
-        'too_many_changes',
-        `${String(d.would_change)} changes would be made; the ceiling is ${String(d.max_changes)}.`,
-        'raise max_changes deliberately, or narrow the selection',
-        details,
-      );
-    }
-
-    if (code === 'write_disabled') {
-      throw fail(
-        'write_disabled',
-        message ?? 'The write tier is off on the server.',
-        'restart the app with `ezbk stop && ezbk up --allow-write` (EZBK_MACHINE_ALLOW_WRITE=1) and set EZBKMCP_ALLOW_WRITE=1 for this server, then retry',
-        details,
-      );
-    }
-
-    if (code === 'internal') {
-      throw fail('upstream_error', message ?? `The app failed on ${method} ${route}.`, parsed.error?.hint ?? 'read ~/T/_ezbookkeeping/server.log', details);
-    }
-
-    throw fail(isErrorCode(code) ? code : 'upstream_error', message ?? `The app refused ${method} ${route}.`, parsed.error?.hint, details);
+    return interpretEnvelope(parsed, method, route);
   }
+}
+
+
+/**
+ * Turn the plane's answer into the tool's: a success passes through; a failure becomes the ToolError
+ * the model sees, with the plane's nine codes passed through unchanged and the two conditions this
+ * server names (the ceiling as too_many_changes, an unarmed plane as not_ready) recognised here.
+ * Exported so the scripted plane in the tests applies exactly the same mapping.
+ */
+export function interpretEnvelope(parsed: PlaneResponse, method: string, route: string): PlaneResponse {
+  if (typeof parsed !== 'object' || parsed === null || !('ok' in parsed)) {
+    // Upstream's own {success, errorCode} shape: the binary predates the machine plane (§13).
+    throw fail(
+      'not_ready',
+      'The app answered without the machine-plane envelope; this build of ezBookkeeping predates the machine plane.',
+      'rebuild and restart the app: `just build` then `ezbk stop && ezbk up`',
+    );
+  }
+
+  if (parsed.ok) {
+    return parsed;
+  }
+
+  const code = parsed.error?.code ?? '';
+  const message = parsed.error?.message;
+  const details = parsed.error?.details;
+
+  if (code === 'unauthorized') {
+    // Distinct from not_ready on purpose: the app IS running, it is holding a different key.
+    throw fail(
+      'unauthorized',
+      "The app rejected this server's API secret key.",
+      'the app is holding an older key than the credentials file — ask the operator to restart it: `ezbk stop && ezbk up`',
+    );
+  }
+
+  if (code === 'not_found' && (message === undefined || message === '')) {
+    // The gate ladder's bare 404: the plane is not armed, or refused this socket (apis.mdx §5.7).
+    throw fail(
+      'not_ready',
+      'The machine plane refused the call before reading it (not armed, or the request did not arrive on loopback).',
+      'ask the operator to restart the app (`ezbk stop && ezbk up`) and read ~/T/_ezbookkeeping/server.log',
+    );
+  }
+
+  // The ceiling (apis.mdx §9.1) arrives as conflict with the real count; the MCP names it (§12.3).
+  if (code === 'conflict' && details !== null && typeof details === 'object' && 'would_change' in details) {
+    const d = details as { would_change?: number; max_changes?: number };
+    throw fail(
+      'too_many_changes',
+      `${String(d.would_change)} changes would be made; the ceiling is ${String(d.max_changes)}.`,
+      'raise max_changes deliberately, or narrow the selection',
+      details,
+    );
+  }
+
+  if (code === 'write_disabled') {
+    throw fail(
+      'write_disabled',
+      message ?? 'The write tier is off on the server.',
+      'restart the app with `ezbk stop && ezbk up --allow-write` (EZBK_MACHINE_ALLOW_WRITE=1) and set EZBKMCP_ALLOW_WRITE=1 for this server, then retry',
+      details,
+    );
+  }
+
+  if (code === 'internal') {
+    throw fail('upstream_error', message ?? `The app failed on ${method} ${route}.`, parsed.error?.hint ?? 'read ~/T/_ezbookkeeping/server.log', details);
+  }
+
+  throw fail(isErrorCode(code) ? code : 'upstream_error', message ?? `The app refused ${method} ${route}.`, parsed.error?.hint, details);
 }

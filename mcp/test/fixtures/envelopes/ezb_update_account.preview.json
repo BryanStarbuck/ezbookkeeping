@@ -1,0 +1,47 @@
+{
+  "tool": "ezb_update_account",
+  "args": {
+    "account_id": "3844013760461144064",
+    "comment": "wallet"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_update_account",
+    "data": {
+      "changes": {
+        "update": 1
+      },
+      "confirm_token": "cf_125ae0088a9a309100e34fd10c5cc020",
+      "dry_run": true,
+      "expires_at": "2026-09-21T16:43:16Z",
+      "fingerprint": "sha256:a85c13b03b2f1bb9",
+      "preview": [
+        {
+          "field": "comment",
+          "from": "",
+          "id": "3844013760461144064",
+          "name": "Yen Cash",
+          "to": "wallet"
+        }
+      ]
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 1,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name"
+      ],
+      "dryRun": true,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

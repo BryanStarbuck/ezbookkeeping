@@ -27,6 +27,9 @@ import { Account } from '@/models/account.ts';
 import { TransactionCategory } from '@/models/transaction_category.ts';
 import { TransactionTag } from '@/models/transaction_tag.ts';
 import { type TransactionInsightDataItem } from '@/models/transaction.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/models/explorer.ts');
 
 export class InsightsExplorerBasicInfo implements InsightsExplorerInfoResponse {
     public id: string;
@@ -2015,7 +2018,8 @@ export abstract class AbstractTransactionExplorerDescriptionCondition<T = Descri
                 }
 
                 this.cachedRegex = regex;
-            } catch {
+            } catch (e) {
+                errors.expected('compiling the description filter regular expression', e);
                 this.cachedRegex = undefined;
             }
         }

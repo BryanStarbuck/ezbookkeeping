@@ -12,6 +12,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/api"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 	"github.com/mayswind/ezbookkeeping/pkg/services"
 	"github.com/mayswind/ezbookkeeping/pkg/validators"
@@ -885,6 +886,7 @@ func refCreateOneAccount(mc *Ctx, req models.AccountCreateRequest, clientSession
 	family, err := services.Accounts.GetAccountAndSubAccountsByAccountId(mc.Web, mc.Uid, id)
 
 	if err != nil {
+		errfile.Caught("reading the sub-accounts of a newly created account", err, errfile.F("account_id", id))
 		return id, []int64{id}, nil
 	}
 
@@ -1484,6 +1486,10 @@ func refInvRestoreAccount(mc *Ctx, payload, check json.RawMessage) error {
 	a, err := services.Accounts.GetAccountByAccountId(mc.Web, mc.Uid, id)
 
 	if err != nil || a == nil {
+		if err != nil {
+			errfile.Caught("reading the account to restore", err, errfile.F("account_id", id))
+		}
+
 		return Conflict("the account was deleted since; nothing to restore", "account %s no longer exists", want.Id)
 	}
 

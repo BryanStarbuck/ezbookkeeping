@@ -1,0 +1,27 @@
+{
+  "tool": "ezb_apply_statement_import",
+  "args": {
+    "fallback_category_ids": {
+      "expense": "3844013758582095880",
+      "income": "3844013758582095876"
+    },
+    "reimport_deleted": true,
+    "dry_run": false,
+    "confirm_token": "cf_bc09e0d6ceb6ee2e1e19f693a2b32c7e"
+  },
+  "envelope": {
+    "ok": false,
+    "tool": "ezb_apply_statement_import",
+    "error": {
+      "code": "invalid_input",
+      "message": "Unrecognized key: \"reimport_deleted\"",
+      "hint": "check the tool's input schema and retry with corrected arguments; unknown keys are refused, ids are strings, amounts are integer hundredths"
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:17.004Z",
+      "tookMs": 1
+    }
+  }
+}

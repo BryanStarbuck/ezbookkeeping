@@ -8,18 +8,16 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
 	"github.com/mayswind/ezbookkeeping/pkg/errfile"
-	errfileserver "github.com/mayswind/ezbookkeeping/pkg/errfile/server"
 	"github.com/mayswind/ezbookkeeping/pkg/settings"
 )
 
 // EnvCanary switches the hidden canary subcommand on (pm/error_err.mdx §15.3)
 const EnvCanary = "EZBK_ERROR_FILE_CANARY"
 
-// installErrorFile is net N5 of pm/error_err.mdx §8: every subcommand runs initializeSystem, so
-// this is the one place the error file is installed. App is "server" for `server run` and
-// "app-cli" for every other subcommand (§3.3). It also attaches the logrus hook (N6), so every
-// existing log.Errorf / log.Warnf becomes a report with no call-site edits.
-func installErrorFile(config *settings.Config) {
+// errfileOptions builds the Install options for net N5 of pm/error_err.mdx §8: App is "server" for
+// `server run` and "app-cli" for every other subcommand (§3.3). The binary has no signal handling
+// of its own, so the library flushes on SIGINT/SIGTERM/SIGHUP.
+func errfileOptions(config *settings.Config) errfile.Options {
 	words := commandWords(os.Args)
 	app := "app-cli"
 
@@ -27,13 +25,12 @@ func installErrorFile(config *settings.Config) {
 		app = "server"
 	}
 
-	errfile.Install(errfile.Options{
+	return errfile.Options{
 		App:           app,
 		Command:       strings.Join(words, " "),
-		HandleSignals: true, // the binary has no signal handling of its own
+		HandleSignals: true,
 		Development:   config != nil && config.Mode == settings.MODE_DEVELOPMENT,
-	})
-	errfileserver.InstallLogHook()
+	}
 }
 
 // commandWords returns the subcommand words of argv ("server run", "database update"), skipping
@@ -74,4 +71,10 @@ func errfileCanary(c *core.CliContext) error {
 	fmt.Printf("canary reported to %s\n", errfile.InstalledFile())
 
 	return nil
+}
+
+// CommandName is the subcommand words of argv ("server run", "database update") for the main() net
+// (pm/error_err.mdx §7 G8). Never the whole argv: a flag value could carry an address or a path.
+func CommandName(argv []string) string {
+	return strings.Join(commandWords(argv), " ")
 }

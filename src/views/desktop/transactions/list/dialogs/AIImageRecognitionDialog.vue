@@ -72,6 +72,9 @@ export interface AIImageRecognitionResult {
 import { generateRandomUUID } from '@/lib/misc.ts';
 import { compressJpgImageByQuality } from '@/lib/ui/common.ts';
 import logger from '@/lib/logger.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/transactions/list/dialogs/AIImageRecognitionDialog.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -173,6 +176,7 @@ function recognize(): void {
         recognizing.value = false;
         cancelRecognizingUuid.value = undefined;
     }).catch(error => {
+        errors.caught('recognizing the receipt image', error);
         if (error.canceled) {
             return;
         }

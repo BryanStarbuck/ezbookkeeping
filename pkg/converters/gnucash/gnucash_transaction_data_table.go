@@ -5,6 +5,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/converters/datatable"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -120,6 +121,7 @@ func (t *gnucashTransactionDataRowIterator) parseTransaction(ctx core.Context, u
 	dateTime, err := utils.ParseFromLongDateTimeWithTimezone2(gnucashTransaction.PostedDate)
 
 	if err != nil {
+		errfile.Expected("parsing the posted date of a gnucash transaction", err)
 		return nil, false, errs.ErrTransactionTimeInvalid
 	}
 
@@ -197,6 +199,7 @@ func (t *gnucashTransactionDataRowIterator) parseTransaction(ctx core.Context, u
 			amount, err := utils.ParseAmount(fromAmount)
 
 			if err != nil {
+				errfile.Expected("parsing the split amount of a gnucash transaction", err)
 				return nil, false, errs.ErrAmountInvalid
 			}
 
@@ -308,6 +311,7 @@ func (t *gnucashTransactionDataRowIterator) parseAmount(quantity string) (string
 	value, err := utils.StringToInt64(items[0])
 
 	if err != nil {
+		errfile.Expected("parsing the value of a gnucash split quantity", err)
 		return "", errs.ErrAmountInvalid
 	}
 
@@ -318,6 +322,7 @@ func (t *gnucashTransactionDataRowIterator) parseAmount(quantity string) (string
 	factor, err := utils.StringToInt64(items[1])
 
 	if err != nil {
+		errfile.Expected("parsing the denominator of a gnucash split quantity", err)
 		return "", errs.ErrAmountInvalid
 	}
 

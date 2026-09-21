@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 )
 
 // money.go is the ONE place a big-integer string becomes an int64, and the one place an exchange
@@ -39,6 +41,7 @@ func ParseAmountString(s string) (int64, error) {
 	n, err := strconv.ParseInt(s, 10, 64)
 
 	if err != nil || n > MaxSafeInteger || n < -MaxSafeInteger {
+		errfile.Caught("parsing an upstream amount string into hundredths", err)
 		return 0, NewFail(CodeUpstreamError, "narrow the range or filter", "an amount exceeds the safe integer range and was refused rather than rounded")
 	}
 
@@ -190,6 +193,7 @@ func AmountArg(name string, v json.Number) (int64, error) {
 	n, err := strconv.ParseInt(s, 10, 64)
 
 	if err != nil || n > 999999999999999 || n < -999999999999999 {
+		errfile.Expected("parsing an amount argument", err)
 		return 0, Invalid("amounts are integer hundredths within ±999,999,999,999,999", "%s %s is out of range", name, s)
 	}
 

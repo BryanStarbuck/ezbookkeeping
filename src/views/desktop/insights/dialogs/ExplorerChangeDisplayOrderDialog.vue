@@ -122,6 +122,9 @@ import {
     mdiEyeOffOutline,
     mdiDrag
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/insights/dialogs/ExplorerChangeDisplayOrderDialog.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -164,6 +167,7 @@ function open(): Promise<void> {
         loading.value = false;
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('loading the exploration list', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -187,6 +191,7 @@ function reload(): void {
 
         snackbar.value?.showMessage('Exploration list has been updated');
     }).catch(error => {
+        errors.caught('loading the exploration list', error);
         loading.value = false;
 
         if (error && error.isUpToDate) {
@@ -210,6 +215,7 @@ function hide(exploration: InsightsExplorerBasicInfo, hidden: boolean): void {
         updating.value = false;
         explorationHiding.value[exploration.id] = false;
     }).catch(error => {
+        errors.caught('hiding or showing the exploration', error);
         updating.value = false;
         explorationHiding.value[exploration.id] = false;
 
@@ -230,6 +236,7 @@ function saveDisplayOrder(): void {
         loading.value = false;
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('updating the exploration display orders', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -266,6 +273,7 @@ function onMove(event: { moved: { element: { id: string }; oldIndex: number; new
     }).then(() => {
         displayOrderModified.value = true;
     }).catch(error => {
+        errors.caught('changing the exploration display order', error);
         snackbar.value?.showError(error);
     });
 }

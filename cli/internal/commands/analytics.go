@@ -19,6 +19,7 @@ import (
 
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/app"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/client"
+	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/errfile"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/render"
 )
 
@@ -79,6 +80,7 @@ func asSpan(v string, now time.Time) (start, end time.Time, relative bool, err e
 		t, perr := time.ParseInLocation("2006-01-02", raw, loc)
 
 		if perr != nil {
+			errfile.Expected("parsing a typed day", perr)
 			return time.Time{}, time.Time{}, false, fmt.Errorf("%q is not a real date", raw)
 		}
 
@@ -87,6 +89,7 @@ func asSpan(v string, now time.Time) (start, end time.Time, relative bool, err e
 		t, perr := time.ParseInLocation("2006-01", raw, loc)
 
 		if perr != nil {
+			errfile.Expected("parsing a typed month", perr)
 			return time.Time{}, time.Time{}, false, fmt.Errorf("%q is not a real month", raw)
 		}
 
@@ -95,6 +98,7 @@ func asSpan(v string, now time.Time) (start, end time.Time, relative bool, err e
 		t, perr := time.ParseInLocation("2006", raw, loc)
 
 		if perr != nil {
+			errfile.Expected("parsing a typed year", perr)
 			return time.Time{}, time.Time{}, false, fmt.Errorf("%q is not a year", raw)
 		}
 
@@ -1436,6 +1440,7 @@ func init() {
 			Run: asRun(asSpec{path: "/analytics/anomalies", extra: func(c *app.Ctx, q url.Values) error {
 				if z := c.String("z"); z != "" {
 					if f, err := strconv.ParseFloat(z, 64); err != nil || f <= 0 || f > 100 {
+						errfile.Expected("parsing the --z flag", err)
 						return app.Usage("--z must be a positive number up to 100, e.g. 2.5", "")
 					}
 

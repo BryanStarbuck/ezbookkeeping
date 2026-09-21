@@ -1,0 +1,137 @@
+{
+  "tool": "ezb_get_runway",
+  "args": {},
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_get_runway",
+    "data": {
+      "asOf": "2026-09-21",
+      "basis": {
+        "days": 184,
+        "end": "2026-08-31",
+        "start": "2026-03-01"
+      },
+      "basisMonths": 6,
+      "byCurrency": [
+        {
+          "currency": "EUR",
+          "liquidAssets": 0,
+          "runway": {
+            "averageMonthlyNetOutflow": 1375,
+            "days": 0,
+            "months": "0.0",
+            "netOutflow": 8250,
+            "status": "no_liquid_assets",
+            "wholeMonths": 0
+          },
+          "trailingExpense": -8250,
+          "trailingIncome": 0
+        },
+        {
+          "currency": "USD",
+          "liquidAssets": 2185250,
+          "runway": {
+            "averageMonthlyNetOutflow": -158008,
+            "days": null,
+            "months": "",
+            "netOutflow": -948050,
+            "status": "not_burning",
+            "wholeMonths": null
+          },
+          "trailingExpense": -51950,
+          "trailingIncome": 1000000
+        }
+      ],
+      "liquidAccounts": [
+        {
+          "accountId": "3844013758313660416",
+          "balance": 1085250,
+          "category": "checking",
+          "currency": "USD",
+          "name": "Northbank Checking"
+        },
+        {
+          "accountId": "3844013758313660417",
+          "balance": 1100000,
+          "category": "savings",
+          "currency": "USD",
+          "name": "Meridian Savings"
+        }
+      ],
+      "liquidCategories": [
+        "cash",
+        "checking",
+        "savings"
+      ],
+      "provenance": {
+        "absentPeriodsAreOmitted": true,
+        "accountIds": [
+          "3844013758313660416",
+          "3844013758313660418",
+          "3844013758313660417"
+        ],
+        "accountsExplicit": false,
+        "amountUnit": "integer hundredths of the currency named beside each figure",
+        "convertedFiguresRounding": null,
+        "filters": {
+          "asOf": "2026-09-21",
+          "balanceModifications": "excluded",
+          "basis": 6,
+          "categoryIds": [],
+          "excludeCategoryIds": [],
+          "includeHiddenAccounts": false,
+          "includeTransfers": false,
+          "liquidCategories": [
+            "cash",
+            "checking",
+            "savings"
+          ],
+          "tagFilter": "",
+          "useTransactionTimezone": false
+        },
+        "hiddenAccountsExcluded": [],
+        "notes": [
+          "runway = liquid assets ÷ average monthly (expense − income) over the basis months; transfers and balance modifications are not spending; months are truncated, never rounded up"
+        ],
+        "range": {
+          "end": "2026-09-21",
+          "endUnix": 1790035199,
+          "start": "2026-09-21",
+          "startUnix": 1789948800,
+          "timezone": "UTC"
+        },
+        "rates": [],
+        "rowCount": 7,
+        "signConvention": "signed: money in is positive, money out is negative",
+        "timezone": "UTC",
+        "upstream": [
+          "GET /api/v1/accounts/list.json",
+          "GET /api/v1/transaction/categories/list.json",
+          "GET /api/v1/transactions/amounts/daily.json",
+          "GET /api/v1/transactions/statistics/asset_trends.json"
+        ]
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "label",
+        "name",
+        "comment",
+        "variants",
+        "text"
+      ],
+      "composed": true,
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

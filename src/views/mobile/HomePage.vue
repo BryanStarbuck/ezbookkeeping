@@ -110,6 +110,9 @@ import {
     isTransactionFromAIImageRecognitionEnabled
 } from '@/lib/server_settings.ts';
 import logger from '@/lib/logger.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/HomePage.vue');
 
 type AIImageRecognitionSheetType = InstanceType<typeof AIImageRecognitionSheet>;
 
@@ -174,6 +177,7 @@ function init(): void {
 
             loading.value = false;
         }).catch(error => {
+            errors.caught('loading the home page', error);
             loading.value = false;
 
             if (!error.processed) {
@@ -199,6 +203,7 @@ function reload(done?: () => void): void {
             showToast('Data has been updated');
         }
     }).catch(error => {
+        errors.caught('loading the home page', error);
         done?.();
 
         if (!error.processed) {

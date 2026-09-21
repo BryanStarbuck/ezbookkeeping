@@ -12,6 +12,7 @@ import (
 	"gopkg.in/ini.v1"
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/locales"
 )
@@ -871,6 +872,7 @@ func loadStorageConfiguration(config *Config, configFile *ini.File, sectionName 
 	config.LocalFileSystemPath = finalLocalFileSystemRootPath
 
 	if config.StorageType == LocalFileSystemObjectStorageType && err != nil {
+		errfile.Caught("resolving the local file system storage path", err)
 		return errs.ErrInvalidLocalFileSystemStoragePath
 	}
 

@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 )
 
 // ingest_root.go — the statements root, path containment and the staging directory
@@ -82,12 +84,14 @@ func ingResolveRoot(arg string) (*ingRoot, error) {
 	real, err := filepath.EvalSymlinks(filepath.Clean(expanded))
 
 	if err != nil {
+		errfile.Expected("resolving the statements root", err)
 		return nil, NotFound("check the statements root exists and is readable by the server's user", "the statements root %q cannot be resolved", display)
 	}
 
 	info, err := os.Stat(real)
 
 	if err != nil || !info.IsDir() {
+		errfile.Expected("inspecting the statements root", err)
 		return nil, NotFound("point root at the directory that holds the statements tree", "the statements root %q is not a directory", display)
 	}
 
@@ -133,6 +137,7 @@ func (r *ingRoot) Resolve(p string) (string, error) {
 	real, err := ingEvalExistingPrefix(joined)
 
 	if err != nil {
+		errfile.Expected("resolving a path under the statements root", err)
 		return "", NotFound("paths are relative to the statements root and must stay inside it", "the path %q cannot be resolved", p)
 	}
 
@@ -148,6 +153,7 @@ func (r *ingRoot) Rel(real string) string {
 	rel, err := filepath.Rel(r.Real, real)
 
 	if err != nil {
+		errfile.Expected("rendering a path relative to the statements root", err)
 		return filepath.ToSlash(filepath.Base(real))
 	}
 
@@ -256,6 +262,7 @@ func (s *ingStaging) Ensure() error {
 			entries, rerr := os.ReadDir(s.Dir)
 
 			if rerr != nil {
+				errfile.Caught("listing the staging directory", rerr)
 				return NotFound("check the server's user can read the staging directory", "the staging directory %q cannot be read", s.Rel)
 			}
 
@@ -279,9 +286,11 @@ func (s *ingStaging) Ensure() error {
 		}
 	} else if errors.Is(err, fs.ErrNotExist) {
 		if merr := os.MkdirAll(s.Dir, 0o700); merr != nil {
+			errfile.Caught("creating the staging directory", merr)
 			return NewFail(CodeInternal, "check the server's user can write under the statements root", "cannot create the staging directory %q", s.Rel)
 		}
 	} else {
+		errfile.Caught("inspecting the staging directory", err)
 		return NewFail(CodeInternal, "check the server's user can read the statements root", "cannot inspect the staging directory %q", s.Rel)
 	}
 
@@ -289,6 +298,7 @@ func (s *ingStaging) Ensure() error {
 	real, err := filepath.EvalSymlinks(s.Dir)
 
 	if err != nil || !ingWithin(s.Root.Real, real) || real == s.Root.Real {
+		errfile.Warn("re-checking that the staging directory stays inside the statements root", err)
 		return NotFound("the staging directory must stay inside the statements root", "the staging directory %q resolves outside the statements root", s.Rel)
 	}
 
@@ -319,6 +329,7 @@ func (s *ingStaging) Path(rel string) (string, error) {
 	real, err := ingEvalExistingPrefix(p)
 
 	if err != nil || !ingWithin(s.Dir, real) || real == s.Dir {
+		errfile.Expected("resolving a path inside the staging directory", err)
 		return "", NotFound("staging paths stay inside the staging directory", "the staging path %q is invalid", rel)
 	}
 
@@ -334,6 +345,7 @@ func (s *ingStaging) WriteFile(rel string, data []byte) error {
 	}
 
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		errfile.Caught("creating a staging subdirectory", err)
 		return NewFail(CodeInternal, "check the server's user can write the staging directory", "cannot create a staging subdirectory")
 	}
 
@@ -355,6 +367,7 @@ func (s *ingStaging) ReadFile(rel string) ([]byte, error) {
 	}
 
 	if err != nil {
+		errfile.Caught("reading a staging file", err, errfile.F("file", filepath.Base(rel)))
 		return nil, NewFail(CodeInternal, "check the server's user can read the staging directory", "cannot read staging file %q", rel)
 	}
 
@@ -372,6 +385,7 @@ func (s *ingStaging) AppendLine(rel, line string) error {
 	f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 
 	if err != nil {
+		errfile.Caught("opening a staging file for append", err, errfile.F("file", filepath.Base(rel)))
 		return NewFail(CodeInternal, "check the server's user can write the staging directory", "cannot append to %q", rel)
 	}
 
@@ -395,6 +409,7 @@ func (s *ingStaging) Remove(rel string) error {
 	}
 
 	if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		errfile.Caught("removing a staging file", err, errfile.F("file", filepath.Base(rel)))
 		return NewFail(CodeInternal, "check the server's user can write the staging directory", "cannot remove staging file %q", rel)
 	}
 
@@ -418,28 +433,33 @@ func ingWriteFileAtomic(allowedDir, path string, data []byte) error {
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 
 	if err != nil {
+		errfile.Caught("creating the temporary file for an atomic write", err, errfile.F("file", filepath.Base(path)))
 		return NewFail(CodeInternal, "check the server's user can write the directory", "cannot write %s", filepath.Base(path))
 	}
 
 	if _, err := f.Write(data); err != nil {
-		f.Close()
-		os.Remove(tmp)
+		errfile.Caught("writing the temporary file of an atomic write", err, errfile.F("file", filepath.Base(path)))
+		_ = f.Close()
+		_ = os.Remove(tmp)
 		return NewFail(CodeInternal, "check free disk space", "cannot write %s", filepath.Base(path))
 	}
 
 	if err := f.Sync(); err != nil {
-		f.Close()
-		os.Remove(tmp)
+		errfile.Caught("syncing the temporary file of an atomic write", err, errfile.F("file", filepath.Base(path)))
+		_ = f.Close()
+		_ = os.Remove(tmp)
 		return NewFail(CodeInternal, "check free disk space", "cannot sync %s", filepath.Base(path))
 	}
 
 	if err := f.Close(); err != nil {
-		os.Remove(tmp)
+		errfile.Caught("closing the temporary file of an atomic write", err, errfile.F("file", filepath.Base(path)))
+		_ = os.Remove(tmp)
 		return NewFail(CodeInternal, "check free disk space", "cannot close %s", filepath.Base(path))
 	}
 
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
+		errfile.Caught("renaming the temporary file over its target", err, errfile.F("file", filepath.Base(path)))
+		_ = os.Remove(tmp)
 		return NewFail(CodeInternal, "check the server's user can write the directory", "cannot replace %s", filepath.Base(path))
 	}
 

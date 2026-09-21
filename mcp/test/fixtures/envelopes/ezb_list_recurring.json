@@ -1,0 +1,136 @@
+{
+  "tool": "ezb_list_recurring",
+  "args": {
+    "start": "2026-01-01",
+    "end": "2026-09-30"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_list_recurring",
+    "data": {
+      "alreadyScheduled": [],
+      "annualizedTotals": [
+        {
+          "amount": -153600,
+          "currency": "USD"
+        }
+      ],
+      "groupsExamined": 1,
+      "provenance": {
+        "absentPeriodsAreOmitted": true,
+        "accountIds": [
+          "3844013758313660416",
+          "3844013758313660418",
+          "3844013758313660417"
+        ],
+        "accountsExplicit": false,
+        "amountUnit": "integer hundredths of the currency named beside each figure",
+        "convertedFiguresRounding": null,
+        "filters": {
+          "balanceModifications": "excluded",
+          "categoryIds": [],
+          "direction": "out",
+          "excludeCategoryIds": [],
+          "includeHiddenAccounts": false,
+          "includeInactive": false,
+          "includeScheduled": false,
+          "includeTransfers": false,
+          "minOccurrences": 3,
+          "tagFilter": "",
+          "toleranceDays": 3,
+          "useTransactionTimezone": false
+        },
+        "hiddenAccountsExcluded": [],
+        "notes": [
+          "a group is recurring when at least three quarters of the gaps between its occurrences fit one cadence (weekly, biweekly, monthly, quarterly, semiannual, yearly) within tolerance_days; typicalAmount is the median; annualizedCost = typicalAmount × occurrences per year; annualizedTotals count active detections only"
+        ],
+        "range": {
+          "end": "2026-09-30",
+          "endUnix": 1790812799,
+          "start": "2026-01-01",
+          "startUnix": 1767225600,
+          "timezone": "UTC"
+        },
+        "rates": [],
+        "rowCount": 6,
+        "signConvention": "signed: money in is positive, money out is negative",
+        "timezone": "UTC",
+        "upstream": [
+          "GET /api/v1/accounts/list.json",
+          "GET /api/v1/transaction/categories/list.json",
+          "GET /api/v1/transaction/templates/list.json",
+          "GET /api/v1/transactions/list/all.json"
+        ]
+      },
+      "recurring": [
+        {
+          "accountIds": [
+            "3844013758313660416"
+          ],
+          "active": true,
+          "amountVaries": true,
+          "annualizedCost": -153600,
+          "cadence": "monthly",
+          "categoryIds": [
+            "3844013758582095877"
+          ],
+          "currency": "USD",
+          "evidence": [
+            {
+              "amount": -12350,
+              "date": "2026-07-03",
+              "id": "3844013758447878148"
+            },
+            {
+              "amount": -13100,
+              "date": "2026-08-02",
+              "id": "3844013758447878151"
+            },
+            {
+              "amount": -12800,
+              "date": "2026-09-02",
+              "id": "3844013758447878156"
+            }
+          ],
+          "firstDate": "2026-07-03",
+          "gapDays": [
+            30,
+            31
+          ],
+          "gaps": 2,
+          "gapsMatching": 2,
+          "key": "expense|USD|c:NORTHSIDE MARKET",
+          "kind": "expense",
+          "label": "NORTHSIDE MARKET",
+          "lastDate": "2026-09-02",
+          "maxAmount": -12350,
+          "minAmount": -13100,
+          "nextExpected": "2026-10-02",
+          "occurrences": 3,
+          "typicalAmount": -12800
+        }
+      ]
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "label",
+        "name",
+        "comment",
+        "variants",
+        "text"
+      ],
+      "composed": true,
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

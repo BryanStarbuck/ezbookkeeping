@@ -49,13 +49,13 @@ func TestSecurityEveryRouteRequiresTheKey(t *testing.T) {
 		path := BasePath + jrParamPath(rd.Path)
 
 		cases := map[string]jrReq{
-			"missing key":     {method: rd.Method, path: path, noKey: true},
-			"wrong key":       {method: rd.Method, path: path, key: strings.Repeat("e", 64)},
-			"truncated key":   {method: rd.Method, path: path, key: jrGateKey[:32]},
-			"empty key":       {method: rd.Method, path: path, key: " "},
-			"key in query":    {method: rd.Method, path: path + "?api_key=" + jrGateKey, noKey: true},
-			"bearer instead":  {method: rd.Method, path: path, noKey: true, headers: map[string]string{"Authorization": "Bearer " + jrGateKey}},
-			"cookie instead":  {method: rd.Method, path: path, noKey: true, headers: map[string]string{"Cookie": HeaderAPIKey + "=" + jrGateKey}},
+			"missing key":    {method: rd.Method, path: path, noKey: true},
+			"wrong key":      {method: rd.Method, path: path, key: strings.Repeat("e", 64)},
+			"truncated key":  {method: rd.Method, path: path, key: jrGateKey[:32]},
+			"empty key":      {method: rd.Method, path: path, key: " "},
+			"key in query":   {method: rd.Method, path: path + "?api_key=" + jrGateKey, noKey: true},
+			"bearer instead": {method: rd.Method, path: path, noKey: true, headers: map[string]string{"Authorization": "Bearer " + jrGateKey}},
+			"cookie instead": {method: rd.Method, path: path, noKey: true, headers: map[string]string{"Cookie": HeaderAPIKey + "=" + jrGateKey}},
 		}
 
 		for name, q := range cases {

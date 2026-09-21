@@ -1,0 +1,50 @@
+{
+  "tool": "ezb_set_transaction_category",
+  "args": {
+    "filter": {
+      "keyword": "ACME HARDWARE"
+    },
+    "category_name": "Home Repair",
+    "dry_run": false,
+    "confirm_token": "cf_cff063d01b09b5d7f316f888de04ea97"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_set_transaction_category",
+    "data": {
+      "changes": {
+        "unchanged": 0,
+        "update": 2
+      },
+      "dry_run": false,
+      "fingerprint": "sha256:0136c89684b0e4ab",
+      "journal_id": 6,
+      "result": {
+        "ids": [
+          "3844013758447878154",
+          "3844013758447878149"
+        ],
+        "updated": 2
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 3,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name"
+      ],
+      "composed": true,
+      "dryRun": false,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

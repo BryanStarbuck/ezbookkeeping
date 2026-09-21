@@ -5,6 +5,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
 	"github.com/mayswind/ezbookkeeping/pkg/duplicatechecker"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -98,13 +99,13 @@ func (a *ForgetPasswordsApi) UserForgetPasswordRequestHandler(c *core.WebContext
 		return nil, errs.ErrTokenGenerating
 	}
 
-	go func() {
+	errfile.Go("sending the password reset email", func() {
 		err = a.forgetPasswords.SendPasswordResetEmail(c, user, token, c.GetClientLocale())
 
 		if err != nil {
 			log.Warnf(c, "[forget_passwords.UserForgetPasswordRequestHandler] cannot send email to \"%s\", because %s", user.Email, err.Error())
 		}
-	}()
+	})
 
 	return true, nil
 }

@@ -16,6 +16,9 @@ import {
     clearCustomIconCache,
     clearAllBrowserCaches
 } from '@/lib/cache.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/base/settings/AppBrowserCacheSettingPageBase.ts');
 
 export function useAppBrowserCacheSettingPageBase() {
     const { tt, formatNumberToLocalizedNumerals } = useI18n();
@@ -88,6 +91,7 @@ export function useAppBrowserCacheSettingPageBase() {
 
                 resolve();
             }).catch(error => {
+                errors.caught('loading the browser cache statistics', error);
                 if (updateLoadingState) {
                     loading.value = false;
                 }

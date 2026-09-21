@@ -386,6 +386,9 @@ import {
     mdiDrag,
     mdiDotsVertical
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/accounts/ListPage.vue');
 
 type ConfirmDialogType = InstanceType<typeof ConfirmDialog>;
 type SnackBarType = InstanceType<typeof SnackBar>;
@@ -493,6 +496,7 @@ function reload(force: boolean): void {
             snackbar.value?.showMessage('Account list has been updated');
         }
     }).catch(error => {
+        errors.caught('loading the account list', error);
         loading.value = false;
 
         if (error && error.isUpToDate) {
@@ -537,6 +541,7 @@ function add(): void {
             snackbar.value?.showMessage(result.message);
         }
     }).catch(error => {
+        errors.caught('opening the account edit dialog', error);
         if (error) {
             snackbar.value?.showError(error);
         }
@@ -556,6 +561,7 @@ function edit(account: Account): void {
             reload(false);
         }
     }).catch(error => {
+        errors.caught('opening the account edit dialog', error);
         if (error) {
             snackbar.value?.showError(error);
         }
@@ -617,6 +623,7 @@ function updateLastReconciledTime(account: Account): void {
             }
 
         }).catch(error => {
+            errors.caught('updating the last reconciled time', error);
             loading.value = false;
 
             if (error) {
@@ -659,6 +666,7 @@ function hide(account: Account, targetAccount: Account, hidden: boolean): void {
 
         loading.value = false;
     }).catch(error => {
+        errors.caught('hiding the account', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -685,6 +693,7 @@ function remove(account: Account): void {
                 activeSubAccount.value[account.id] = '';
                 loading.value = false;
             }).catch(error => {
+                errors.caught('deleting the sub account', error);
                 loading.value = false;
 
                 if (!error.processed) {
@@ -701,6 +710,7 @@ function remove(account: Account): void {
             }).then(() => {
                 loading.value = false;
             }).catch(error => {
+                errors.caught('deleting the account', error);
                 loading.value = false;
 
                 if (!error.processed) {
@@ -722,6 +732,7 @@ function saveSortResult(): void {
         loading.value = false;
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('updating the account display orders', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -751,6 +762,7 @@ function onMove(event: { moved: { element: { id: string }, oldIndex: number, new
     }).then(() => {
         displayOrderModified.value = true;
     }).catch(error => {
+        errors.caught('changing the account display order', error);
         snackbar.value?.showError(error);
     });
 }

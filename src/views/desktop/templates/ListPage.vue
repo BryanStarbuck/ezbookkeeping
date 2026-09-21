@@ -177,6 +177,9 @@ import {
     mdiTextBoxOutline,
     mdiClockTimeNineOutline
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/templates/ListPage.vue');
 
 type ConfirmDialogType = InstanceType<typeof ConfirmDialog>;
 type SnackBarType = InstanceType<typeof SnackBar>;
@@ -217,6 +220,7 @@ function init(): void {
     }).then(() => {
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading all templates', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -237,6 +241,7 @@ function reload(): void {
 
         snackbar.value?.showMessage('Template list has been updated');
     }).catch(error => {
+        errors.caught('loading all templates', error);
         loading.value = false;
 
         if (error && error.isUpToDate) {
@@ -257,6 +262,7 @@ function add(): void {
             snackbar.value?.showMessage(result.message);
         }
     }).catch(error => {
+        errors.expected('opening the edit dialog', error);
         if (error) {
             snackbar.value?.showError(error);
         }
@@ -272,6 +278,7 @@ function edit(template: TransactionTemplate): void {
             snackbar.value?.showMessage(result.message);
         }
     }).catch(error => {
+        errors.expected('opening the edit dialog', error);
         if (error) {
             snackbar.value?.showError(error);
         }
@@ -289,6 +296,7 @@ function hide(template: TransactionTemplate, hidden: boolean): void {
         updating.value = false;
         templateHiding.value[template.id] = false;
     }).catch(error => {
+        errors.caught('hiding or showing the template', error);
         updating.value = false;
         templateHiding.value[template.id] = false;
 
@@ -309,6 +317,7 @@ function remove(template: TransactionTemplate): void {
             updating.value = false;
             templateRemoving.value[template.id] = false;
         }).catch(error => {
+            errors.caught('deleting the template', error);
             updating.value = false;
             templateRemoving.value[template.id] = false;
 
@@ -332,6 +341,7 @@ function saveSortResult(): void {
         loading.value = false;
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('updating the template display orders', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -360,6 +370,7 @@ function onMove(event: { moved: { element: { id: string }, oldIndex: number, new
     }).then(() => {
         displayOrderModified.value = true;
     }).catch(error => {
+        errors.caught('changing the template display order', error);
         snackbar.value?.showError(error);
     });
 }

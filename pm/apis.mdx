@@ -591,12 +591,18 @@ Order is load-bearing. Nothing below a gate runs until it passes.
 2. **"Arrived on loopback" includes any web page the operator has open.** ezBookkeeping sets no CORS
    headers today, so a cross-origin page cannot _read_ a response — but it can still _send_ a
    simple request, and a DNS-rebound hostname turns a remote page into a same-origin one. The key is
-   what stops it; gate 2 is the second wall. A browser always sends `Origin` or `Sec-Fetch-Site` and
-   cannot be talked out of it; `ezbk`, the MCP and `curl` send neither, so **presence is the
-   signal**. Any request with an `Origin` header, or `Sec-Fetch-Site` other than absent, is `404`.
-   The plane also pins `Host` to `127.0.0.1:<port>` / `localhost:<port>` / `[::1]:<port>` —
-   rebinding is precisely the trick that has to lie about `Host` — and sets `Cache-Control:
-   no-store` and `Vary: Origin` on every answer.
+   what stops it; gate 2 is the second wall. A browser always sends `Origin`, `Sec-Fetch-Site` or
+   `Sec-Fetch-Mode` and cannot be talked out of them; `ezbk`, the MCP and `curl` send none, so
+   **presence is the signal**. Any request with an `Origin` header, or a `Sec-Fetch-Site` or
+   `Sec-Fetch-Mode` header other than absent, is `404`. The plane also pins `Host` to
+   `127.0.0.1:<port>` / `localhost:<port>` / `[::1]:<port>` — rebinding is precisely the trick that
+   has to lie about `Host` — and sets `Cache-Control: no-store` and `Vary: Origin` on every answer.
+
+   **A consequence for clients written in Node:** Node's `fetch` is undici, which stamps
+   `Sec-Fetch-Mode: cors` on every request and gives the caller no way to remove it, so a `fetch`
+   client is a browser to this gate and gets `404` forever. The MCP therefore speaks `node:http` /
+   `node:https` and carries a canary that fails on any `fetch(` in its source (mcp.mdx §8). Any future
+   Node client of this plane has the same constraint.
 
 **The plane is loopback-only even when the server is not.** Upstream's default is
 `http_addr = 0.0.0.0`; the fork's `justfile` overrides it to `127.0.0.1`, but an operator can undo
@@ -605,7 +611,7 @@ that. Gate 1 does not care what the listener is bound to: a phone on the Wi-Fi r
 boot line says so loudly, because the browser door (`/api/v1`) is then network-reachable even though
 this one is not.
 
-Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/gates.go` — `isLoopbackSocket(c)`, `isBrowserRequest(c)`, `hostAllowed(c)`, `keyMatches(c)`
+Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/gates.go` — `isLoopbackSocket(c)`, `isBrowserRequest(c)` (`Origin`, `Sec-Fetch-Site`, `Sec-Fetch-Mode`), `hostAllowed(c)`, `keyMatches(c)`
 
 ### 5.8 Rotation, and what the key is not
 
@@ -753,8 +759,8 @@ upstream code is kept in `error.upstreamCode` so nothing is lost in the mapping.
 | `conflict`       | 409  | the world changed under the caller — stale token, duplicate submission, ambiguous name          |
 | `write_disabled` | 403  | gate 4 — a write route with the tier off                                                       |
 | `not_ready`      | 503  | the plane is not armed, no user can be bound, or the database is not open                      |
-| `upstream_error` | 502  | a service returned an error we can name (mapped from `pkg/errs`)                               |
-| `internal`       | 500  | anything else; the message is generic and the detail is in the log                             |
+| `upstream_error` | 502  | a service returned an error we can name (mapped from `pkg/errs`); the hint points at `~/T/ezbookkeeping/error.err` |
+| `internal`       | 500  | anything else; the message is generic and the detail is in `~/T/ezbookkeeping/error.err`      |
 
 **Mapping from `pkg/errs` (LOCKED).** Upstream's codes are `category*100000 + subcategory*1000 +
 index` (`pkg/errs/error.go`). The mapping is a table in `envelope.go`, not a guess per handler:
@@ -762,6 +768,15 @@ index` (`pkg/errs/error.go`). The mapping is a table in `envelope.go`, not a gue
 other validation errors → `invalid_input`; `ErrRepeatedRequest` → `conflict`; feature-restriction and
 `ErrIPForbidden` → `forbidden`; `ErrOperationFailed` and database errors → `upstream_error` with the
 upstream code attached; anything unmapped → `internal`, logged with its code so the table can grow.
+
+**Where the detail goes.** Every fault the plane answers with `internal` or `upstream_error` is also
+written, with its stack and its cause chain, to `~/T/ezbookkeeping/error.err` — the one error file all
+three processes of this fork share ([error_err.mdx](./error_err.mdx)) — and both codes' hint says so:
+_"read ~/T/ezbookkeeping/error.err for the server-side detail"_. An answer to the caller (a 4xx-shaped
+code) is recorded as expected and never bloats that file. Neither hint ever carries the stack itself
+(§19.3).
+
+Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/envelope.go` — `Upstream()`, `toFail()`, `reportLost()`
 
 **A tenth code is a spec change, not a commit.** mcp.mdx §12.3 lists twelve: the three extra
 (`confirm_required`, `too_many_changes`, `wrong_server`) are minted by the MCP and never appear on
@@ -921,7 +936,11 @@ Four things must be true before one transaction changes:
 3. `dry_run: false` in the call.
 4. `confirm_token` echoing the token the matching dry run or plan returned.
 
-Plus a ceiling: `max_changes`, default **200**, and a refusal over it **reports the real count**.
+Plus a ceiling: `max_changes`, default **200**, and a refusal over it **reports the real count** — as
+`409 conflict` with `details.would_change`, `details.max_changes` and the change counts. There is no
+`too_many_changes` code on this wire; the MCP mints one from that shape (mcp.mdx §12.3).
+
+Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/confirm.go` — the ceiling check in the apply path
 
 ### 9.2 `dry_run` is the default, and the preview is the write (R4)
 
@@ -1055,7 +1074,7 @@ Conventions for every table below:
 | Route           | M   | Tier | Answers                                                                                                        |
 | --------------- | --- | ---- | -------------------------------------------------------------------------------------------------------------- |
 | `/ping`         | GET | R    | liveness, key fingerprint, write/admin tier, server version                                                    |
-| `/whoami`       | GET | R    | install path, bound user (username, default currency, first day of week, 2FA on?), tiers, key fingerprint, statements root, timezone |
+| `/whoami`       | GET | R    | install path, bound user (username, default currency, first day of week, 2FA on?), tiers, key fingerprint, credentials file, statements root, timezone. The three paths (`installPath`, `credentialsFile`, `statementsRoot`) are **home-relative** (`~/…`) — §19.3 |
 | `/capabilities` | GET | R    | §8.3                                                                                                           |
 | `/health`       | GET | R    | database open? user bindable? which users exist (when unbindable)? upstream features on? what to do next       |
 
@@ -1088,7 +1107,7 @@ deliberate omissions).
 | ------------------------------------- | ------ | ----- | ----------------------------------------------------------------------------------------------------------------- | -------- |
 | `/accounts`                           | GET    | R     | `include_hidden` (false), `category`, `currency`, `with_sub_accounts` (true)                                      | —        |
 | `/accounts/:id`                       | GET    | R     | —                                                                                                                 | —        |
-| `/accounts/:id/balance`               | GET    | R     | `as_of` (`YYYY-MM-DD`, default today) — composed from the daily asset trend (§12.2)                               | —        |
+| `/accounts/:id/balance`               | GET    | R     | `as_of` (`YYYY-MM-DD`, default today) — composed from the daily asset trend (§12.2). **`:id` is an id only**, never a name — the same resolver as `/accounts/:id/balance-history` | —        |
 | `/accounts/:id/properties`            | GET    | R     | transaction count, first/last transaction time, last reconciled time, credit-card statement date and limit        | —        |
 | `/accounts`                           | POST   | W     | `name`, `category` (cash\|checking\|savings\|credit_card\|virtual\|debt\|receivables\|investment\|certificate_of_deposit), `currency`, `initial_balance` (hundredths), `initial_balance_date`, `color`, `icon`, `comment`, `credit_card_statement_date`, `sub_accounts[]`, `idempotency_key` | resolve |
 | `/accounts/batch`                     | POST   | W     | `accounts[]` — §15 uses this                                                                                      | resolve  |
@@ -1113,8 +1132,8 @@ cleared/reconciled flag per transaction and no "adjust" step:
 | Route                           | M    | Tier | Arguments                                                                                       |
 | ------------------------------- | ---- | ---- | ----------------------------------------------------------------------------------------------- |
 | `/accounts/:id/reconciliation`  | GET  | R    | `start`, `end` — upstream's statement: opening, inflows, outflows, closing, per-row running balance |
-| `/accounts/:id/reconcile/plan`  | POST | R    | `target_balance` (hundredths), `as_of`                                                          |
-| `/accounts/:id/reconcile/apply` | POST | W    | `confirm_token`, `create_adjustment` (false), `adjustment_category_id`, `mark_reconciled` (true) |
+| `/accounts/:id/reconcile/plan`  | POST | R    | `target_balance` (hundredths), `as_of`, `create_adjustment` (false), `adjustment_category_id` \| `adjustment_category_name`, `adjustment_comment`, `mark_reconciled` (true) |
+| `/accounts/:id/reconcile/apply` | POST | W    | **the same arguments**, plus `confirm_token`, `dry_run`, `max_changes`                          |
 
 `plan` returns the app's closing balance as of the date, the operator's figure, the signed difference,
 the transactions dated after the last reconciled time, and a `confirm_token`. `apply` optionally
@@ -1124,6 +1143,14 @@ balance and nothing else), then sets `last_reconciled_time` through
 `AccountUpdateLastReconciledTimeHandler`'s service call. `create_adjustment` defaults to **false**:
 the right response to a difference is usually to find the missing transaction, and the plan's list of
 post-reconciliation rows is where to look.
+
+**Plan and apply take the same arguments** because the plan's token is issued for the apply route over
+the exact change set those arguments produce; an apply with different arguments is a different
+fingerprint and is refused with `conflict`. The response's `applyWith` says so. `mark_reconciled`
+depends on the bound user's "use last reconciled time" setting: with it off, both routes answer
+`forbidden` naming the setting, unless `mark_reconciled: false` is passed.
+
+Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_reconcile.go` — `txnReconcileArgs`, `txnResolveReconcile()`, `txnHandleReconcilePlan()`, `txnHandleReconcileApply()`
 
 ### 10.3 Transactions
 
@@ -1381,14 +1408,14 @@ All read-tier. All take `start` and `end` (`YYYY-MM-DD`, inclusive, in the resol
 | `/analytics/income-vs-expense`         | `interval`                                                               | in, out, net, per interval                                                     | `amounts/daily.json`, `statistics/trends.json` |
 | `/analytics/cash-flow`                 | `interval`, `account_ids[]`                                              | opening, in, out, closing, per interval                                        | `statistics/asset_trends.json`             |
 | `/analytics/net-worth`                 | `interval`                                                               | assets, liabilities, net — per interval and per account                        | `statistics/asset_trends.json`             |
-| `/accounts/:id/balance-history`        | `interval` (day\|week\|month)                                            | one account's closing balance over time                                        | `statistics/asset_trends.json`             |
+| `/accounts/:id/balance-history`        | `interval` (day\|week\|month); `:id` is an id only, never a name         | one account's closing balance over time                                        | `statistics/asset_trends.json`             |
 | `/analytics/category-trend`            | `category_id`, `interval`                                                | one category over time, with mean and median                                   | `statistics/trends.json`                   |
 | `/analytics/tag-breakdown`             | `tag_ids[]`                                                              | spending and income per tag — the "what did the trip cost" answer              | `statistics.json` with `tag_filter`        |
 | `/analytics/payee-leaderboard`         | `top_n` (20), `direction` (out\|in), `field` (comment)                   | who got the money — **by transaction comment**, since ezBookkeeping has no payee entity (below) | `transactions/list/all.json`   |
 | `/analytics/recurring`                 | `min_occurrences` (3), `tolerance_days` (3)                              | detected repeating charges not yet scheduled, and their annualised cost         | `transactions/list/all.json`               |
 | `/analytics/anomalies`                 | `z` (2.0), `min_amount`                                                  | categories unusually far from their own trailing norm                          | `statistics/trends.json`                   |
 | `/analytics/runway`                    | `basis` (3\|6\|12 months)                                                | liquid assets ÷ trailing average net outflow, in months                        | composed                                   |
-| `/analytics/import-fallout`            | `run_id`                                                                 | rows an import placed in its fallback category, by account and month          | `machine_import_record` + list             |
+| `/analytics/import-fallout`            | `run_id`, `fallback_category_ids[]` — **required** unless `run_id` names a run that recorded its own fallback; otherwise `invalid_input` | rows an import placed in its fallback category, by account and month | `machine_import_record` + list  |
 
 **"Payee" is a comment here.** ezBookkeeping has no payee entity — the merchant text lives in the
 transaction's `comment` (and importers put the statement description there). The leaderboard groups
@@ -1605,9 +1632,9 @@ stage into a directory that already holds foreign files refuses with `conflict` 
 | `/ingest/extract`        | POST | R\*  | `root`, `force` — **raw mode only**; writes to staging only                            |
 | `/ingest/dupes`          | GET  | R    | `root` — what both de-dupe layers collapsed, and why                                   |
 | `/ingest/rows`           | GET  | R    | `root`, `account`, `start`, `end`, `limit`                                             |
-| `/ingest/plan`           | POST | R    | `root`, `accounts[]`, `start`, `end`, `category_map{}`, `fallback_category_ids{}`      |
+| `/ingest/plan`           | POST | R    | `root`, `accounts[]`, `start`, `end`, `category_map{}`, `fallback_category_ids{}`, `accept_matches[]`, `accept_transfers[]`, `prefer[]`, `qif_date_order`, `reimport_deleted` (CLI only — §14.6) |
 | `/ingest/apply`          | POST | W    | `confirm_token`, `max_changes`, `dry_run`                                              |
-| `/ingest/file/plan`      | POST | R    | `account_id`, `path` \| multipart file, `file_type`, `column_map` (custom files) — the "Import" dialog |
+| `/ingest/file/plan`      | POST | R    | `account_id` \| `account_name`, `path` \| multipart file, `file_type`, `column_map` (custom files), `category_map{}`, `fallback_category_ids{}`, `accept_matches[]`, `reimport_deleted` — the "Import" dialog |
 | `/ingest/file/apply`     | POST | W    | `confirm_token`, `dry_run`                                                             |
 | `/ingest/runs`           | GET  | R    | the run log                                                                            |
 | `/ingest/runs/:id`       | GET  | R    | one run's full report                                                                  |
@@ -1671,7 +1698,19 @@ next run finds the `import_id`, sees the transaction is deleted, and counts it
 applied at birth rather than retro-fitted: an import that resurrects deleted rows every month is an
 import nobody runs twice. The operator who wants one back runs `ezbk statements apply
 --reimport-deleted --yes`, which names every row it would resurrect first. No MCP tool can do it
-(mcp.mdx §11.3).
+(mcp.mdx §11.3): the argument is published by `/ingest/plan` and `/ingest/file/plan` and accepted only
+from the CLI's schemas.
+
+**An undo is not a deletion (LOCKED).** `POST /undo` of an import run deletes the transactions the run
+created **and removes their `machine_import_record` rows** — each only while it still points at the
+transaction the run made, so a record a later run re-pointed is left alone — and re-points an accepted
+match's record back at the prior transaction. The next plan therefore counts those rows as **new**
+again, which is what undoing an import means. The browser delete above leaves the record standing and
+the row stays `already_present_deleted`. The two are different decisions and the table records them
+differently.
+
+Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_apply.go` — `ingUndoImport()`, the import run's inverse
+Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_record.go` — `ingDeleteRecords()`, `ingRelinkRecords()`
 
 **Fuzzy matching against hand-entered rows.** An operator often types a transaction in by hand and the
 statement arrives later. The plan reports, per statement row with no `import_id` match, any existing
@@ -1976,8 +2015,11 @@ stored), and does not fetch map tiles. A test runs the full suite with outbound 
 
 The API secret key (fingerprint only); `[security] secret_key`; any user's password hash, salt, 2FA
 secret or recovery codes; any upstream JWT or `token_record.secret`; OAuth2 client secrets; LLM API
-keys; mail passwords; absolute filesystem paths outside the statements root; environment variables;
-SQL strings; stack traces. **Raw SQL is never accepted as input** — there is no query escape hatch that
+keys; mail passwords; absolute filesystem paths outside the statements root (the paths `/whoami` does
+report — `installPath`, `credentialsFile`, `statementsRoot` — are rewritten under the home directory as
+`~/…` by `homeRelative()` in `routes_plane.go`; a path outside the home directory passes through);
+environment variables; SQL strings; stack traces (they go to `~/T/ezbookkeeping/error.err`, never into
+a response). **Raw SQL is never accepted as input** — there is no query escape hatch that
 takes SQL, and none is planned.
 
 A **canary test** calls every route in `/capabilities` against a fixture database and greps every
@@ -2035,7 +2077,7 @@ into `pkg/machine`. The machine plane is this fork's; the converters and service
 
 | Layer                     | What it holds                                                                                                                                                                                                                              |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Gate ladder**           | every gate in order with a negative for each: non-loopback → 404; non-loopback carrying `X-Forwarded-For: 127.0.0.1` with trusted proxies configured → 404; `Origin: https://evil.example` → 404; `Sec-Fetch-Site: cross-site` → 404; a rebinding `Host` → 404; no key → 401 constant body; wrong key → same body byte for byte; write route with tier off → `write_disabled`; admin route with write only → `forbidden`; admin route from the MCP client with admin on → `forbidden` |
+| **Gate ladder**           | every gate in order with a negative for each: non-loopback → 404; non-loopback carrying `X-Forwarded-For: 127.0.0.1` with trusted proxies configured → 404; `Origin: https://evil.example` → 404; `Sec-Fetch-Site: cross-site` → 404; `Sec-Fetch-Mode: cors` → 404; a rebinding `Host` → 404; no key → 401 constant body; wrong key → same body byte for byte; write route with tier off → `write_disabled`; admin route with write only → `forbidden`; admin route from the MCP client with admin on → `forbidden` |
 | **Credentials**           | mint uses `crypto/rand`, 64 hex; the merge preserves another product's keys; 0644 refused; symlink refused at read and write; three concurrent minters converge on one key; the server reuses a pre-existing key unchanged                   |
 | **Bound user**            | 0 users → `not_ready` with the register hint; 1 user → bound; 2 users, nothing set → `not_ready` naming both; configured username wins; a restricted feature → `forbidden`; no `token_record` row is ever created by the plane               |
 | **Envelope**              | every route returns the envelope, including 404 and 500; the vocabulary is exactly nine; every `pkg/errs` code in the mapping table maps; mcp.mdx's twelve are a strict superset                                                           |
@@ -2170,6 +2212,8 @@ books. P7 is what makes the first evening useful.
 
 - [cli.mdx](./cli.mdx) — `ezbk`, the terminal client of this plane.
 - [mcp.mdx](./mcp.mdx) — `ezbookkeeping`, the agent client of this plane.
+- [error_err.mdx](./error_err.mdx) — the error file, `~/T/ezbookkeeping/error.err`: where every
+  `internal` and `upstream_error` fault's detail goes (§7.2), written by `pkg/errfile`.
 - [ai/mcp_prompt_ezbookkeeping.md](../ai/mcp_prompt_ezbookkeeping.md) — what the MCP tells the model
   about money, currencies and asking.
 - [../CLAUDE.md](../CLAUDE.md) — what this fork is, and how it extends upstream.

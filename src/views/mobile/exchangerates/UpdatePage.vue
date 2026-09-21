@@ -101,6 +101,9 @@ import {
     USER_CUSTOM_EXCHANGE_RATE_MAX_VALUE,
     USER_CUSTOM_EXCHANGE_RATE_MIN_VALUE
 } from '@/consts/exchange_rate.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/exchangerates/UpdatePage.vue');
 
 const props = defineProps<{
     f7router: Router.Router;
@@ -143,6 +146,7 @@ function confirm(): void {
         showToast('You have updated exchange rate');
         router.back();
     }).catch(error => {
+        errors.caught('updating the custom exchange rate', error);
         submitting.value = false;
         hideLoading();
 

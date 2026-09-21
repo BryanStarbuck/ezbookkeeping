@@ -1,0 +1,94 @@
+{
+  "tool": "ezb_list_statement_duplicates",
+  "args": {},
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_list_statement_duplicates",
+    "data": {
+      "conflicts": [],
+      "mode": "prepared",
+      "note": "the machine_import_record comparison (already imported) is in POST /ingest/plan; this route shows only what the two layers collapsed",
+      "root": "{ROOT}",
+      "rules": [
+        "identical_bytes",
+        "more_rows",
+        "wider_coverage",
+        "better_source",
+        "newer_mtime",
+        "first_path",
+        "preferred",
+        "same_bank_id"
+      ],
+      "statement_level": [
+        {
+          "account_key": "household/Northbank/4021",
+          "file": "bank/household/Northbank/Checking_x4021/2025/09/20250930-statement-4021.ofx",
+          "first": "2025-09-03",
+          "last": "2025-09-20",
+          "rows": 4,
+          "rows_used": 0,
+          "rule": "more_rows",
+          "verdict": "superseded",
+          "winner": "bank/household/Northbank/Checking_x4021/Checking_x4021_ALL.ofx"
+        },
+        {
+          "account_key": "household/Northbank/4021",
+          "file": "bank/household/Northbank/Checking_x4021/2025/10/20251031-statement-4021.ofx",
+          "first": "2025-10-02",
+          "last": "2025-10-15",
+          "rows": 2,
+          "rows_used": 0,
+          "rule": "more_rows",
+          "verdict": "superseded",
+          "winner": "bank/household/Northbank/Checking_x4021/Checking_x4021_ALL.ofx"
+        },
+        {
+          "account_key": "household/Northbank/4021",
+          "file": "bank/household/Northbank/Checking_x4021/Checking_x4021_ALL.ofx",
+          "first": "2025-09-03",
+          "last": "2025-10-15",
+          "rows": 6,
+          "rows_used": 6,
+          "verdict": "primary"
+        },
+        {
+          "account_key": "acme_llc/Meridian/5520",
+          "file": "bank/acme_llc/Meridian/Savings_x5520/2025/09/20250930-statement-5520.csv",
+          "first": "2025-09-10",
+          "last": "2025-09-10",
+          "rows": 1,
+          "rows_used": 1,
+          "verdict": "primary"
+        }
+      ],
+      "totals": {
+        "collapsed_rows": 0,
+        "conflicts": 0,
+        "primary": 2,
+        "superseded": 2
+      },
+      "transaction_level": []
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 3,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "description",
+        "comment",
+        "label",
+        "name",
+        "entity",
+        "institution"
+      ],
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

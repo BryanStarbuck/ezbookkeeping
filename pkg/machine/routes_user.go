@@ -11,6 +11,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/api"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 	"github.com/mayswind/ezbookkeeping/pkg/services"
 )
@@ -32,6 +33,7 @@ func refFirstDayOfWeek(v refFlex) (core.WeekDay, error) {
 	n, err := strconv.Atoi(s)
 
 	if err != nil || n < 0 || n > 6 {
+		errfile.Expected("parsing first_day_of_week", err)
 		return 0, Invalid("first_day_of_week is 0-6 (Sunday 0) or a weekday name", "%q is not a weekday", string(v))
 	}
 
@@ -51,6 +53,7 @@ func refFiscalYearStart(v string) (core.FiscalYearStart, error) {
 	f, err := core.NewFiscalYearStart(uint8(month), uint8(day))
 
 	if err != nil || month > 12 || day > 31 {
+		errfile.Expected("parsing fiscal_year_start", err)
 		return 0, Invalid("fiscal_year_start is a real MM-DD date", "%q is not a real month and day", v)
 	}
 
@@ -357,6 +360,7 @@ func refSettingValue(key string, raw json.RawMessage) (string, error) {
 				return str, nil
 			}
 
+			errfile.Expected("parsing a boolean application cloud setting", err)
 			return "", Invalid(key+" is a boolean", "%s must be true or false", key)
 		}
 
@@ -365,10 +369,12 @@ func refSettingValue(key string, raw json.RawMessage) (string, error) {
 		var f refFlex
 
 		if err := json.Unmarshal(raw, &f); err != nil {
+			errfile.Expected("decoding a number application cloud setting", err)
 			return "", Invalid(key+" is a number", "%s must be a number", key)
 		}
 
 		if _, err := strconv.ParseFloat(string(f), 64); err != nil {
+			errfile.Expected("parsing a number application cloud setting", err)
 			return "", Invalid(key+" is a number", "%s value %q is not a number", key, string(f))
 		}
 
@@ -377,6 +383,7 @@ func refSettingValue(key string, raw json.RawMessage) (string, error) {
 		var str string
 
 		if err := json.Unmarshal(raw, &str); err != nil {
+			errfile.Expected("decoding a string application cloud setting", err)
 			return "", Invalid(key+" is a string", "%s must be a string", key)
 		}
 
@@ -391,6 +398,7 @@ func refSettingValue(key string, raw json.RawMessage) (string, error) {
 				return str, nil
 			}
 
+			errfile.Expected("parsing a boolean-map application cloud setting", err)
 			return "", Invalid(key+" is an object of booleans, e.g. {\"123\": true}", "%s must be a map of booleans", key)
 		}
 
@@ -609,6 +617,7 @@ func refHandleDataStatistics(mc *Ctx) (any, error) {
 		n, err := strconv.ParseInt(v, 10, 64)
 
 		if err != nil {
+			errfile.Caught("parsing a count in the user's data statistics", err, errfile.F("stat", k))
 			return nil, NewFail(CodeUpstreamError, "read ~/T/ezbookkeeping/error.err", "the data statistics returned a non-integer %s", k)
 		}
 

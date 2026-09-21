@@ -94,7 +94,7 @@ export function filterOnly(a: Record<string, unknown>): FilterArgs {
       out[k] = a[k];
     }
   }
-  return out as FilterArgs;
+  return out;
 }
 
 export const listTransactions: ToolDef = {

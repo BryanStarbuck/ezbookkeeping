@@ -2,6 +2,9 @@ package errfile
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 // Caught writes an ERROR: what was being done, where (from runtime.Caller), and the error with its
@@ -28,10 +31,28 @@ func Expected(doing string, err error) {
 }
 
 // Fatal writes a FATAL record and flushes synchronously, so it is on disk before the host exits.
-// It never exits: the host prints its own message and chooses its own exit code.
+// It never exits: the host prints its own message and chooses its own exit code. When the host
+// died before it could Install (a crash at boot, §18 use case 7), Fatal installs the default
+// writer itself, tagged with the binary's name, so the pre-install queue and this record land on
+// disk instead of dying with the process.
 func Fatal(doing string, err error, fields ...Field) {
 	Submit(Submission{Level: LevelFatal, Doing: doing, Err: err, Fields: fields, Skip: 1})
+
+	if current() == nil {
+		Install(Options{App: binaryName()})
+	}
+
 	Flush()
+}
+
+func binaryName() string {
+	if len(os.Args) == 0 || os.Args[0] == "" {
+		return "?"
+	}
+
+	name := filepath.Base(os.Args[0])
+
+	return strings.TrimSuffix(name, filepath.Ext(name))
 }
 
 // Recovered is called with the value of recover(). It turns the value into an error (an error as

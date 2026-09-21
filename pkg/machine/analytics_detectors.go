@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mayswind/ezbookkeeping/pkg/datastore"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 )
@@ -559,6 +560,7 @@ func anHandleRecurring(mc *Ctx) (any, error) {
 	templates, scheduledOn, err := anFetchScheduledTemplates(mc)
 
 	if err != nil {
+		errfile.Caught("fetching the scheduled transaction templates", err)
 		c.note("scheduled templates could not be read, so already-scheduled charges are not marked")
 		templates, scheduledOn = nil, false
 	} else if scheduledOn {
@@ -1062,6 +1064,10 @@ func anHandleImportFallout(mc *Ctx) (any, error) {
 	exists, err := sess.IsTableExist(new(MachineImportRecord))
 
 	if err != nil || !exists {
+		if err != nil {
+			errfile.Caught("checking whether the import record table exists", err)
+		}
+
 		return nil, NewFail(CodeNotReady, "no machine-plane import has run yet: import statements first (POST /machine/v1/ingest/plan, then /ingest/apply)", "the import record table does not exist yet")
 	}
 
@@ -1254,6 +1260,7 @@ func anParseIdOrZero(s string) int64 {
 	n, err := strconv.ParseInt(s, 10, 64)
 
 	if err != nil {
+		errfile.Expected("parsing an id argument", err)
 		return 0
 	}
 

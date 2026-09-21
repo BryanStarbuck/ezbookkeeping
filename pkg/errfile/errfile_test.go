@@ -2,6 +2,7 @@ package errfile
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -64,5 +65,25 @@ func TestFatalFlushes(t *testing.T) {
 
 	if s.flushes != 1 || len(s.all()) != 1 || s.all()[0].Level != LevelFatal {
 		t.Errorf("flushes=%d recs=%v", s.flushes, s.lines())
+	}
+}
+
+func TestFatalBeforeInstallLandsOnDisk(t *testing.T) {
+	ResetForTests()
+	t.Cleanup(ResetForTests)
+	file := t.TempDir() + "/error.err"
+	t.Setenv(EnvFile, file)
+	Caught("loading the configuration", errors.New("no such file"))
+	Fatal("running ezbookkeeping", errors.New("cannot start"))
+	data, err := os.ReadFile(file)
+
+	if err != nil {
+		t.Fatalf("the queue and the FATAL must be on disk: %v", err)
+	}
+
+	text := string(data)
+
+	if !strings.Contains(text, "[ERROR] ["+binaryName()+"] [") || !strings.Contains(text, "loading the configuration —") || !strings.Contains(text, "[FATAL] ["+binaryName()+"] [") {
+		t.Errorf("text = %q", text)
 	}
 }

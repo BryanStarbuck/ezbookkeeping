@@ -1,0 +1,146 @@
+{
+  "tool": "ezb_spending_by_category",
+  "args": {
+    "start": "2026-07-01",
+    "end": "2026-09-30"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_spending_by_category",
+    "data": {
+      "direction": "expense",
+      "groupBy": "primary",
+      "interval": "none",
+      "periods": [
+        {
+          "end": "2026-09-30",
+          "period": "2026-07-01..2026-09-30",
+          "start": "2026-07-01"
+        }
+      ],
+      "provenance": {
+        "absentPeriodsAreOmitted": true,
+        "accountIds": [
+          "3844013758313660416",
+          "3844013758313660418",
+          "3844013758313660417"
+        ],
+        "accountsExplicit": false,
+        "amountUnit": "integer hundredths of the currency named beside each figure",
+        "convertedFiguresRounding": null,
+        "filters": {
+          "balanceModifications": "excluded",
+          "categoryIds": [],
+          "excludeCategoryIds": [],
+          "groupBy": "primary",
+          "includeHiddenAccounts": false,
+          "includeTransfers": false,
+          "includeZero": false,
+          "interval": "none",
+          "tagFilter": "",
+          "topN": 0,
+          "useTransactionTimezone": false
+        },
+        "grouping": {
+          "rowsOutsideFilters": 0,
+          "rowsUnknownEntities": 0,
+          "rowsUsed": 3
+        },
+        "hiddenAccountsExcluded": [],
+        "range": {
+          "end": "2026-09-30",
+          "endUnix": 1790812799,
+          "start": "2026-07-01",
+          "startUnix": 1782864000,
+          "timezone": "UTC"
+        },
+        "rates": [],
+        "rowCount": 6,
+        "signConvention": "signed: money in is positive, money out is negative",
+        "timezone": "UTC",
+        "upstream": [
+          "GET /api/v1/accounts/list.json",
+          "GET /api/v1/transaction/categories/list.json",
+          "GET /api/v1/transactions/statistics.json"
+        ]
+      },
+      "series": [
+        {
+          "currency": "EUR",
+          "id": "3844013758582095873",
+          "key": "3844013758582095873",
+          "kind": "category",
+          "label": "Food",
+          "points": [
+            {
+              "amount": -8250,
+              "period": "2026-07-01..2026-09-30"
+            }
+          ],
+          "total": -8250
+        },
+        {
+          "currency": "USD",
+          "id": "3844013758582095873",
+          "key": "3844013758582095873",
+          "kind": "category",
+          "label": "Food",
+          "points": [
+            {
+              "amount": -38250,
+              "period": "2026-07-01..2026-09-30"
+            }
+          ],
+          "total": -38250
+        },
+        {
+          "currency": "USD",
+          "id": "3844013758582095874",
+          "key": "3844013758582095874",
+          "kind": "category",
+          "label": "Home",
+          "points": [
+            {
+              "amount": -26500,
+              "period": "2026-07-01..2026-09-30"
+            }
+          ],
+          "total": -26500
+        }
+      ],
+      "topN": 0,
+      "totals": [
+        {
+          "amount": -8250,
+          "currency": "EUR"
+        },
+        {
+          "amount": -64750,
+          "currency": "USD"
+        }
+      ],
+      "unconverted": []
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "label",
+        "name",
+        "comment",
+        "variants",
+        "text"
+      ],
+      "composed": true,
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

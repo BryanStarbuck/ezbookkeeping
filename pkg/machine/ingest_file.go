@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 )
 
@@ -66,6 +67,7 @@ func ingFileRequest(mc *Ctx, withWrite bool) (*ingFileArgs, *WriteOpts, []byte, 
 	}
 
 	if err := mc.Gin.Request.ParseMultipartForm(MaxBodyBytes); err != nil {
+		errfile.Expected("parsing the multipart form of the upload", err)
 		return nil, nil, nil, "", Invalid("send multipart/form-data with the statement in the field \"file\" (at most 16 MiB)", "the multipart form cannot be read")
 	}
 
@@ -106,6 +108,7 @@ func ingFileRequest(mc *Ctx, withWrite bool) (*ingFileArgs, *WriteOpts, []byte, 
 	for k, dst := range map[string]any{"column_map": &args.ColumnMap, "category_map": &args.CategoryMap, "fallback_category_ids": &args.FallbackCategoryIds, "accept_matches": &args.AcceptMatches} {
 		if v := get(k); v != "" {
 			if err := json.Unmarshal([]byte(v), dst); err != nil {
+				errfile.Expected("decoding a JSON form field of the upload", err)
 				return nil, nil, nil, "", Invalid("pass "+k+" as a JSON string inside the form", "%s is not valid JSON", k)
 			}
 		}
@@ -129,6 +132,7 @@ func ingFileRequest(mc *Ctx, withWrite bool) (*ingFileArgs, *WriteOpts, []byte, 
 		f, err := files[0].Open()
 
 		if err != nil {
+			errfile.Expected("opening the uploaded statement file", err)
 			return nil, nil, nil, "", Invalid("attach the statement as the multipart field \"file\"", "the uploaded file cannot be read")
 		}
 
@@ -137,6 +141,7 @@ func ingFileRequest(mc *Ctx, withWrite bool) (*ingFileArgs, *WriteOpts, []byte, 
 		data, err = io.ReadAll(io.LimitReader(f, MaxBodyBytes+1))
 
 		if err != nil || len(data) > MaxBodyBytes {
+			errfile.Expected("reading the uploaded statement file", err)
 			return nil, nil, nil, "", Invalid("upload at most 16 MiB, or pass path to a file under the statements root", "the uploaded file is too large")
 		}
 
@@ -277,6 +282,7 @@ func ingPlanFile(mc *Ctx, args *ingFileArgs, data []byte, name string) (*ingPlan
 		data, err = ingReadFileBytes(real, int64(mc.Config.MaxImportFileSize)+1)
 
 		if err != nil {
+			errfile.Warn("reading the statement file under the statements root", err)
 			return nil, nil, "", Invalid("raise [data] max_import_file_size in conf/ezbookkeeping.ini, or split the file", "the file cannot be read or exceeds the import size limit")
 		}
 

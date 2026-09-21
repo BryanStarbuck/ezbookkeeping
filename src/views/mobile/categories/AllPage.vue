@@ -24,6 +24,9 @@ import { useI18n } from '@/locales/helpers.ts';
 import { useI18nUIComponents } from '@/lib/ui/mobile.ts';
 
 import { useTransactionCategoriesStore } from '@/stores/transactionCategory.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/categories/AllPage.vue');
 
 const props = defineProps<{
     f7router: Router.Router;
@@ -53,6 +56,7 @@ function reload(done?: () => void): void {
             showToast('Category list has been updated');
         }
     }).catch(error => {
+        errors.caught('loading all categories', error);
         done?.();
 
         if (!error.processed) {
@@ -66,6 +70,7 @@ transactionCategoriesStore.loadAllCategories({
 }).then(() => {
     loading.value = false;
 }).catch(error => {
+    errors.caught('loading all categories', error);
     if (error.processed) {
         loading.value = false;
     } else {

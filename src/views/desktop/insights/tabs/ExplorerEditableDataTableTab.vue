@@ -248,6 +248,9 @@ import {
     mdiTextBoxEditOutline,
     mdiDeleteOutline
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/insights/tabs/ExplorerEditableDataTableTab.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 type BatchUpdateCategoryDialogType = InstanceType<typeof BatchUpdateCategoryDialog>;
@@ -367,6 +370,7 @@ function batchUpdateTransactionCategories(type: CategoryType): void {
         selectedTransactions.value = {};
         emit('update:transactions');
     }).catch(error => {
+        errors.expected('opening the batch update category dialog', error);
         if (error) {
             snackbar.value?.showError(error);
         }
@@ -386,6 +390,7 @@ function batchUpdateTransactionAccounts(isDestinationAccount: boolean): void {
         selectedTransactions.value = {};
         emit('update:transactions');
     }).catch(error => {
+        errors.expected('opening the batch update account dialog', error);
         if (error) {
             snackbar.value?.showError(error);
         }
@@ -405,6 +410,7 @@ function batchUpdateTransactionTags(type: BatchUpdateTagsOperationType): void {
         selectedTransactions.value = {};
         emit('update:transactions');
     }).catch(error => {
+        errors.expected('opening the batch update tags dialog', error);
         if (error) {
             snackbar.value?.showError(error);
         }
@@ -423,6 +429,7 @@ function batchDeleteTransactions(): void {
         selectedTransactions.value = {};
         emit('update:transactions');
     }).catch(tryDeleted => {
+        errors.expected('opening the batch delete dialog', tryDeleted);
         if (tryDeleted) {
             emit('update:transactions');
         }

@@ -1,0 +1,99 @@
+{
+  "tool": "ezb_list_accounts",
+  "args": {},
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_list_accounts",
+    "data": {
+      "accountCount": 3,
+      "accounts": [
+        {
+          "balance": 1085250,
+          "category": "checking",
+          "categoryCode": 2,
+          "color": "000000",
+          "comment": "",
+          "currency": "USD",
+          "displayOrder": 1,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013758313660416",
+          "isAsset": true,
+          "isLiability": false,
+          "name": "Northbank Checking",
+          "parentId": "0",
+          "side": "asset",
+          "type": "single"
+        },
+        {
+          "balance": -38250,
+          "category": "credit_card",
+          "categoryCode": 3,
+          "color": "000000",
+          "comment": "",
+          "creditCardLimit": 0,
+          "creditCardStatementDate": 0,
+          "currency": "EUR",
+          "displayOrder": 1,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013758313660418",
+          "isAsset": false,
+          "isLiability": true,
+          "name": "Euro Card",
+          "parentId": "0",
+          "side": "liability",
+          "type": "single"
+        },
+        {
+          "balance": 1100000,
+          "category": "savings",
+          "categoryCode": 8,
+          "color": "000000",
+          "comment": "",
+          "currency": "USD",
+          "displayOrder": 1,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013758313660417",
+          "isAsset": true,
+          "isLiability": false,
+          "name": "Meridian Savings",
+          "parentId": "0",
+          "side": "asset",
+          "type": "single"
+        }
+      ],
+      "count": 3,
+      "currencies": [
+        "EUR",
+        "USD"
+      ],
+      "filters": {
+        "includeHidden": false,
+        "withSubAccounts": true
+      },
+      "note": "balances are per account in its own currency; no total is given across currencies (GET /machine/v1/analytics/net-worth converts with named rates)"
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 5,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "name",
+        "comment"
+      ],
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -92,12 +93,14 @@ func (h *mcpQueryTransactionsToolHandler) Handle(c *core.WebContext, callToolReq
 	maxTime, err := utils.ParseFromLongDateTimeWithTimezoneRFC3339Format(queryTransactionsRequest.EndTime)
 
 	if err != nil {
+		errfile.Expected("parsing the end time of the query transactions tool request", err)
 		return nil, nil, errs.ErrIncompleteOrIncorrectSubmission
 	}
 
 	minTime, err := utils.ParseFromLongDateTimeWithTimezoneRFC3339Format(queryTransactionsRequest.StartTime)
 
 	if err != nil {
+		errfile.Expected("parsing the start time of the query transactions tool request", err)
 		return nil, nil, errs.ErrIncompleteOrIncorrectSubmission
 	}
 

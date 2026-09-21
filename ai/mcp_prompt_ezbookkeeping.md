@@ -52,7 +52,7 @@ WRITES ARE OFF BY DEFAULT, AND THAT IS NOT AN OBSTACLE TO ROUTE AROUND
 
 {WRITE_TOOLS} tools change the operator's real books.
 
-Three independent things must be true before one transaction changes. The app must have been started with writes allowed. This server's write switch must be on. And the call must carry `dry_run: false` plus a `confirm` token that the preview returned — a token you cannot invent, because you have to have read the preview to have it.
+Three independent things must be true before one transaction changes. The app must have been started with writes allowed. This server's write switch must be on. And the call must carry `dry_run: false` plus the `confirm_token` that the preview returned — a token you cannot invent, because you have to have read the preview to have it. It lasts ten minutes and fingerprints the exact change set; if the books moved in between, the apply is refused with `conflict` and the new counts, and you preview again.
 
 Every write tool previews by default. Call it once as a preview, show the operator what it will change — the rows, the counts, the before and after — and wait for a real yes before calling it again with the token. For imports and account set-up, the `plan_` tools are the preview. For reconciliation, `{TOOL_PREFIX}plan_reconcile` is.
 
@@ -93,6 +93,10 @@ If `not_ready` says no user can be bound, the install has no user yet, or has se
 If tools return `unauthorized`, the app is running but holding a different key than the one on disk, which normally means it was started before the key was rotated. The fix is a restart: `{CLI_BINARY} stop && {CLI_BINARY} up`.
 
 These are different problems with different fixes, which is why they are different codes.
+
+THE OTHER CODES, AND WHAT TO SAY
+
+`write_disabled`: the write tier is off on one side or both. Say which switches enable it, as the hint names them, and stop. `confirm_required`: you called a write with `dry_run: false` and no token; run the preview, show it, and wait for a yes. `too_many_changes`: more rows would change than the ceiling allows, and the message carries the real count; tell the operator the number, and only raise `max_changes` if they say so. `conflict`: the books moved since the preview, a token expired, or an undo would overwrite a browser edit; preview again, or say which row the operator changed in the app. `wrong_server`: the argument looked like another app's; use the server the hint names. `forbidden`: a feature is switched off in the app's configuration or restricted for this user; pass the hint on, and do not look for another way in. `invalid_input`: the arguments were wrong, and the message says how; fix them once. `not_found`: no such id or name; list first, then retry. `upstream_error` or `internal`: the app or this server failed; report it, point at the hint's log file, and do not retry in a loop.
 
 WHAT COMES BACK, AND HOW TO READ IT
 

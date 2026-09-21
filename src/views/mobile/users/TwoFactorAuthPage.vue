@@ -65,6 +65,9 @@ import { useI18nUIComponents, showLoading, hideLoading } from '@/lib/ui/mobile.t
 
 import { KnownErrorCode } from '@/consts/api.ts';
 import { useTwoFactorAuthStore } from '@/stores/twoFactorAuth.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/users/TwoFactorAuthPage.vue');
 
 const props = defineProps<{
     f7router: Router.Router;
@@ -100,6 +103,7 @@ function init(): void {
         status.value = response.enable;
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading the two-factor status', error);
         if (error.processed) {
             status.value = null;
             loading.value = false;
@@ -129,6 +133,7 @@ function enable(): void {
 
         showInputPasscodeSheetForEnable.value = true;
     }).catch(error => {
+        errors.caught('enabling two-factor authentication', error);
         enabling.value = false;
         hideLoading();
 
@@ -160,6 +165,7 @@ function enableConfirm(): void {
             showBackupCodeSheet.value = true;
         }
     }).catch(error => {
+        errors.caught('confirming the two-factor setup', error);
         enableConfirming.value = false;
         hideLoading();
 
@@ -189,6 +195,7 @@ function disable(password: string | null): void {
         showInputPasswordSheetForDisable.value = false;
         showToast('Two-factor authentication has been disabled');
     }).catch(error => {
+        errors.caught('disabling two-factor authentication', error);
         disabling.value = false;
         hideLoading();
 
@@ -219,6 +226,7 @@ function regenerateBackupCode(password: string | null): void {
         currentBackupCode.value = response.recoveryCodes.join('\n');
         showBackupCodeSheet.value = true;
     }).catch(error => {
+        errors.caught('regenerating the two-factor recovery codes', error);
         regenerating.value = false;
         hideLoading();
 

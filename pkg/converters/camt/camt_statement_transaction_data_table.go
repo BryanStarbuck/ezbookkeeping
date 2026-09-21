@@ -6,6 +6,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/converters/datatable"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -227,6 +228,7 @@ func (t *camtStatementTransactionDataRowIterator) parseTransaction(ctx core.Cont
 		dateTime, err := utils.ParseFromLongDateTimeWithTimezoneRFC3339Format(entry.BookingDate.DateTime)
 
 		if err != nil {
+			errfile.Expected("parsing the booking date of the camt entry", err)
 			return nil, errs.ErrTransactionTimeInvalid
 		}
 

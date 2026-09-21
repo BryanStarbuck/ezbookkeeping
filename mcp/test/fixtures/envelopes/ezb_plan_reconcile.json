@@ -1,0 +1,128 @@
+{
+  "tool": "ezb_plan_reconcile",
+  "args": {
+    "account_name": "Meridian Savings",
+    "target_balance": 1100500,
+    "as_of": "2026-09-21",
+    "mark_reconciled": false,
+    "create_adjustment": true,
+    "adjustment_category_name": "Paycheck"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_plan_reconcile",
+    "data": {
+      "account": {
+        "category": 8,
+        "currency": "USD",
+        "hidden": false,
+        "id": "3844013758313660417",
+        "isAsset": true,
+        "isLiability": false,
+        "name": "Meridian Savings"
+      },
+      "adjustment": {
+        "amount": 500,
+        "categoryId": "3844013758582095876",
+        "categoryName": "Salary > Paycheck",
+        "comment": "Reconciliation adjustment (as of 2026-09-21)",
+        "currency": "USD",
+        "date": "2026-09-21",
+        "time": 1790008396,
+        "typeName": "income"
+      },
+      "appBalance": 1100000,
+      "appliable": true,
+      "applyWith": "POST /machine/v1/accounts/3844013758313660417/reconcile/apply with the same arguments, dry_run: false and this confirm_token",
+      "asOf": "2026-09-21",
+      "balanceSignConvention": "the account's own balance sign: a liability owed is negative",
+      "changes": {
+        "create": 1,
+        "update": 0
+      },
+      "confirm_token": "cf_960a615f565aaf94b5fbd8cca1131f3f",
+      "currency": "USD",
+      "difference": 500,
+      "dry_run": true,
+      "expires_at": "2026-09-21T16:43:16Z",
+      "fingerprint": "sha256:6d98fb0e13415d16",
+      "lastReconciledDate": null,
+      "lastReconciledTime": null,
+      "markReconciled": false,
+      "markReconciledAt": 1790008396,
+      "markReconciledDate": "2026-09-21",
+      "sinceCount": 2,
+      "targetBalance": 1100500,
+      "transactionsSinceLastReconciled": [
+        {
+          "accountClosingBalance": 1100000,
+          "accountOpeningBalance": 1000000,
+          "categoryId": "3844013758582095881",
+          "categoryName": "General Transfer",
+          "categoryPath": "Transfer > General Transfer",
+          "comment": "monthly savings",
+          "date": "2026-08-05",
+          "destinationAccountId": "3844013758313660417",
+          "destinationAccountName": "Meridian Savings",
+          "destinationAmount": 100000,
+          "destinationCurrency": "USD",
+          "editable": true,
+          "hideAmount": false,
+          "id": "3844013758447878152",
+          "sourceAccountId": "3844013758313660416",
+          "sourceAccountName": "Northbank Checking",
+          "sourceAmount": 100000,
+          "sourceCurrency": "USD",
+          "tagIds": [],
+          "tagNames": [],
+          "time": 1785931200,
+          "timeSequenceId": "1785931200000",
+          "type": 4,
+          "typeName": "transfer",
+          "utcOffset": 0
+        },
+        {
+          "accountClosingBalance": 1000000,
+          "accountOpeningBalance": 0,
+          "categoryId": "0",
+          "comment": "",
+          "date": "2026-01-01",
+          "editable": true,
+          "hideAmount": false,
+          "id": "3844013758447878145",
+          "sourceAccountId": "3844013758313660417",
+          "sourceAccountName": "Meridian Savings",
+          "sourceAmount": 1000000,
+          "sourceCurrency": "USD",
+          "tagIds": [],
+          "tagNames": [],
+          "time": 1767225600,
+          "timeSequenceId": "1767225600001",
+          "type": 1,
+          "typeName": "balance_modification",
+          "utcOffset": 0
+        }
+      ]
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 1,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name",
+        "sourceAccount.name",
+        "destinationAccount.name"
+      ],
+      "composed": true,
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

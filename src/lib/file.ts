@@ -5,6 +5,9 @@ import type { ImportFileTypeAndExtensions } from '@/core/file.ts';
 import { UTF_8, CHARDET_ENCODING_NAME_MAPPING } from '@/consts/file.ts';
 
 import { isString } from './common.ts';
+import { errorFileFor } from './errfile/index.ts';
+
+const errors = errorFileFor('src/lib/file.ts');
 
 export function getFileExtension(filename: string): string {
     if (!filename || !isString(filename)) {
@@ -93,6 +96,7 @@ export function detectFileEncoding(file: File): Promise<string> {
         };
 
         reader.onerror = () => {
+            errors.caught('reading the file for encoding detection', reader.error);
             reject(new Error('failed to read file for encoding detection'));
         };
 

@@ -13,6 +13,9 @@ import {
     DEFAULT_APPLICATION_SETTINGS,
     DEFAULT_LOCALE_SETTINGS
 } from '@/core/setting.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/lib/settings.ts');
 
 const settingsLocalStorageKey: string = 'ebk_app_settings';
 const currentLanguageSessionStorageKey: string = 'ebk_current_language';
@@ -22,6 +25,7 @@ function getStoredApplicationSettings(): BaseApplicationSetting {
         const storageData = localStorage.getItem(settingsLocalStorageKey) || '{}';
         return JSON.parse(storageData);
     } catch (ex) {
+        errors.warn('parsing the settings in local storage', ex);
         console.warn('settings in local storage is invalid', ex);
         return {};
     }

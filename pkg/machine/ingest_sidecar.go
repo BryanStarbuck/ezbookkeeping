@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 )
 
 // ingest_sidecar.go — the raw-mode line parser for statement text sidecars (_claude.txt,
@@ -142,12 +144,20 @@ func ingPlaceDate(tok string, periodFirst, periodLast, hintDate, hintYear, order
 				} else {
 					month, day = a, b
 				}
-			} else if m, ok := ingMonthNames[strings.ToLower(parts[1])]; ok {
-				month, day = m, a
+			} else {
+				errfile.Expected("reading the second part of a sidecar date as a number", err)
+
+				if m, ok := ingMonthNames[strings.ToLower(parts[1])]; ok {
+					month, day = m, a
+				}
 			}
-		} else if m, ok := ingMonthNames[strings.ToLower(parts[0])]; ok {
-			if b, err := strconv.Atoi(parts[1]); err == nil {
-				month, day = m, b
+		} else {
+			errfile.Expected("reading the first part of a sidecar date as a number", err)
+
+			if m, ok := ingMonthNames[strings.ToLower(parts[0])]; ok {
+				if b, err := strconv.Atoi(parts[1]); err == nil {
+					month, day = m, b
+				}
 			}
 		}
 	}
@@ -508,6 +518,7 @@ func ingSplitDelimited(line string, d rune) []string {
 	rec, err := r.Read()
 
 	if err != nil {
+		errfile.Expected("splitting a sidecar line as CSV", err)
 		return strings.Split(line, string(d))
 	}
 

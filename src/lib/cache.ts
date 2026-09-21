@@ -18,7 +18,10 @@ import {
 
 import { isFunction, isObject, isNumber } from './common.ts';
 import services from './services.ts';
+import { errorFileFor } from './errfile/index.ts';
 import logger from './logger.ts';
+
+const errors = errorFileFor('src/lib/cache.ts');
 
 let controllerchangeListenerAdded: boolean = false;
 
@@ -153,8 +156,14 @@ export function loadBrowserCacheStatistics(): Promise<BrowserCacheStatistics> {
 
         return Promise.all([
             navigator && navigator.storage && isFunction(navigator.storage.estimate) ? navigator.storage.estimate() : Promise.resolve(undefined),
-            findFirstCacheName(SW_PRECACHE_CACHE_NAME_PREFIX).then(cacheName => getCacheTotalSize(cacheName)).catch(() => 0),
-            findFirstCacheName(SW_RUNTIME_CACHE_NAME_PREFIX).then(cacheName => getCacheTotalSize(cacheName)).catch(() => 0),
+            findFirstCacheName(SW_PRECACHE_CACHE_NAME_PREFIX).then(cacheName => getCacheTotalSize(cacheName)).catch(e => {
+                errors.expected('measuring the precache cache', e);
+                return 0;
+            }),
+            findFirstCacheName(SW_RUNTIME_CACHE_NAME_PREFIX).then(cacheName => getCacheTotalSize(cacheName)).catch(e => {
+                errors.expected('measuring the runtime cache', e);
+                return 0;
+            }),
             getCacheTotalSize(SW_CODE_CACHE_NAME),
             getCacheTotalSize(SW_ASSETS_CACHE_NAME),
             getCacheTotalSize(SW_MAP_CACHE_NAME),
@@ -257,7 +266,8 @@ export function clearCaches(cacheNames: string[], cacheNamePrefixes?: string[]):
 
         Promise.all(promises).then(() => {
             resolve();
-        }).catch(() => {
+        }).catch(e => {
+            errors.expected('deleting the share cache entries', e);
             resolve();
         });
     });
@@ -314,7 +324,8 @@ export function clearAllBrowserCaches(): Promise<void> {
             Promise.all(promises).then(() => {
                 logger.info("all caches cleared successfully");
                 resolve();
-            }).catch(() => {
+            }).catch(e => {
+                errors.expected('clearing the caches', e);
                 resolve();
             });
         }).catch(error => {

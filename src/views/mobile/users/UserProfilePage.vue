@@ -603,6 +603,9 @@ import { Account } from '@/models/account.ts';
 
 import { findDisplayNameByType } from '@/lib/common.ts';
 import { isUserVerifyEmailEnabled } from '@/lib/server_settings.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/users/UserProfilePage.vue');
 
 const props = defineProps<{
     f7router: Router.Router;
@@ -721,6 +724,7 @@ function init(): void {
         currentNoPassword.value = !!profile.noPassword;
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading the user profile', error);
         if (error.processed) {
             loading.value = false;
         } else {
@@ -764,6 +768,7 @@ function save(confirm?: boolean): void {
             router.back(); // if text direction is changed, the page will be reloaded, so it don't need to go back
         }
     }).catch(error => {
+        errors.caught('updating the profile', error);
         saving.value = false;
         hideLoading();
         currentPassword.value = '';
@@ -784,6 +789,7 @@ function resendVerifyEmail(): void {
 
         showToast('Validation email has been sent');
     }).catch(error => {
+        errors.caught('resending the verification email', error);
         resending.value = false;
         hideLoading();
 

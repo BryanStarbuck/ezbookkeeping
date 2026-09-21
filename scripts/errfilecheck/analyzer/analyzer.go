@@ -10,7 +10,8 @@
 //  4. a `go` statement whose function is not a literal starting with `defer errfile.RecoverNet(…)()`.
 //
 // A companion check keeps `doing` a literal (or a const, or a `+` of literals and route/verb
-// selectors), so the fold key stays stable and no ledger value can reach the file through it.
+// selectors, or c.FullPath()), so the fold key stays stable and no ledger value can reach the
+// file through it.
 package analyzer
 
 import (
@@ -19,6 +20,7 @@ import (
 	"go/token"
 	"go/types"
 	"strings"
+	"sync"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -151,14 +153,29 @@ func (c *checker) walk(root ast.Node) {
 	})
 }
 
+// reported dedupes diagnostics across passes: a standalone `./...` run analyses a package and its
+// in-package test variant, which share every non-test file, and the second copy would double
+// every count the coverage script reads. go vet runs one pass per package, so it is unaffected.
+var reported sync.Map
+
+func (c *checker) emit(pos token.Pos, category, message string) {
+	key := c.pass.Fset.Position(pos).String() + "|" + category
+
+	if _, dup := reported.LoadOrStore(key, true); dup {
+		return
+	}
+
+	c.pass.Report(analysis.Diagnostic{Pos: pos, Category: category, Message: message})
+}
+
 func (c *checker) site(pos token.Pos, kind string) {
 	if reportSites {
-		c.pass.Report(analysis.Diagnostic{Pos: pos, Category: CatSite, Message: "error site: " + kind})
+		c.emit(pos, CatSite, "error site: "+kind)
 	}
 }
 
 func (c *checker) report(pos token.Pos, category, message string) {
-	c.pass.Report(analysis.Diagnostic{Pos: pos, Category: category, Message: message})
+	c.emit(pos, category, message)
 }
 
 // ── 1. error-nil test blocks ───────────────────────────────────────────────────────────────────
@@ -627,18 +644,38 @@ func (c *checker) isStaticDoing(e ast.Expr) bool {
 			return true
 		}
 
-		_, isConst := c.pass.TypesInfo.Uses[x].(*types.Const)
+		switch obj := c.pass.TypesInfo.Uses[x].(type) {
+		case *types.Const:
+			return true
+		case *types.Var:
+			// a thin wrapper such as reportLost(doing string, err error) passes its own `doing`
+			// parameter through; the wrapper's callers are held to the literal rule
+			return x.Name == "doing" && obj.Parent() != nil && obj.Parent() != obj.Pkg().Scope() && isStringType(obj.Type())
+		}
 
-		return isConst
+		return false
 	case *ast.SelectorExpr:
 		if _, isConst := c.pass.TypesInfo.Uses[x.Sel].(*types.Const); isConst {
 			return true
 		}
 
 		return doingSelectors[x.Sel.Name]
+	case *ast.CallExpr:
+		// c.FullPath() — the route template, which pattern G7 uses (never the raw URL)
+		if sel, ok := x.Fun.(*ast.SelectorExpr); ok && len(x.Args) == 0 && sel.Sel.Name == "FullPath" {
+			return true
+		}
+
+		return false
 	case *ast.BinaryExpr:
 		return x.Op == token.ADD && c.isStaticDoing(x.X) && c.isStaticDoing(x.Y)
 	}
 
 	return false
+}
+
+func isStringType(t types.Type) bool {
+	b, ok := t.Underlying().(*types.Basic)
+
+	return ok && b.Kind() == types.String
 }

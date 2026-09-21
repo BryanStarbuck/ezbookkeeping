@@ -669,6 +669,9 @@ import {
     parseDateTimeFromUnixTimeWithTimezoneOffset
 } from '@/lib/datetime.ts';
 import { generateRandomUUID } from '@/lib/misc.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/accounts/EditPage.vue');
 
 interface AccountContext {
     showIconSelectionSheet: boolean;
@@ -793,6 +796,7 @@ function init(): void {
 
             loading.value = false;
         }).catch(error => {
+            errors.caught('loading the account', error);
             if (error.processed) {
                 loading.value = false;
             } else {
@@ -834,6 +838,7 @@ function save(): void {
 
         router.back();
     }).catch(error => {
+        errors.caught('saving the account', error);
         submitting.value = false;
         hideLoading();
 

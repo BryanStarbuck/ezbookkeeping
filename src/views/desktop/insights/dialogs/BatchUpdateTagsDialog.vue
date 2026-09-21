@@ -55,6 +55,9 @@ import { useTransactionsStore } from '@/stores/transaction.ts';
 import {
     mdiRefresh
 } from '@mdi/js'
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/insights/dialogs/BatchUpdateTagsDialog.vue');
 
 export type BatchUpdateTagsOperationType = 'add' | 'remove' | 'clear';
 
@@ -111,6 +114,7 @@ function reload(): void {
     transactionTagsStore.loadAllTags({ force: true }).then(() => {
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading all tags', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -131,6 +135,7 @@ function confirm(): void {
             showState.value = false;
             resolveFunc?.(updateIds.value.length);
         }).catch(error => {
+            errors.caught('adding tags to the selected transactions', error);
             submitting.value = false;
 
             if (!error.processed) {
@@ -148,6 +153,7 @@ function confirm(): void {
             showState.value = false;
             resolveFunc?.(updateIds.value.length);
         }).catch(error => {
+            errors.caught('removing tags from the selected transactions', error);
             submitting.value = false;
 
             if (!error.processed) {
@@ -164,6 +170,7 @@ function confirm(): void {
             showState.value = false;
             resolveFunc?.(updateIds.value.length);
         }).catch(error => {
+            errors.caught('clearing the tags of the selected transactions', error);
             submitting.value = false;
 
             if (!error.processed) {

@@ -42,6 +42,9 @@ import { useI18nUIComponents } from '@/lib/ui/mobile.ts';
 import { type CommonDateRangeSelectionProps, useDateRangeSelectionBase } from '@/components/base/DateRangeSelectionBase.ts';
 
 import { useEnvironmentsStore } from '@/stores/environment.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/components/mobile/DateRangeSelectionSheet.vue');
 
 type DateTimePickerType = InstanceType<typeof DateTimePicker>;
 
@@ -77,6 +80,7 @@ function confirm(): void {
 
         emit('dateRange:change', finalDateRange.minUnixTime, finalDateRange.maxUnixTime);
     } catch (ex: unknown) {
+        errors.expected('validating the chosen date range', ex);
         if (ex instanceof Error) {
             showToast(ex.message);
         }

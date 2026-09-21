@@ -1,0 +1,36 @@
+{
+  "tool": "ezb_health",
+  "args": {},
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_health",
+    "data": {
+      "databaseOpen": true,
+      "healthy": true,
+      "listenAddress": "127.0.0.1",
+      "next": null,
+      "tiers": {
+        "admin": false,
+        "read": true,
+        "write": true
+      },
+      "upstreamDoors": {
+        "apiToken": false,
+        "mcp": false
+      },
+      "user": "operator",
+      "userBound": true
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 2,
+      "truncated": false,
+      "serverVersion": "",
+      "timezone": "UTC",
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

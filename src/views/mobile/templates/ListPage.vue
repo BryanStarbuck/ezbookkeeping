@@ -112,6 +112,9 @@ import {
     getFirstShowingId,
     getLastShowingId
 } from '@/lib/template.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/templates/ListPage.vue');
 
 const props = defineProps<{
     f7route: Router.Route;
@@ -167,6 +170,7 @@ function init(): void {
     }).then(() => {
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading all templates', error);
         if (error.processed) {
             loading.value = false;
         } else {
@@ -194,6 +198,7 @@ function reload(done?: () => void): void {
             showToast('Template list has been updated');
         }
     }).catch(error => {
+        errors.caught('loading all templates', error);
         done?.();
 
         if (!error.processed) {
@@ -215,6 +220,7 @@ function hide(template: TransactionTemplate, hidden: boolean): void {
     }).then(() => {
         hideLoading();
     }).catch(error => {
+        errors.caught('hiding or showing the template', error);
         hideLoading();
 
         if (!error.processed) {
@@ -247,6 +253,7 @@ function remove(template: TransactionTemplate | null, confirm: boolean): void {
     }).then(() => {
         hideLoading();
     }).catch(error => {
+        errors.caught('deleting the template', error);
         hideLoading();
 
         if (!error.processed) {
@@ -285,6 +292,7 @@ function saveSortResult(): void {
         sortable.value = false;
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('updating the template display orders', error);
         displayOrderSaving.value = false;
         hideLoading();
 
@@ -315,6 +323,7 @@ function cancelSort(): void {
         sortable.value = false;
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('loading all templates', error);
         displayOrderSaving.value = false;
         hideLoading();
 
@@ -345,6 +354,7 @@ function onSort(event: { el: { id: string }; from: number; to: number }): void {
     }).then(() => {
         displayOrderModified.value = true;
     }).catch(error => {
+        errors.caught('changing the template display order', error);
         showToast(error.message || error);
     });
 }

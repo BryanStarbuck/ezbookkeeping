@@ -1,0 +1,160 @@
+{
+  "tool": "ezb_get_statement_manifest",
+  "args": {},
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_get_statement_manifest",
+    "data": {
+      "accounts": [
+        {
+          "account_key": "household/Northbank/4021",
+          "currency": "USD",
+          "currency_defaulted": false,
+          "entity": "household",
+          "files": {
+            "combined": "Checking_x4021_ALL.ofx",
+            "converter": "ofx",
+            "formats": [
+              "ofx"
+            ],
+            "monthly": 2,
+            "pdfs": 0,
+            "sidecars": 0
+          },
+          "first": "2025-09",
+          "institution": "Northbank",
+          "kind": "checking",
+          "label": "Checking_x4021",
+          "last": "2025-10",
+          "last4": "4021",
+          "line": 2,
+          "mapped_account_id": null,
+          "path": "bank/household/Northbank/Checking_x4021",
+          "recon_na": 0,
+          "reconciled": 2,
+          "skip": false,
+          "statements": 2,
+          "transactions": 6,
+          "warnings": []
+        },
+        {
+          "account_key": "household/Northbank/7734",
+          "currency": "USD",
+          "currency_defaulted": false,
+          "entity": "household",
+          "files": {
+            "combined": null,
+            "converter": null,
+            "formats": [
+              "qif"
+            ],
+            "monthly": 1,
+            "needs": "qif_date_order",
+            "pdfs": 0,
+            "sidecars": 0
+          },
+          "first": "2025-10",
+          "institution": "Northbank",
+          "kind": "card",
+          "label": "Card_x7734",
+          "last": "2025-10",
+          "last4": "7734",
+          "line": 3,
+          "mapped_account_id": null,
+          "path": "bank/household/Northbank/Card_x7734",
+          "recon_na": 0,
+          "reconciled": 0,
+          "skip": false,
+          "statements": 1,
+          "transactions": 2,
+          "warnings": [
+            "1 statement(s) did not reconcile in the archive",
+            "QIF needs a date order (qif_ymd, qif_mdy or qif_dmy) in the manifest's qif_date_order column or the call; the plane never guesses it"
+          ]
+        },
+        {
+          "account_key": "acme_llc/Meridian/5520",
+          "currency": "USD",
+          "currency_defaulted": true,
+          "entity": "acme_llc",
+          "files": {
+            "combined": null,
+            "converter": "ezbookkeeping_csv",
+            "formats": [
+              "ezbookkeeping_csv"
+            ],
+            "monthly": 1,
+            "pdfs": 0,
+            "sidecars": 0
+          },
+          "first": "2025-09",
+          "institution": "Meridian",
+          "kind": "savings",
+          "label": "Savings_x5520",
+          "last": "2025-09",
+          "last4": "5520",
+          "line": 4,
+          "mapped_account_id": null,
+          "path": "bank/acme_llc/Meridian/Savings_x5520",
+          "recon_na": 0,
+          "reconciled": 1,
+          "skip": false,
+          "statements": 1,
+          "transactions": 1,
+          "warnings": [
+            "currency not stated; defaulted to the bound user's default currency USD"
+          ]
+        }
+      ],
+      "aliases_used": {},
+      "columns": [
+        "currency",
+        "entity",
+        "first",
+        "institution",
+        "kind",
+        "label",
+        "last",
+        "last4",
+        "path",
+        "recon_na",
+        "reconciled",
+        "statements",
+        "transactions"
+      ],
+      "format": "csv",
+      "manifest_path": "import/accounts.csv",
+      "missing_columns": [],
+      "mode": "prepared",
+      "root": "{ROOT}",
+      "staging": ".ezbk-staging",
+      "totals": {
+        "accounts": 3,
+        "currency_defaulted": 1,
+        "mapped": 0,
+        "statements": 4,
+        "transactions": 9,
+        "unreconciled": 1,
+        "without_importable_files": 0
+      },
+      "unknown_columns": [],
+      "warnings": []
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "label"
+      ],
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

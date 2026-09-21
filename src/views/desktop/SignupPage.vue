@@ -227,6 +227,9 @@ import {
     mdiArrowRight,
     mdiCheck
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/SignupPage.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -359,6 +362,7 @@ function submit(): void {
 
         navigateToHomePage.value = true;
     }).catch(error => {
+        errors.caught('signing up', error);
         submitting.value = false;
 
         if (!error.processed) {

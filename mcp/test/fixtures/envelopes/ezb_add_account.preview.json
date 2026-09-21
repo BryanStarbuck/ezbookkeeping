@@ -1,0 +1,54 @@
+{
+  "tool": "ezb_add_account",
+  "args": {
+    "name": "Northbank Checking",
+    "category": "checking",
+    "currency": "USD",
+    "initial_balance": 250000,
+    "initial_balance_date": "2026-01-01"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_add_account",
+    "data": {
+      "changes": {
+        "create": 1
+      },
+      "confirm_token": "cf_cfc25f44412c746168b0a3e1b00d8c33",
+      "dry_run": true,
+      "expires_at": "2026-09-21T16:43:15Z",
+      "fingerprint": "sha256:033da9320d3036e8",
+      "preview": {
+        "action": "create",
+        "category": "checking",
+        "color": "000000",
+        "comment": "",
+        "currency": "USD",
+        "icon": "1",
+        "initialBalance": 250000,
+        "initialBalanceDate": "2026-01-01",
+        "name": "Northbank Checking",
+        "side": "asset",
+        "type": "single"
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name"
+      ],
+      "dryRun": true,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

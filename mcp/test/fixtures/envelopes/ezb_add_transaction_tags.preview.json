@@ -1,0 +1,82 @@
+{
+  "tool": "ezb_add_transaction_tags",
+  "args": {
+    "ids": [
+      "3844013758447878147"
+    ],
+    "tag_names": [
+      "Trip"
+    ]
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_add_transaction_tags",
+    "data": {
+      "changes": {
+        "unchanged": 0,
+        "update": 1
+      },
+      "confirm_token": "cf_8061365f4a8ea19aa9e75c6cfec64cf9",
+      "dry_run": true,
+      "expires_at": "2026-09-21T16:43:16Z",
+      "fingerprint": "sha256:0faad2d6f8223210",
+      "preview": {
+        "mode": "add",
+        "rows": [
+          {
+            "categoryId": "3844013758582095876",
+            "categoryName": "Salary > Paycheck",
+            "changes": [
+              {
+                "field": "tagIds",
+                "from": [],
+                "fromNames": [],
+                "to": [
+                  "3844013758716313600"
+                ],
+                "toNames": [
+                  "Trip"
+                ]
+              }
+            ],
+            "comment": "ACME PAYROLL",
+            "date": "2026-07-01",
+            "id": "3844013758447878147",
+            "sourceAccountId": "3844013758313660416",
+            "sourceAccountName": "Northbank Checking",
+            "sourceAmount": 500000,
+            "sourceCurrency": "USD",
+            "typeName": "income"
+          }
+        ],
+        "selected": 1,
+        "selectedBy": "ids",
+        "tagIds": [
+          "3844013758716313600"
+        ],
+        "tagNames": [
+          "Trip"
+        ]
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name"
+      ],
+      "composed": true,
+      "dryRun": true,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

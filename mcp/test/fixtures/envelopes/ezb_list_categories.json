@@ -1,0 +1,212 @@
+{
+  "tool": "ezb_list_categories",
+  "args": {
+    "flat": true
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_list_categories",
+    "data": {
+      "categories": [
+        {
+          "color": "000000",
+          "comment": "",
+          "displayOrder": 1,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013758582095872",
+          "level": "primary",
+          "name": "Salary",
+          "parentId": "0",
+          "type": "income",
+          "typeCode": 1
+        },
+        {
+          "color": "000000",
+          "comment": "",
+          "displayOrder": 1,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013758582095876",
+          "level": "secondary",
+          "name": "Paycheck",
+          "parentId": "3844013758582095872",
+          "parentName": "Salary",
+          "type": "income",
+          "typeCode": 1
+        },
+        {
+          "color": "000000",
+          "comment": "",
+          "displayOrder": 1,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013758582095873",
+          "level": "primary",
+          "name": "Food",
+          "parentId": "0",
+          "type": "expense",
+          "typeCode": 2
+        },
+        {
+          "color": "000000",
+          "comment": "",
+          "displayOrder": 1,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013758582095877",
+          "level": "secondary",
+          "name": "Groceries",
+          "parentId": "3844013758582095873",
+          "parentName": "Food",
+          "type": "expense",
+          "typeCode": 2
+        },
+        {
+          "color": "000000",
+          "comment": "",
+          "displayOrder": 2,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013758582095878",
+          "level": "secondary",
+          "name": "Restaurants",
+          "parentId": "3844013758582095873",
+          "parentName": "Food",
+          "type": "expense",
+          "typeCode": 2
+        },
+        {
+          "color": "000000",
+          "comment": "",
+          "displayOrder": 2,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013758582095874",
+          "level": "primary",
+          "name": "Home",
+          "parentId": "0",
+          "type": "expense",
+          "typeCode": 2
+        },
+        {
+          "color": "000000",
+          "comment": "",
+          "displayOrder": 1,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013758582095879",
+          "level": "secondary",
+          "name": "Home Repair",
+          "parentId": "3844013758582095874",
+          "parentName": "Home",
+          "type": "expense",
+          "typeCode": 2
+        },
+        {
+          "color": "000000",
+          "comment": "",
+          "displayOrder": 2,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013758582095880",
+          "level": "secondary",
+          "name": "Other",
+          "parentId": "3844013758582095874",
+          "parentName": "Home",
+          "type": "expense",
+          "typeCode": 2
+        },
+        {
+          "color": "000000",
+          "comment": "",
+          "displayOrder": 3,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013760729579520",
+          "level": "primary",
+          "name": "Travel",
+          "parentId": "0",
+          "type": "expense",
+          "typeCode": 2
+        },
+        {
+          "color": "000000",
+          "comment": "",
+          "displayOrder": 1,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013760729579521",
+          "level": "secondary",
+          "name": "Flights",
+          "parentId": "3844013760729579520",
+          "parentName": "Travel",
+          "type": "expense",
+          "typeCode": 2
+        },
+        {
+          "color": "000000",
+          "comment": "",
+          "displayOrder": 1,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013758582095875",
+          "level": "primary",
+          "name": "Transfer",
+          "parentId": "0",
+          "type": "transfer",
+          "typeCode": 3
+        },
+        {
+          "color": "000000",
+          "comment": "",
+          "displayOrder": 1,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013758582095881",
+          "level": "secondary",
+          "name": "General Transfer",
+          "parentId": "3844013758582095875",
+          "parentName": "Transfer",
+          "type": "transfer",
+          "typeCode": 3
+        }
+      ],
+      "count": 12,
+      "filters": {
+        "flat": true,
+        "includeHidden": false,
+        "type": ""
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 1,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "name",
+        "comment"
+      ],
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

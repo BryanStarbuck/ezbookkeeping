@@ -521,6 +521,9 @@ import {
     mdiAccount,
     mdiAccountEditOutline
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/users/UserBasicSettingPage.vue');
 
 type ConfirmDialogType = InstanceType<typeof ConfirmDialog>;
 type SnackBarType = InstanceType<typeof SnackBar>;
@@ -597,6 +600,7 @@ function init(): void {
         avatarProvider.value = profile.avatarProvider;
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading the user profile', error);
         oldProfile.value.nickname = '';
         oldProfile.value.email = '';
         newProfile.value.nickname = '';
@@ -625,6 +629,7 @@ function save(): void {
         doAfterProfileUpdate(response.user);
         snackbar.value?.showMessage('Your profile has been successfully updated');
     }).catch(error => {
+        errors.caught('updating the profile', error);
         saving.value = false;
 
         if (!error.processed) {
@@ -662,6 +667,7 @@ function updateAvatar(event: Event): void {
 
         snackbar.value?.showMessage('Your avatar has been successfully updated');
     }).catch(error => {
+        errors.caught('updating the avatar', error);
         saving.value = false;
 
         if (!error.processed) {
@@ -685,6 +691,7 @@ function removeAvatar(): void {
 
             snackbar.value?.showMessage('Your profile has been successfully updated');
         }).catch(error => {
+            errors.caught('removing the avatar', error);
             saving.value = false;
 
             if (!error.processed) {
@@ -701,6 +708,7 @@ function resendVerifyEmail(): void {
         resending.value = false;
         snackbar.value?.showMessage('Validation email has been sent');
     }).catch(error => {
+        errors.caught('resending the verification email', error);
         resending.value = false;
 
         if (!error.processed) {

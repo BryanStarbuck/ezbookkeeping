@@ -1,0 +1,39 @@
+{
+  "tool": "ezb_list_tags",
+  "args": {},
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_list_tags",
+    "data": {
+      "count": 1,
+      "filters": {
+        "includeHidden": false
+      },
+      "tags": [
+        {
+          "displayOrder": 1,
+          "groupId": "0",
+          "hidden": false,
+          "id": "3844013758716313600",
+          "name": "Trip"
+        }
+      ]
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 1,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "name"
+      ],
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

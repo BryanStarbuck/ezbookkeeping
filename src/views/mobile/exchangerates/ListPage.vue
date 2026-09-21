@@ -145,6 +145,9 @@ import type { LocalizedLatestExchangeRate } from '@/models/exchange_rate.ts';
 
 import { parseBigDecimal} from '@/lib/numeral.ts';
 import { getCurrentUnixTime } from '@/lib/datetime.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/exchangerates/ListPage.vue');
 
 const props = defineProps<{
     f7router: Router.Router;
@@ -226,6 +229,7 @@ function reload(done?: () => void): void {
 
         showToast('Exchange rates data has been updated');
     }).catch(error => {
+        errors.caught('loading the latest exchange rates', error);
         done?.();
 
         loading.value = false;
@@ -269,6 +273,7 @@ function remove(customExchangeRate: LocalizedLatestExchangeRate | null, confirm:
 
         hideLoading();
     }).catch(error => {
+        errors.caught('deleting the custom exchange rate', error);
         hideLoading();
 
         if (!error.processed) {

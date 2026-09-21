@@ -3,6 +3,9 @@ import { KnownAmountFormat } from './numeral.ts';
 import { type DateFormatOrder, KnownDateTimeFormat } from './datetime.ts';
 import { KnownDateTimezoneFormat } from './timezone.ts';
 import { TransactionType } from './transaction.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/core/import_transaction.ts');
 
 export class ImportTransactionColumnType implements TypeAndName {
     private static readonly allInstances: ImportTransactionColumnType[] = [];
@@ -338,7 +341,8 @@ export class ImportTransactionDataMapping {
                 root.geoLocationOrder ?? ImportTransactionDataMapping.DEFAULT_GEO_LOCATION_ORDER,
                 root.tagSeparator ?? ImportTransactionDataMapping.DEFAULT_TAG_SEPARATOR
             );
-        } catch {
+        } catch (e) {
+            errors.expected('parsing the saved import data mapping', e);
             return null;
         }
     }

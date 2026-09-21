@@ -172,6 +172,9 @@ import {
     isSubCategoriesAllChecked,
     isSubCategoriesHasButNotAllChecked
 } from '@/lib/category.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/settings/CategoryFilterSettingsPage.vue');
 
 interface CollapseState {
     opened: boolean;
@@ -237,6 +240,7 @@ function init(): void {
             loadingError.value = 'Parameter Invalid';
         }
     }).catch(error => {
+        errors.caught('loading all categories', error);
         if (error.processed) {
             loading.value = false;
         } else {

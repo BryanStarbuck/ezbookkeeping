@@ -22,6 +22,9 @@ import {
 
 import { getTimezoneOffsetMinutes } from '@/lib/datetime.ts';
 import { transactionTypeToCategoryType } from '@/lib/category.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/lib/rule.ts');
 
 export function applyImportTransactionReplaceRules(transactions: ImportTransaction[], rules: ImportTransactionReplaceRule[], scope: ImportTransactionReplaceRuleApplyScope, context: ImportTransactionReplaceRuleContext): ImportTransactionReplaceRuleApplyResult {
     let matchedTransactionCount = 0;
@@ -219,7 +222,8 @@ function matchDescription(description: NormalizedText, field: ImportTransactionR
         try {
             const flags = (field === ImportTransactionReplaceRuleConditionFieldType.DescriptionCaseInsensitive || field === ImportTransactionReplaceRuleConditionFieldType.DescriptionNormalized) ? 'i' : undefined;
             matched = new RegExp(conditionText, flags).test(descriptionText);
-        } catch {
+        } catch (e) {
+            errors.expected('compiling the replace rule regular expression', e);
             matched = false;
         }
 

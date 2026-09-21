@@ -81,6 +81,7 @@ describe('RollingFileWriter (§4.3, §5.4)', () => {
 
         expect(realFs.appendFileSync).toHaveBeenCalled();
         expect(statSync(file).size).toBeGreaterThanOrEqual(256 * 1024);
+        writer.flush(); // leave nothing for the process-exit hook to write into a deleted directory
     });
 
     it('rotates at the cap and keeps at most N backups', () => {

@@ -570,6 +570,8 @@ func shortFunction(fn string) string {
 // and including /ezbookkeeping/ are stripped. Module-cache paths keep their module part.
 func relPath(file string) string {
 	file = strings.ReplaceAll(file, "\\", "/")
+	// `go build file.go` (the justfile's backend recipe) records the main package's file as ./x.go
+	file = strings.TrimPrefix(file, "./")
 
 	if i := strings.LastIndex(file, "/ezbookkeeping/"); i >= 0 {
 		return file[i+len("/ezbookkeeping/"):]

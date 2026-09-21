@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 )
 
 // ingest_scan.go — discovery (apis.mdx §14.4 /ingest/scan and /ingest/coverage; cli.mdx §10.3).
@@ -214,6 +216,7 @@ func ingScan(root *ingRoot, manifest *ingManifest, mode string, filters map[stri
 
 	_ = filepath.WalkDir(root.Real, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
+			errfile.Warn("walking the statements root", err)
 			return nil
 		}
 
@@ -239,6 +242,7 @@ func ingScan(root *ingRoot, manifest *ingManifest, mode string, filters map[stri
 		real, rerr := filepath.EvalSymlinks(p)
 
 		if rerr != nil || !ingWithin(root.Real, real) {
+			errfile.Expected("resolving a scanned file's real path", rerr)
 			return nil
 		}
 

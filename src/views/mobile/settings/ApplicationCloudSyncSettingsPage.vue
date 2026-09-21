@@ -96,6 +96,9 @@ import { useI18nUIComponents, showLoading, hideLoading } from '@/lib/ui/mobile.t
 import { useAppCloudSyncBase } from '@/views/base/settings/AppCloudSyncPageBase.ts';
 
 import { useUserStore } from '@/stores/user.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/settings/ApplicationCloudSyncSettingsPage.vue');
 
 const props = defineProps<{
     f7router: Router.Router;
@@ -134,6 +137,7 @@ function init(): void {
         setUserApplicationCloudSettings(response);
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading the application cloud sync settings', error);
         if (error.processed) {
             loading.value = false;
         } else {
@@ -157,6 +161,7 @@ function enable(update: boolean): void {
             showToast('Synchronized settings have been updated');
         }
     }).catch(error => {
+        errors.caught('enabling the application cloud sync', error);
         enabling.value = false;
         hideLoading();
 
@@ -176,6 +181,7 @@ function disable(): void {
         hideLoading();
         showToast('Settings sync has been disabled');
     }).catch(error => {
+        errors.caught('disabling the application cloud sync', error);
         disabling.value = false;
         hideLoading();
 

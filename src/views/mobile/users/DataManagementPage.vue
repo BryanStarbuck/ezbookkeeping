@@ -103,6 +103,9 @@ import { useRootStore } from '@/stores/index.ts';
 import { useUserStore } from '@/stores/user.ts';
 
 import { isDataExportingEnabled } from '@/lib/server_settings.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/users/DataManagementPage.vue');
 
 const props = defineProps<{
     f7router: Router.Router;
@@ -135,6 +138,7 @@ function reloadUserDataStatistics(): void {
         dataStatistics.value = dataStatisticsResponse;
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading the user data statistics', error);
         if (error.processed) {
             loading.value = false;
         } else {
@@ -153,6 +157,7 @@ function exportData(): void {
         exportingData.value = false;
         hideLoading();
     }).catch(error => {
+        errors.caught('exporting the user data', error);
         exportedData.value = null;
         exportingData.value = false;
         hideLoading();
@@ -185,6 +190,7 @@ function clearAllTransactions(password: string | null): void {
 
         reloadUserDataStatistics();
     }).catch(error => {
+        errors.caught('clearing all transactions', error);
         clearingData.value = false;
         hideLoading();
 
@@ -216,6 +222,7 @@ function clearAllData(password: string | null): void {
 
         reloadUserDataStatistics();
     }).catch(error => {
+        errors.caught('clearing all user data', error);
         clearingData.value = false;
         hideLoading();
 

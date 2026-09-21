@@ -1,0 +1,60 @@
+{
+  "tool": "ezb_get_account_properties",
+  "args": {
+    "account_name": "Northbank Checking"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_get_account_properties",
+    "data": {
+      "accountId": "3844013758313660416",
+      "accountIds": [
+        "3844013758313660416"
+      ],
+      "balanceModifications": [
+        {
+          "amount": 250000,
+          "currency": "USD",
+          "date": "2026-01-01",
+          "id": "3844013758447878144"
+        }
+      ],
+      "category": "checking",
+      "currency": "USD",
+      "firstTransaction": {
+        "date": "2026-01-01",
+        "id": "3844013758447878144",
+        "transactionTime": 1767225600000
+      },
+      "lastReconciledDate": null,
+      "lastReconciledTime": null,
+      "lastTransaction": {
+        "date": "2026-09-02",
+        "id": "3844013758447878156",
+        "transactionTime": 1788350400000
+      },
+      "name": "Northbank Checking",
+      "side": "asset",
+      "transactionCount": 9,
+      "type": "single"
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 1,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "name",
+        "comment"
+      ],
+      "composed": true,
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

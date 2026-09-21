@@ -156,7 +156,7 @@ func GetRandomNumberOrLowercaseLetter(n int) (string, error) {
 // MD5Encode returns a hashed string by md5
 func MD5Encode(data []byte) []byte {
 	m := md5.New()
-	m.Write(data)
+	_, _ = m.Write(data)
 	return m.Sum(nil)
 }
 

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/utils"
 )
 
@@ -137,6 +138,7 @@ func ingBuildRaw(mc *Ctx, ctx *ingContext, filter []string, prefer map[string]bo
 				data, err := ingReadLimited(p, ingSidecarMaxLen)
 
 				if err != nil {
+					errfile.Caught("reading a sidecar file for the raw import", err)
 					b.Issues = append(b.Issues, &ingRawIssueRow{AccountKey: sa.AccountKey, File: ctx.Root.Rel(p), Reason: "unreadable_file"})
 					continue
 				}
@@ -605,6 +607,7 @@ func ingRawInputs(mc *Ctx, ctx *ingContext, filter []string, progress func(strin
 	file := &ingRawAccountsFile{}
 
 	if err := json.Unmarshal(data, file); err != nil {
+		errfile.Caught("parsing the staged raw accounts file", err)
 		return nil, Conflict("re-run POST /ingest/extract with force: true", "the staged %s is damaged", ingAccountsFile)
 	}
 
@@ -642,6 +645,7 @@ func ingRawInputs(mc *Ctx, ctx *ingContext, filter []string, progress func(strin
 			csvData, err := ctx.Staging.ReadFile(csvRel)
 
 			if err != nil || csvData == nil {
+				errfile.Expected("reading a staged account-month file", err)
 				in.Conflicts = append(in.Conflicts, &ingConflict{AccountKey: ra.AccountKey, Kind: "missing_staged_file", Files: []string{ctx.Staging.Rel + "/" + csvRel}, Message: "a staged account-month is missing", Hint: "re-run POST /ingest/extract"})
 				continue
 			}
@@ -683,6 +687,7 @@ func ingAttachProvenance(rows []*ingRow, prov []byte) bool {
 	recs, err := r.ReadAll()
 
 	if err != nil || len(recs) < 1 {
+		errfile.Warn("parsing the staged provenance file", err)
 		return false
 	}
 
@@ -696,6 +701,7 @@ func ingAttachProvenance(rows []*ingRow, prov []byte) bool {
 		amt, err := strconv.ParseInt(rec[1], 10, 64)
 
 		if err != nil {
+			errfile.Warn("parsing an amount in the staged provenance file", err)
 			return false
 		}
 

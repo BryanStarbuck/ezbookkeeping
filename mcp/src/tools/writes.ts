@@ -8,7 +8,7 @@ import { z } from 'zod';
 
 import { ACCOUNT_CATEGORIES, ACCOUNT_REF_PROPERTIES, accountSegment, zAccountRef } from './accounts.js';
 import { CATEGORY_TYPES } from './reference.js';
-import { PLAN_FILE_PROPERTIES, PLAN_IMPORT_PROPERTIES, zPlanFile, zPlanImport } from './statements.js';
+import { PLAN_FILE_PROPERTIES, PLAN_IMPORT_PROPERTIES, withRoot, zPlanFile, zPlanImport } from './statements.js';
 import { amountField, boolField, currencyField, dateField, describe, enumField, fromPlane, hundredths, idField, idListField, intField, objectSchema, seg, strField, toolFail, WRITE_PROPERTIES, withoutWriteKeys, writeOpts, zCurrency, zDate, zId, zWrite } from './tool.js';
 import type { ToolDef, ToolResult, WriteArgs } from './tool.js';
 import { FILTER_PROPERTIES, filterOnly, zFilter } from './transactions.js';
@@ -66,7 +66,7 @@ export const applyAccounts: ToolDef = {
     .strict(),
   async run(args, ctx) {
     const a = args as WriteArgs & Record<string, unknown>;
-    const res = await ctx.client.request('/ingest/accounts/apply', { method: 'POST', body: { ...withoutWriteKeys(a), ...writeOpts(a, ctx.config) }, noTimeout: true });
+    const res = await ctx.client.request('/ingest/accounts/apply', { method: 'POST', body: { ...withRoot(withoutWriteKeys(a), ctx), ...writeOpts(a, ctx.config) }, noTimeout: true });
     return fromWrite(res);
   },
 };
@@ -86,7 +86,7 @@ export const applyStatementImport: ToolDef = {
   schema: z.object({ ...zPlanImport, ...zWrite }).strict(),
   async run(args, ctx) {
     const a = args as WriteArgs & Record<string, unknown>;
-    const res = await ctx.client.request('/ingest/apply', { method: 'POST', body: { ...withoutWriteKeys(a), ...writeOpts(a, ctx.config) }, noTimeout: true });
+    const res = await ctx.client.request('/ingest/apply', { method: 'POST', body: { ...withRoot(withoutWriteKeys(a), ctx), ...writeOpts(a, ctx.config) }, noTimeout: true });
     return fromWrite(res);
   },
 };
@@ -106,7 +106,7 @@ export const applyFileImport: ToolDef = {
   schema: z.object({ ...zPlanFile, ...zWrite }).strict(),
   async run(args, ctx) {
     const a = args as WriteArgs & Record<string, unknown>;
-    const res = await ctx.client.request('/ingest/file/apply', { method: 'POST', body: { ...withoutWriteKeys(a), ...writeOpts(a, ctx.config) }, noTimeout: true });
+    const res = await ctx.client.request('/ingest/file/apply', { method: 'POST', body: { ...withRoot(withoutWriteKeys(a), ctx), ...writeOpts(a, ctx.config) }, noTimeout: true });
     return fromWrite(res);
   },
 };

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 	"github.com/mayswind/ezbookkeeping/pkg/validators"
 )
@@ -112,6 +113,7 @@ func anParseArgs(mc *Ctx, defStart, defEnd string) (*anArgs, error) {
 
 	if a.TagFilter != "" && a.TagFilter != models.TransactionNoTagFilterValue {
 		if _, perr := models.ParseTransactionTagFilter(a.TagFilter); perr != nil {
+			errfile.Expected("parsing the tag_filter query argument", perr)
 			return nil, Invalid("tag_filter is upstream's syntax: `<mode>:<tagId>,<tagId>` joined by `;` (mode 0 has any, 1 has all, 2 not has any, 3 not has all), or `none`", "tag_filter %q is not a valid tag filter", a.TagFilter)
 		}
 	}
@@ -245,6 +247,7 @@ func anAmountQuery(mc *Ctx, name string, def int64) (int64, error) {
 	n, err := strconv.ParseInt(v, 10, 64)
 
 	if err != nil || n > 999999999999999 || n < -999999999999999 {
+		errfile.Expected("parsing an amount query argument", err)
 		return 0, Invalid("amounts are integer hundredths within ±999,999,999,999,999", "%s %s is out of range", name, v)
 	}
 

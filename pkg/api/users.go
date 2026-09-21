@@ -8,6 +8,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/avatars"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/locales"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
@@ -117,13 +118,13 @@ func (a *UsersApi) UserRegisterHandler(c *core.WebContext) (any, *errs.Error) {
 		if err != nil {
 			log.Errorf(c, "[users.UserRegisterHandler] failed to create email verify token for user \"uid:%d\", because %s", user.Uid, err.Error())
 		} else {
-			go func() {
+			errfile.Go("sending the verification email", func() {
 				err = a.users.SendVerifyEmail(user, token, c.GetClientLocale())
 
 				if err != nil {
 					log.Warnf(c, "[users.UserRegisterHandler] cannot send verify email to \"%s\", because %s", user.Email, err.Error())
 				}
-			}()
+			})
 		}
 	}
 
@@ -569,13 +570,13 @@ func (a *UsersApi) UserUpdateProfileHandler(c *core.WebContext) (any, *errs.Erro
 			if err != nil {
 				log.Errorf(c, "[users.UserUpdateProfileHandler] failed to create email verify token for user \"uid:%d\", because %s", user.Uid, err.Error())
 			} else {
-				go func() {
+				errfile.Go("sending the verification email", func() {
 					err = a.users.SendVerifyEmail(user, token, c.GetClientLocale())
 
 					if err != nil {
 						log.Warnf(c, "[users.UserUpdateProfileHandler] cannot send verify email to \"%s\", because %s", user.Email, err.Error())
 					}
-				}()
+				})
 			}
 		}
 	}
@@ -755,13 +756,13 @@ func (a *UsersApi) UserSendVerifyEmailByUnloginUserHandler(c *core.WebContext) (
 		return nil, errs.ErrTokenGenerating
 	}
 
-	go func() {
+	errfile.Go("sending the verification email", func() {
 		err = a.users.SendVerifyEmail(user, token, c.GetClientLocale())
 
 		if err != nil {
 			log.Warnf(c, "[users.UserSendVerifyEmailByUnloginUserHandler] cannot send email to \"%s\", because %s", user.Email, err.Error())
 		}
-	}()
+	})
 
 	return true, nil
 }
@@ -799,13 +800,13 @@ func (a *UsersApi) UserSendVerifyEmailByLoginedUserHandler(c *core.WebContext) (
 		return nil, errs.ErrTokenGenerating
 	}
 
-	go func() {
+	errfile.Go("sending the verification email", func() {
 		err = a.users.SendVerifyEmail(user, token, c.GetClientLocale())
 
 		if err != nil {
 			log.Warnf(c, "[users.UserSendVerifyEmailByLoginedUserHandler] cannot send email to \"%s\", because %s", user.Email, err.Error())
 		}
-	}()
+	})
 
 	return true, nil
 }

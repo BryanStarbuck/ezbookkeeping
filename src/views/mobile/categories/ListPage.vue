@@ -115,6 +115,9 @@ import {
     getFirstShowingId,
     getLastShowingId
 } from '@/lib/category.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/categories/ListPage.vue');
 
 const props = defineProps<{
     f7route: Router.Route;
@@ -233,6 +236,7 @@ function init(): void {
     }).then(() => {
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading all categories', error);
         if (error.processed) {
             loading.value = false;
         } else {
@@ -259,6 +263,7 @@ function reload(done?: () => void): void {
             showToast('Category list has been updated');
         }
     }).catch(error => {
+        errors.caught('loading all categories', error);
         done?.();
 
         if (!error.processed) {
@@ -280,6 +285,7 @@ function hide(category: TransactionCategory, hidden: boolean): void {
     }).then(() => {
         hideLoading();
     }).catch(error => {
+        errors.caught('hiding or showing the category', error);
         hideLoading();
 
         if (!error.processed) {
@@ -312,6 +318,7 @@ function remove(category: TransactionCategory | null, confirm: boolean): void {
     }).then(() => {
         hideLoading();
     }).catch(error => {
+        errors.caught('deleting the category', error);
         hideLoading();
 
         if (!error.processed) {
@@ -351,6 +358,7 @@ function saveSortResult(): void {
         sortable.value = false;
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('updating the category display orders', error);
         displayOrderSaving.value = false;
         hideLoading();
 
@@ -380,6 +388,7 @@ function cancelSort(): void {
         sortable.value = false;
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('loading all categories', error);
         displayOrderSaving.value = false;
         hideLoading();
 
@@ -409,6 +418,7 @@ function onSort(event: { el: { id: string }; from: number; to: number }): void {
     }).then(() => {
         displayOrderModified.value = true;
     }).catch(error => {
+        errors.caught('changing the category display order', error);
         showToast(error.message || error);
     });
 }

@@ -2,6 +2,7 @@ package validators
 
 import (
 	"github.com/go-playground/validator/v10"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 
 	"github.com/mayswind/ezbookkeeping/pkg/utils"
@@ -20,6 +21,7 @@ func ValidTransactionAmount(fl validator.FieldLevel) bool {
 		amount, err := utils.StringToInt64(value)
 
 		if err != nil {
+			errfile.Expected("parsing the transaction amount", err)
 			return false
 		}
 

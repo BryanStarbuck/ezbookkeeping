@@ -1,0 +1,57 @@
+{
+  "tool": "ezb_update_scheduled_transaction",
+  "args": {
+    "template_id": "3844013761132232704",
+    "frequency": "disabled"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_update_scheduled_transaction",
+    "data": {
+      "changes": {
+        "update": 1
+      },
+      "confirm_token": "cf_fe0196b15e041eccd32bb600126c5f4a",
+      "dry_run": true,
+      "expires_at": "2026-09-21T16:43:16Z",
+      "fingerprint": "sha256:3153cb3a71bd5eb4",
+      "preview": [
+        {
+          "field": "frequency",
+          "from": "monthly",
+          "id": "3844013761132232704",
+          "name": "Rent",
+          "to": "disabled"
+        },
+        {
+          "field": "frequencyValue",
+          "from": "1",
+          "id": "3844013761132232704",
+          "name": "Rent",
+          "to": null
+        }
+      ],
+      "warnings": [
+        "the schedule is PAUSED (frequency disabled); it creates nothing until a frequency is set"
+      ]
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 1,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name"
+      ],
+      "dryRun": true,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

@@ -25,6 +25,7 @@ import (
 
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/app"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/client"
+	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/errfile"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/exitcode"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/render"
 )
@@ -402,6 +403,7 @@ func orSpan(v string, now time.Time) (start, end time.Time, relative, ranged boo
 		t, perr := time.ParseInLocation("2006-01-02", raw, loc)
 
 		if perr != nil {
+			errfile.Expected("parsing a typed day", perr)
 			return time.Time{}, time.Time{}, false, false, fmt.Errorf("%q is not a real date", raw)
 		}
 
@@ -410,6 +412,7 @@ func orSpan(v string, now time.Time) (start, end time.Time, relative, ranged boo
 		t, perr := time.ParseInLocation("2006-01", raw, loc)
 
 		if perr != nil {
+			errfile.Expected("parsing a typed month", perr)
 			return time.Time{}, time.Time{}, false, false, fmt.Errorf("%q is not a real month", raw)
 		}
 
@@ -418,6 +421,7 @@ func orSpan(v string, now time.Time) (start, end time.Time, relative, ranged boo
 		t, perr := time.ParseInLocation("2006", raw, loc)
 
 		if perr != nil {
+			errfile.Expected("parsing a typed year", perr)
 			return time.Time{}, time.Time{}, false, false, fmt.Errorf("%q is not a year", raw)
 		}
 

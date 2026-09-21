@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 )
 
@@ -150,4 +151,24 @@ func UpErr(e *errs.Error) error {
 	}
 
 	return Upstream(e)
+}
+
+// isAnswer reports whether err normalises to a Fail that is an answer to the caller (a 4xx-shaped
+// code), as opposed to an internal or upstream fault (error_err.mdx R7)
+func isAnswer(err error) bool {
+	f := toFail(err)
+
+	return f != nil && f.Code != CodeInternal && f.Code != CodeUpstreamError
+}
+
+// reportLost is for a site that is about to replace err with a fresh Fail built by toFail(), which
+// does not wrap it: the original value would otherwise never reach error.err. A fault is Caught,
+// an answer is Expected, matching reportFail() in mount.go.
+func reportLost(doing string, err error) {
+	if isAnswer(err) {
+		errfile.Expected(doing, err)
+		return
+	}
+
+	errfile.Caught(doing, err)
 }

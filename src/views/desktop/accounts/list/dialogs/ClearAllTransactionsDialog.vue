@@ -45,6 +45,9 @@ import { useI18n } from '@/locales/helpers.ts';
 import { useRootStore } from '@/stores/index.ts';
 
 import { Account } from '@/models/account.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/accounts/list/dialogs/ClearAllTransactionsDialog.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -90,6 +93,7 @@ function confirm(): void {
         resolveFunc?.();
         showState.value = false;
     }).catch(error => {
+        errors.caught('clearing all transactions of the account', error);
         clearingData.value = false;
 
         if (!error.processed) {

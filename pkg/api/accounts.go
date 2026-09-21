@@ -6,6 +6,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
 	"github.com/mayswind/ezbookkeeping/pkg/duplicatechecker"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -167,6 +168,7 @@ func (a *AccountsApi) AccountCreateHandler(c *core.WebContext) (any, *errs.Error
 		mainAccountBalance, err = utils.StringToInt64(accountCreateReq.Balance)
 
 		if err != nil {
+			errfile.Expected("parsing the submitted account balance", err)
 			return nil, errs.ErrIncompleteOrIncorrectSubmission
 		}
 	}
@@ -194,6 +196,7 @@ func (a *AccountsApi) AccountCreateHandler(c *core.WebContext) (any, *errs.Error
 		creditLimitForCreditCard, err = utils.StringToInt64(accountCreateReq.CreditCardLimit)
 
 		if err != nil || creditLimitForCreditCard <= 0 {
+			errfile.Expected("parsing the submitted credit card limit", err)
 			return nil, errs.ErrIncompleteOrIncorrectSubmission
 		}
 	}
@@ -244,6 +247,7 @@ func (a *AccountsApi) AccountCreateHandler(c *core.WebContext) (any, *errs.Error
 				subAccountBalance, err = utils.StringToInt64(subAccount.Balance)
 
 				if err != nil {
+					errfile.Expected("parsing the submitted sub-account balance", err)
 					return nil, errs.ErrIncompleteOrIncorrectSubmission
 				}
 			}
@@ -403,6 +407,7 @@ func (a *AccountsApi) AccountModifyHandler(c *core.WebContext) (any, *errs.Error
 		creditLimitForCreditCard, err = utils.StringToInt64(accountModifyReq.CreditCardLimit)
 
 		if err != nil || creditLimitForCreditCard <= 0 {
+			errfile.Expected("parsing the submitted credit card limit", err)
 			return nil, errs.ErrIncompleteOrIncorrectSubmission
 		}
 	}
@@ -496,6 +501,7 @@ func (a *AccountsApi) AccountModifyHandler(c *core.WebContext) (any, *errs.Error
 					subAccountBalance, err = utils.StringToInt64(*subAccountReq.Balance)
 
 					if err != nil {
+						errfile.Expected("parsing the submitted sub-account balance", err)
 						return nil, errs.ErrIncompleteOrIncorrectSubmission
 					}
 				}

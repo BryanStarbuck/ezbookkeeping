@@ -9,6 +9,7 @@ import (
 	"github.com/go-playground/validator/v10"
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 )
 
@@ -114,6 +115,7 @@ func WriteEventStreamJsonSuccessResult(c *core.WebContext, result any) {
 	data, err := json.Marshal(result)
 
 	if err != nil {
+		errfile.Caught("encoding the event stream result", err)
 		c.Abort()
 		return
 	}
@@ -121,6 +123,7 @@ func WriteEventStreamJsonSuccessResult(c *core.WebContext, result any) {
 	_, err = c.Writer.WriteString("data: " + string(data) + "\n\n")
 
 	if err != nil {
+		errfile.Warn("writing the event stream result", err)
 		c.Abort()
 		return
 	}
@@ -140,6 +143,7 @@ func WriteEventStreamJsonErrorResult(c *core.WebContext, originalErr *errs.Error
 	data, err := json.Marshal(result)
 
 	if err != nil {
+		errfile.Caught("encoding the event stream result", err)
 		c.Abort()
 		return
 	}
@@ -147,6 +151,7 @@ func WriteEventStreamJsonErrorResult(c *core.WebContext, originalErr *errs.Error
 	_, err = c.Writer.WriteString("data: " + string(data) + "\n\n")
 
 	if err != nil {
+		errfile.Warn("writing the event stream result", err)
 		c.Abort()
 		return
 	}

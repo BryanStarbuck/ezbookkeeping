@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+
+	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/errfile"
 )
 
 // money.go is the CLI's ONE conversion from integer hundredths to a decimal string. It is
@@ -129,6 +131,7 @@ func ParseHundredthsArg(flag, v string) (int64, string) {
 	n, err := strconv.ParseInt(v, 10, 64)
 
 	if err != nil {
+		errfile.Expected("parsing an amount flag typed by the user", err)
 		return 0, flag + " must be an integer of hundredths, got " + strconv.Quote(v)
 	}
 

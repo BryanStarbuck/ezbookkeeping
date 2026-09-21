@@ -1,0 +1,72 @@
+{
+  "tool": "ezb_update_transaction",
+  "args": {
+    "transaction_id": "3844013758447878147",
+    "comment": "ACME PAYROLL SEPT",
+    "amount": 500100
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_update_transaction",
+    "data": {
+      "changes": {
+        "unchanged": 0,
+        "update": 1
+      },
+      "confirm_token": "cf_e285dd3ad2f35747134ad85c33ce3f50",
+      "dry_run": true,
+      "expires_at": "2026-09-21T16:43:16Z",
+      "fingerprint": "sha256:0287901bcea6dd5a",
+      "preview": {
+        "rows": [
+          {
+            "categoryId": "3844013758582095876",
+            "categoryName": "Salary > Paycheck",
+            "changes": [
+              {
+                "field": "sourceAmount",
+                "from": 500000,
+                "to": 500100
+              },
+              {
+                "field": "comment",
+                "from": "ACME PAYROLL",
+                "to": "ACME PAYROLL SEPT"
+              }
+            ],
+            "comment": "ACME PAYROLL",
+            "date": "2026-07-01",
+            "id": "3844013758447878147",
+            "sourceAccountId": "3844013758313660416",
+            "sourceAccountName": "Northbank Checking",
+            "sourceAmount": 500000,
+            "sourceCurrency": "USD",
+            "typeName": "income"
+          }
+        ]
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name",
+        "sourceAccount.name",
+        "destinationAccount.name",
+        "category.name",
+        "tags.name"
+      ],
+      "dryRun": true,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

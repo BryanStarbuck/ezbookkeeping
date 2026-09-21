@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 )
 
@@ -26,6 +27,7 @@ func integRunFallbackLookup(mc *Ctx, runId string) ([]int64, bool, error) {
 	rep, err := ingLoadRunReport(mc.Uid, runId)
 
 	if err != nil {
+		errfile.Expected("loading the run report for the fallback lookup", err)
 		return nil, false, nil
 	}
 
@@ -42,6 +44,7 @@ func integRunFallbackLookup(mc *Ctx, runId string) ([]int64, bool, error) {
 		id, err := strconv.ParseInt(s, 10, 64)
 
 		if err != nil || id <= 0 || seen[id] {
+			errfile.Expected("parsing a transaction id from the run report", err)
 			return
 		}
 
@@ -133,6 +136,7 @@ func integFillTags(mc *Ctx, rows []map[string]any) {
 	states, canon, _, err := txnReadStates(mc, ids)
 
 	if err != nil {
+		errfile.Caught("reading the transaction states to fill the tag ids", err)
 		return
 	}
 

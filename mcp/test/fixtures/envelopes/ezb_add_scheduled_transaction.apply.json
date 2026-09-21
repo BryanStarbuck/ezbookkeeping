@@ -1,0 +1,82 @@
+{
+  "tool": "ezb_add_scheduled_transaction",
+  "args": {
+    "name": "Rent",
+    "type": "expense",
+    "account_name": "Northbank Checking",
+    "amount": 240000,
+    "category_name": "Other",
+    "frequency": "monthly",
+    "frequency_value": [
+      1
+    ],
+    "start": "2026-10-01",
+    "comment": "RENT",
+    "dry_run": false,
+    "confirm_token": "cf_d24d90fdabe7864e11e1b1a5678d7ac7"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_add_scheduled_transaction",
+    "data": {
+      "changes": {
+        "create": 1
+      },
+      "dry_run": false,
+      "fingerprint": "sha256:e90075ae930c61d6",
+      "journal_id": 14,
+      "result": {
+        "template": {
+          "categoryId": "3844013758582095880",
+          "categoryName": "Other",
+          "comment": "RENT",
+          "displayOrder": 1,
+          "hidden": false,
+          "hideAmount": false,
+          "id": "3844013761132232704",
+          "kind": "scheduled",
+          "name": "Rent",
+          "schedule": {
+            "describe": "monthly on day 1",
+            "end": null,
+            "ended": false,
+            "frequency": "monthly",
+            "frequencyCode": 2,
+            "frequencyValue": "1",
+            "nextOccurrence": "2026-10-01",
+            "paused": false,
+            "scheduledAtUtcMinutes": 0,
+            "start": "2026-10-01",
+            "utcOffset": 0
+          },
+          "sourceAccountId": "3844013758313660416",
+          "sourceAccountName": "Northbank Checking",
+          "sourceAmount": 240000,
+          "sourceCurrency": "USD",
+          "tagIds": [],
+          "tagNames": [],
+          "type": "expense",
+          "typeCode": 3
+        }
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name"
+      ],
+      "dryRun": false,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

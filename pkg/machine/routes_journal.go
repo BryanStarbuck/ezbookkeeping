@@ -16,6 +16,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
 	"github.com/mayswind/ezbookkeeping/pkg/datastore"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 )
 
@@ -96,6 +97,7 @@ func jrDecodeOps(entry *MachineJournal) ([]InverseOp, error) {
 	}
 
 	if err := json.Unmarshal([]byte(entry.Inverse), &ops); err != nil {
+		errfile.Caught("decoding the journal entry's inverse operations", err, errfile.F("journal_id", entry.JournalId))
 		return nil, NewFail(CodeInternal, "the journal entry is unreadable; it cannot be undone automatically (GET /machine/v1/journal shows it)", "journal entry %d has a malformed inverse", entry.JournalId)
 	}
 
@@ -722,6 +724,7 @@ func jrHandleJournal(mc *Ctx) (any, error) {
 		ops, derr := jrDecodeOps(row)
 
 		if derr != nil {
+			errfile.Expected("listing a journal entry whose inverse could not be decoded", derr)
 			ops = nil
 		}
 
@@ -999,6 +1002,7 @@ func jrValidateBatch(req *jrBatchRequest) ([]*jrResolvedOp, error) {
 
 		if len(bytes.TrimSpace(o.Args)) > 0 && string(bytes.TrimSpace(o.Args)) != "null" {
 			if err := json.Unmarshal(o.Args, &args); err != nil {
+				errfile.Expected("parsing a batch operation's args", err)
 				return nil, Invalid("args is a JSON object of the operation's own arguments", "operations[%d].args is not a JSON object", i).WithDetails(map[string]any{"index": i})
 			}
 		}
@@ -1306,6 +1310,7 @@ func jrRollbackBatch(mc *Ctx, journalIds []int64, applied []int, notUndoable []i
 		entry, err := jrGetEntry(mc, journalIds[i])
 
 		if err != nil || entry == nil {
+			errfile.Caught("reading a journal entry while rolling back a batch", err, errfile.F("journal_id", journalIds[i]))
 			errsOut = append(errsOut, fmt.Sprintf("journal entry %d could not be read", journalIds[i]))
 			continue
 		}
@@ -1313,6 +1318,7 @@ func jrRollbackBatch(mc *Ctx, journalIds []int64, applied []int, notUndoable []i
 		ops, err := jrDecodeOps(entry)
 
 		if err != nil {
+			errfile.Expected("decoding a journal entry while rolling back a batch", err)
 			errsOut = append(errsOut, fmt.Sprintf("journal entry %d is unreadable", journalIds[i]))
 			continue
 		}
@@ -1323,6 +1329,7 @@ func jrRollbackBatch(mc *Ctx, journalIds []int64, applied []int, notUndoable []i
 		}
 
 		if err := jrDeleteEntries(mc, []int64{entry.JournalId}); err != nil {
+			errfile.Caught("deleting a journal entry while rolling back a batch", err, errfile.F("journal_id", entry.JournalId))
 			_ = jrMarkUndone(mc, entry.JournalId, true)
 		}
 

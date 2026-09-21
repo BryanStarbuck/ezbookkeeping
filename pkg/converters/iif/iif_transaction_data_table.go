@@ -5,6 +5,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/converters/datatable"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -230,12 +231,14 @@ func (t *iifTransactionDataRowIterator) parseTransaction(ctx core.Context, user 
 	mainAmountNum, err := parseAmount(mainAmount)
 
 	if err != nil {
+		errfile.Expected("parsing the main amount of an iif transaction", err)
 		return nil, errs.ErrAmountInvalid
 	}
 
 	splitAmountNum, err := parseAmount(splitAmount)
 
 	if err != nil {
+		errfile.Expected("parsing the split amount of an iif transaction", err)
 		return nil, errs.ErrAmountInvalid
 	}
 

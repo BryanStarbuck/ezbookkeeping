@@ -11,6 +11,7 @@ import (
 	"golang.org/x/text/transform"
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/utils"
@@ -166,6 +167,7 @@ func (r *beancountDataReader) read(ctx core.Context) (*beancountData, error) {
 				continue
 			}
 		} else { // first item not start with date or space
+			errfile.Expected("probing whether the beancount line starts with a date", err)
 			currentTransactionEntry, currentTransactionPosting = r.updateCurrentState(data, currentTransactionEntry, currentTransactionPosting)
 			continue
 		}

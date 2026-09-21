@@ -1,0 +1,773 @@
+{
+  "_comment": "The machine plane route table as GET /machine/v1/capabilities published it (synthetic run, no real data). Regenerate from a live server when pkg/machine changes: test/fixtures/README.md.",
+  "apiVersion": "v1",
+  "errorCodes": [
+    "unauthorized",
+    "forbidden",
+    "not_found",
+    "invalid_input",
+    "conflict",
+    "write_disabled",
+    "not_ready",
+    "upstream_error",
+    "internal"
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/accounts",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/accounts",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "DELETE",
+      "path": "/accounts/:id",
+      "tier": "admin",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/accounts/:id",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "PATCH",
+      "path": "/accounts/:id",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/accounts/:id/balance",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/accounts/:id/balance-history",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/accounts/:id/hide",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/accounts/:id/move",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/accounts/:id/properties",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/accounts/:id/reconcile/apply",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/accounts/:id/reconcile/plan",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/accounts/:id/reconciliation",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "DELETE",
+      "path": "/accounts/:id/sub-accounts/:sub_id",
+      "tier": "admin",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/accounts/batch",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/data/clear",
+      "tier": "admin",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/key/rotate",
+      "tier": "admin",
+      "status": "live"
+    },
+    {
+      "method": "DELETE",
+      "path": "/admin/pictures/unused",
+      "tier": "admin",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/sessions",
+      "tier": "admin",
+      "status": "live"
+    },
+    {
+      "method": "DELETE",
+      "path": "/admin/sessions/:token_id",
+      "tier": "admin",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/anomalies",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/cash-flow",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/category-trend",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/import-fallout",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/income-by-category",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/income-vs-expense",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/net-worth",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/payee-leaderboard",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/period-summary",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/recurring",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/runway",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/spending-by-category",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/tag-breakdown",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/api/*path",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/api/*path",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/batch",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/batch/ops",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/capabilities",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/categories",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/categories",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "DELETE",
+      "path": "/categories/:id",
+      "tier": "admin",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/categories/:id",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "PATCH",
+      "path": "/categories/:id",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/categories/:id/hide",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/categories/:id/move",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/categories/batch",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/data/export",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/data/statistics",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/exchange-rates",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/exchange-rates/convert",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "DELETE",
+      "path": "/exchange-rates/custom/:currency",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "PUT",
+      "path": "/exchange-rates/custom/:currency",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/health",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/ingest/accounts/apply",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/ingest/accounts/plan",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/ingest/apply",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/ingest/converters",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/ingest/coverage",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/ingest/dupes",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/ingest/extract",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/ingest/file/apply",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/ingest/file/plan",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/ingest/manifest",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/ingest/map",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "PUT",
+      "path": "/ingest/map",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/ingest/map/infer",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/ingest/plan",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/ingest/roots",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/ingest/rows",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/ingest/runs",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/ingest/runs/:id",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/ingest/scan",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/insights",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/insights",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "DELETE",
+      "path": "/insights/:id",
+      "tier": "admin",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/insights/:id",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "PATCH",
+      "path": "/insights/:id",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/insights/:id/hide",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/insights/:id/move",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/journal",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/ping",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/redo",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/schedules/upcoming",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/tag-groups",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/tag-groups",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "DELETE",
+      "path": "/tag-groups/:id",
+      "tier": "admin",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/tag-groups/:id",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "PATCH",
+      "path": "/tag-groups/:id",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/tag-groups/:id/move",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/tags",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/tags",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "DELETE",
+      "path": "/tags/:id",
+      "tier": "admin",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/tags/:id",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "PATCH",
+      "path": "/tags/:id",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/tags/:id/hide",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/tags/:id/move",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/tags/batch",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/templates",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/templates",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "DELETE",
+      "path": "/templates/:id",
+      "tier": "admin",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/templates/:id",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "PATCH",
+      "path": "/templates/:id",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/templates/:id/hide",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/templates/:id/move",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/transactions",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/transactions",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "DELETE",
+      "path": "/transactions/:id",
+      "tier": "admin",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/transactions/:id",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "PATCH",
+      "path": "/transactions/:id",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "DELETE",
+      "path": "/transactions/bulk",
+      "tier": "admin",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/transactions/count",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/transactions/earliest",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/transactions/export",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/transactions/latest",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/transactions/move-all",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/transactions/set-account",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/transactions/set-category",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/transactions/tags/add",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/transactions/tags/clear",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/transactions/tags/remove",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "POST",
+      "path": "/undo",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/user/profile",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "PATCH",
+      "path": "/user/profile",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/user/settings",
+      "tier": "read",
+      "status": "live"
+    },
+    {
+      "method": "PATCH",
+      "path": "/user/settings",
+      "tier": "write",
+      "status": "live"
+    },
+    {
+      "method": "GET",
+      "path": "/whoami",
+      "tier": "read",
+      "status": "live"
+    }
+  ]
+}

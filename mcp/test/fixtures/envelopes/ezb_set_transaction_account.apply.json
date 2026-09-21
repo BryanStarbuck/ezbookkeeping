@@ -1,0 +1,46 @@
+{
+  "tool": "ezb_set_transaction_account",
+  "args": {
+    "ids": [
+      "3844013758447878147"
+    ],
+    "account_name": "Northbank Checking",
+    "dry_run": false,
+    "confirm_token": "cf_c8b8d28cba0333901b87d42c6490a2fa"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_set_transaction_account",
+    "data": {
+      "changes": {
+        "unchanged": 1,
+        "update": 0
+      },
+      "dry_run": false,
+      "fingerprint": "sha256:611113125db42dea",
+      "result": {
+        "ids": [],
+        "updated": 0
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 1,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name"
+      ],
+      "composed": true,
+      "dryRun": false,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

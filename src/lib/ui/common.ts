@@ -8,6 +8,9 @@ import { KnownFileType } from '@/core/file.ts';
 
 import { isNumber } from '@/lib/common.ts';
 import logger from '../logger.ts';
+import { errorFileFor } from '../errfile/index.ts';
+
+const errors = errorFileFor('src/lib/ui/common.ts');
 
 export function scrollToSelectedItem(parentEl: Element | null | undefined, containerSelector: string | null, scrollableListSelector: string | null, selectedItemSelector: string): void {
     if (!parentEl) {
@@ -238,6 +241,7 @@ export function compressJpgImage(blob: Blob, maxWidth: number, maxHeight: number
             };
 
             img.onerror = (error) => {
+                errors.caught('decoding the image to compress', error);
                 reject(error);
             };
 
@@ -249,6 +253,7 @@ export function compressJpgImage(blob: Blob, maxWidth: number, maxHeight: number
         };
 
         reader.onerror = (error) => {
+            errors.caught('reading the image to compress', error);
             reject(error);
         };
 

@@ -223,6 +223,9 @@ import {
     mdiLockOutline,
     mdiLogout
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/components/desktop/MainPageLayout.vue');
 
 defineProps<{
     navItemsClass?: string;
@@ -303,6 +306,7 @@ function logout(): void {
 
         router.replace('/login');
     }).catch(error => {
+        errors.caught('logging out', error);
         logouting.value = false;
         showLoading.value = false;
 

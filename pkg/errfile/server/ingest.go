@@ -279,7 +279,7 @@ func sanitize(e *event, bodyApp, via string) *errfile.Record {
 		Where: where,
 		Doing: doing,
 		Error: errfile.RedactURLs(clip(e.Error, errfile.MessageCap)),
-		Cause: errfile.RedactURLs(clip(e.Cause, errfile.MessageCap)),
+		Cause: causeField(errfile.RedactURLs(clip(e.Cause, errfile.MessageCap))),
 		Stack: stackLines(e.Stack),
 		Data:  data,
 	}
@@ -349,4 +349,17 @@ func stackLines(raw json.RawMessage) []string {
 	}
 
 	return out
+}
+
+// causeField accepts the browser's ready-made " | cause: …" chain as well as a bare description
+func causeField(c string) string {
+	if c == "" || strings.HasPrefix(c, " | cause: ") || strings.HasPrefix(c, "| cause: ") {
+		if c != "" && !strings.HasPrefix(c, " ") {
+			return " " + c
+		}
+
+		return c
+	}
+
+	return " | cause: " + c
 }

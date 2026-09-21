@@ -30,6 +30,7 @@ func main() {
 	core.Version = Version
 	core.CommitHash = CommitHash
 	core.BuildTime = BuildUnixTime
+	commandName := cmd.CommandName(os.Args) // pm/error_err.mdx §7 G8; before the package name is shadowed
 
 	cmd := &cli.Command{
 		Name:    "ezBookkeeping",
@@ -58,7 +59,7 @@ func main() {
 	err := cmd.Run(context.Background(), os.Args)
 
 	if err != nil {
-		errfile.Fatal("running ezbookkeeping", err, errfile.F("command", commandName(os.Args)))
+		errfile.Fatal("running ezbookkeeping", err, errfile.F("command", commandName))
 		log.Fatalf("Failed to run ezBookkeeping with %s: %v", os.Args, err)
 	}
 }

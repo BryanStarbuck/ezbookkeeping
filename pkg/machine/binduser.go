@@ -6,6 +6,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
 	"github.com/mayswind/ezbookkeeping/pkg/datastore"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 	"github.com/mayswind/ezbookkeeping/pkg/services"
 )
@@ -54,6 +55,7 @@ func ResolveBoundUser(c core.Context) (*models.User, error) {
 		user, err := services.Users.GetUserByUsername(c, username)
 
 		if err != nil || user == nil {
+			errfile.Warn("loading the configured bound user", err)
 			return nil, NewFail(CodeNotReady, "fix "+source+" to name an existing user, or register \""+username+"\" at the web UI", "the configured user %q does not exist", username)
 		}
 
@@ -77,6 +79,10 @@ func ResolveBoundUser(c core.Context) (*models.User, error) {
 		user, err := services.Users.GetUserByUsername(c, names[0])
 
 		if err != nil || user == nil {
+			if err != nil {
+				errfile.Caught("loading the only user", err)
+			}
+
 			return nil, NewFail(CodeNotReady, "retry; if it persists, set ezbookkeeping.machine.username", "the only user could not be loaded")
 		}
 

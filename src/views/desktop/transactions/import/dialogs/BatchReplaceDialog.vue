@@ -254,6 +254,9 @@ import {
     mdiRefresh,
     mdiPound
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/transactions/import/dialogs/BatchReplaceDialog.vue');
 
 export type BatchReplaceDialogMode = 'batchReplace' | 'batchAdd' | 'replaceInvalidItems';
 export type BatchReplaceDialogDataType = 'expenseCategory' | 'incomeCategory' | 'transferCategory' | 'account' | 'destinationAccount' | 'timezone' | 'tag';
@@ -379,6 +382,7 @@ function reload(): void {
         transactionCategoriesStore.loadAllCategories({ force: true }).then(() => {
             loading.value = false;
         }).catch(error => {
+            errors.caught('loading all categories', error);
             loading.value = false;
 
             if (!error.processed) {
@@ -391,6 +395,7 @@ function reload(): void {
         accountsStore.loadAllAccounts({ force: true }).then(() => {
             loading.value = false;
         }).catch(error => {
+            errors.caught('loading all accounts', error);
             loading.value = false;
 
             if (!error.processed) {
@@ -403,6 +408,7 @@ function reload(): void {
         transactionTagsStore.loadAllTags({ force: true }).then(() => {
             loading.value = false;
         }).catch(error => {
+            errors.caught('loading all tags', error);
             loading.value = false;
 
             if (!error.processed) {

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/mayswind/ezbookkeeping/pkg/converters"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 )
 
 // routes_ingest.go — the ingest plane (apis.mdx §14) and account provisioning (§15).
@@ -199,6 +200,7 @@ func ingHandleRoots(mc *Ctx) (any, error) {
 			item["manifest_path"] = root.Rel(mreal)
 			item["mode"] = "prepared"
 		} else {
+			errfile.Expected("looking for a manifest in the statements root", err)
 			item["manifest_path"] = nil
 			item["mode"] = "raw"
 		}
@@ -253,6 +255,7 @@ func ingHandleManifest(mc *Ctx) (any, error) {
 		files := map[string]any{"formats": []string{}, "monthly": 0}
 
 		if serr != nil {
+			errfile.Expected("resolving the manifest row's account path", serr)
 			warnings = append(warnings, "the account path is outside the statements root")
 		} else {
 			if !shelf.Exists {
@@ -616,6 +619,7 @@ func ingHandleMapPut(mc *Ctx) (any, error) {
 		}
 
 		if _, err := RecordJournal(mc, "ingest map: "+strings.TrimSpace(ingCountsLine(p.Changes)), p.Count, []InverseOp{ingMapRestoreOp(ctx, prevRaw, newRaw)}); err != nil {
+			errfile.Caught("recording the undo journal entry for the ingest map", err)
 			return map[string]any{"path": ctx.Staging.Rel + "/" + ingMapFile, "entries": len(next.Accounts), "warning": "the map was written but the undo journal entry was not"}, nil
 		}
 

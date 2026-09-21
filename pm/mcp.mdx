@@ -162,7 +162,7 @@ accident.**
   ANALYTICS family exists so a total is always a tool call and never a model's addition, and so a
   multi-currency total always arrives with its rates named.
 - _Cannot change it by accident_ — 47 of 65 tools are read-only; the 18 that write need the server's
-  write tier **and** this server's **and** `dry_run: false` **and** a `confirm` token only the matching
+  write tier **and** this server's **and** `dry_run: false` **and** a `confirm_token` only the matching
   plan produces, under a ceiling that refuses and reports the real count (§9.7). None deletes.
 
 ---
@@ -370,24 +370,36 @@ ezbookkeeping/
 │   ├── package.json                  "private": true — never published; @modelcontextprotocol/sdk and zod pinned exact
 │   ├── package-lock.json             its own lockfile — NOT the root one
 │   ├── tsconfig.json
-│   ├── justfile                      build | test | probe
+│   ├── tsconfig.eslint.json          the lint project (tests and canaries included)
+│   ├── eslint.config.mjs             typescript-eslint + the errfile rule (error_err.mdx §5)
+│   ├── vitest.config.ts              one runner: test/**, src/canary/*.canary.ts, src/**/*.test.ts
+│   ├── justfile                      install | build | test | probe | lint
 │   ├── scripts/
-│   │   └── build-instructions.ts     reads ../ai/mcp_prompt_ezbookkeeping.md -> src/instructions.ts
+│   │   ├── build-instructions.ts     reads ../ai/mcp_prompt_ezbookkeeping.md -> src/instructions.ts
+│   │   ├── stamp.ts                  shebang banner + chmod +x on dist/index.js (§5.3)
+│   │   └── probe.ts                  the hand-piped initialize / tools/list over stdio (§17)
 │   ├── src/
-│   │   ├── index.ts                  Main.run() — config, stderr banner, StdioServerTransport, signals
-│   │   ├── server.ts                 McpServerHost — handleListTools(), handleCallTool()
+│   │   ├── index.ts                  Main.run() — config, key, node error sink, stderr banner, StdioServerTransport, signals
+│   │   ├── server.ts                 McpServerHost — handleListTools(), handleCallTool(), toToolFailure()
+│   │   ├── config.ts                 loadConfig() — the EZBKMCP_* variables, read once, frozen (§14)
+│   │   ├── envelope.ts               the twelve codes, ToolError, fail() (§12)
 │   │   ├── instructions.ts           GENERATED. Do not edit
+│   │   ├── prompt.ts                 resolveInstructions() — token substitution, EZBKMCP_PROMPT_FILE (§8.3)
 │   │   ├── credentials.ts            the key — same rules as the Go copies, proven by shared vectors
-│   │   ├── client.ts                 the ONE http client. The only module that opens a socket
+│   │   ├── client.ts                 the ONE http client (node:http, never fetch — §8). The only module that opens a socket
 │   │   ├── gates.ts                  the six gates (§7.1)
 │   │   ├── logger.ts                 stderr + file. There is deliberately no stdout path
 │   │   ├── audit.ts                  the audit line (§16.2)
+│   │   ├── errfile/                  the error file (§16.3): six GENERATED copies of src/lib/errfile + node.ts, the node sink
 │   │   ├── tools/
 │   │   │   ├── registry.ts           const TOOLS: ToolDef[] — the one array (§9.3)
-│   │   │   ├── tool.ts               interface ToolDef, function fail()
+│   │   │   ├── tool.ts               type ToolDef, describe(), the write-protocol keys, fromPlane()
 │   │   │   └── *.ts                  one file per family
-│   │   └── canary/                   one *.canary.ts per name in the §7.0 "Canary" column
-│   ├── test/fixtures/
+│   │   └── canary/                   one *.canary.ts per name in the §7.0 "Canary" column, plus _shared.ts
+│   ├── test/
+│   │   ├── *.test.ts                 catalogue, gates, credentials vectors, instructions, canary parity, live integration
+│   │   ├── helpers/                  fake.ts (scripted plane), live.ts (real server, temp SQLite), rpc.ts (stdio client)
+│   │   └── fixtures/                 plane_routes.json (route parity), envelopes/*.json (recorded, synthetic)
 │   └── dist/                         built, chmod +x, shebang banner (git-ignored)
 └── (upstream's tree, including upstream's own pkg/mcp — untouched)
 ```
@@ -499,8 +511,8 @@ Resolution order: `EZBKMCP_API_KEY` → `EZBKMCP_API_KEY_FILE` → the credentia
 - The key distinguishes callers that **are** on this machine: another local user, and a web page the
   operator has open. ezBookkeeping sets no CORS headers, so a hostile page cannot read a response — but
   it can send a request, and a DNS-rebound hostname makes it same-origin. What stops it is the key the
-  page cannot read, plus the plane refusing any request carrying a browser `Origin` or `Sec-Fetch-Site`
-  and pinning `Host`.
+  page cannot read, plus the plane refusing any request carrying a browser `Origin`, `Sec-Fetch-Site` or
+  `Sec-Fetch-Mode` and pinning `Host`.
 
 > **The loopback gate stops other computers. The key stops other origins and other users on this
 > one.** Two walls, each load-bearing against a different attacker.
@@ -531,7 +543,7 @@ persuasive string reaches a tool handler."_
 
 | #   | Threat                                   | Vector                                                                                   | Primary control                                                                                           | Defence in depth                                                         | Canary                    |
 | --- | ---------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------- |
-| T1  | **Money moved or destroyed**             | model calls a write tool it was talked into                                              | write tier off by default; TWO switches (§9.7); **no delete tool exists**                                  | `confirm` echo + `max_changes` + dry-run default + `ezb_undo`             | `gates`                   |
+| T1  | **Money moved or destroyed**             | model calls a write tool it was talked into                                              | write tier off by default; TWO switches (§9.7); **no delete tool exists**                                  | `confirm_token` echo + `max_changes` + dry-run default + `ezb_undo`       | `gates`                   |
 | T2  | **Silent large write**                   | a bulk re-categorise that looked small                                                   | the plane refuses over `max_changes` and reports the count                                                | plan recomputed at apply time                                            | `gates`                   |
 | T3  | **Ledger read as another's**             | model routes to `actual_budget` or `quickbooks`, or answers from the wrong app           | the seven layers of §3.4, including "ask once which app"                                                  | every envelope carries `app`, `user` and `defaultCurrency` (§12.1)       | `routing`                 |
 | T4  | **Currency confusion**                   | the model adds USD and EUR, or compares yen to dollars                                   | every amount carries its currency; analytics refuse cross-currency totals without `convert_to` (§10.2)    | converted answers name every rate and its date                          | `currency`                |
@@ -544,7 +556,7 @@ persuasive string reaches a tool handler."_
 | T11 | **PII in the log**                       | an argument drags a comment or an amount into `mcp.info`                                 | arguments hashed; a non-PII scalar allowlist logged verbatim (§16.2)                                      | log `0600`, append-only, rotating                                        | `audit`                   |
 | T12 | **Wrong install**                        | a non-loopback URL used as if it were the laptop                                         | loopback classifier; the key never attached to non-loopback, non-`https:` (§7.3)                         | every envelope names the target                                          | —                         |
 | T13 | **stdout corruption**                    | one `console.log` from us or a dependency                                                | the stdout ban, enforced against the **built** `dist/` bundle                                              | no stdout writer exists outside the transport                            | `stdout-purity`           |
-| T14 | **A web page reaching the plane**        | a hostile page, or DNS rebinding to `127.0.0.1`                                          | the **key** the page cannot read, plus the plane refusing any browser `Origin` / `Sec-Fetch-Site`         | `Host` allowlist                                                         | `origin-gate`             |
+| T14 | **A web page reaching the plane**        | a hostile page, or DNS rebinding to `127.0.0.1`                                          | the **key** the page cannot read, plus the plane refusing any browser `Origin` / `Sec-Fetch-Site` / `Sec-Fetch-Mode` | `Host` allowlist                                                   | `origin-gate`             |
 | T15 | **Forged loopback via a header**         | `X-Forwarded-For: 127.0.0.1` from off-machine with trusted proxies configured            | the gate reads `c.Request.RemoteAddr` only, never `ClientIP()`                                            | 404, so probing teaches nothing                                          | `origin-gate`             |
 | T16 | **The upstream full-access door**        | upstream's `/mcp` or API tokens switched on and forgotten                                | this server never uses them; `ezb_health` reports if either is on                                         | `ezbk doctor` warns                                                      | `upstream-door`           |
 
@@ -583,7 +595,7 @@ is loud.)
 | The API secret key, `[security] secret_key`, any upstream token or password hash | they are what is being protected                                 |
 | Full bank account numbers                                                        | last-4 is all anything needs                                     |
 | The raw text of a statement PDF or its sidecars                                  | tools return **parsed rows**, never the document                 |
-| Absolute paths outside the statements root and the state root                    | reconnaissance                                                   |
+| Absolute paths outside the statements root and the state root                    | reconnaissance. `ezb_whoami`'s `credentialsFile`, `installPath` and `statementsRoot` arrive home-relative (`~/…`) from the plane (apis.mdx §19.3) |
 | Anything from another product's credentials or state                             | §3.6                                                             |
 | Transaction picture bytes                                                        | pictures are receipts; metadata (has pictures: yes/no) is enough |
 
@@ -616,6 +628,15 @@ The SDK is `@modelcontextprotocol/sdk`, **pinned exact** in `mcp/package.json` �
 upgraded deliberately, with the hand-piped probe (§17) re-run on every upgrade. We
 declare capabilities `{ tools: {} }` and nothing else, and answer `-32601` to every `prompts/*` and
 `resources/*` request, with a test behind it.
+
+**The HTTP side is `node:http` / `node:https`, never `fetch`.** Node's `fetch` is undici, which
+stamps `Sec-Fetch-Mode: cors` on every request and will not let a caller remove it — and the plane's
+origin gate treats any `Sec-Fetch-*` header as a browser and answers `404` (apis.mdx §5.7). So
+`src/client.ts` is the one module that opens a socket, it does so with `http.request`, and the
+`no-network` canary greps our own source for `fetch(` and fails on a hit. Our requests carry no
+browser header at all; absence is the credential.
+
+Code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/client.ts` — `httpRequest()`, class `MachinePlaneClient`, `interpretEnvelope()`
 
 ### 8.1 stdout is the wire (LOCKED)
 
@@ -764,7 +785,7 @@ tool seems to need computation, the computation becomes a route first.
 | ---------------------------------- | ------------------------------------------------------------------------------------------- |
 | `ezb_list_accounts`                | accounts with balances **and currencies**, sub-accounts nested. `include_hidden`, `currency`, `category` |
 | `ezb_get_account`                  | one account                                                                                 |
-| `ezb_get_account_balance`          | one balance with its currency, `as_of` a date                                               |
+| `ezb_get_account_balance`          | one balance with its currency, `as_of` a date. **`account_id` only** — the plane's `/accounts/:id/balance` resolves ids, not names |
 | `ezb_get_account_properties`       | transaction count, first/last transaction, last reconciled, card statement date and limit   |
 | `ezb_get_reconciliation_statement` | the app's reconciliation statement: opening, inflows, outflows, closing, running balances   |
 
@@ -799,8 +820,17 @@ tool seems to need computation, the computation becomes a route first.
 
 The most important family in the catalogue: it exists so a model never adds two numbers and never
 multiplies by an exchange rate. Every tool takes `start`, `end`, `account_ids`, `category_ids`,
-`tag_ids`, `include_transfers` (false), `include_hidden_accounts` (false) and `convert_to` (optional),
-and every response echoes its filters, timezone and — if converted — every rate.
+`exclude_category_ids`, `tag_ids`, `include_transfers` (false), `include_hidden_accounts` (false),
+`use_transaction_timezone` (false) and `convert_to` (optional), and every response echoes its filters,
+timezone and — if converted — every rate.
+
+**`tag_ids` is a translation.** The plane's shared argument is `tag_filter`, in upstream's own syntax
+(`<mode>:<tagId>,<tagId>` joined by `;`, mode 0 has any, 1 has all, 2 not has any, 3 not has all, or
+`none` for untagged — apis.mdx §12.2). The tools accept `tag_ids` and send `tag_filter=0:<ids>` ("has
+any"), and also accept `tag_filter` verbatim for the other modes; when both are given, `tag_filter`
+wins. `ezb_tag_breakdown` is the exception: its route takes `tag_ids` natively, so it sends them as is.
+
+Code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/tools/analytics.ts` — `commonQuery()`, `COMMON_PROPERTIES`
 
 | Tool                           | Answers                                                                                   |
 | ------------------------------ | ----------------------------------------------------------------------------------------- |
@@ -810,7 +840,7 @@ and every response echoes its filters, timezone and — if converted — every r
 | `ezb_income_vs_expense`        | in, out, net, per interval                                                                |
 | `ezb_cash_flow`                | opening, in, out, closing, per interval                                                   |
 | `ezb_net_worth`                | assets, liabilities, net — per interval and per account                                   |
-| `ezb_account_balance_history`  | one account's balance over time                                                           |
+| `ezb_account_balance_history`  | one account's balance over time (`account_id` only — the route takes no name)             |
 | `ezb_category_trend`           | one category over time, with its own mean and median                                      |
 | `ezb_tag_breakdown`            | spending and income per tag — what a trip or a project cost                               |
 | `ezb_payee_leaderboard`        | who got the money, grouped by normalised **comment** (ezBookkeeping has no payee entity), with the variants merged |
@@ -834,13 +864,13 @@ and every response echoes its filters, timezone and — if converted — every r
 | `ezb_plan_accounts`             | create / link / ambiguous per manifest row, with category, side and currency (§11.4) |
 | `ezb_plan_statement_import`     | the plan: new, already imported, deleted-and-kept-deleted, possible matches, transfer candidates, unmapped |
 | `ezb_plan_file_import`          | one file into one account — the Import dialog, previewed                             |
-| `ezb_list_import_fallout`       | rows an import sent to its fallback category, grouped for re-categorising            |
+| `ezb_list_import_fallout`       | rows an import sent to its fallback category, grouped for re-categorising. `run_id` finds the run's recorded fallback; when no run has recorded one, `fallback_category_ids` is required or the plane answers `invalid_input` |
 
 **Previews and history (2, read)**
 
 | Tool                 | Answers                                                                                      |
 | -------------------- | -------------------------------------------------------------------------------------------- |
-| `ezb_plan_reconcile` | the app's balance vs the operator's figure, the difference, and the rows since last reconciled |
+| `ezb_plan_reconcile` | the app's balance vs the operator's figure, the difference, and the rows since last reconciled. **It takes the apply's arguments** (`target_balance`, `as_of`, `create_adjustment`, `adjustment_category_id` / `_name`, `adjustment_comment`, `mark_reconciled`) because the plane's plan and apply take the same ones and the token is issued for the apply route over that exact change set. `mark_reconciled` defaults to true; with the bound user's "use last reconciled time" setting off, the plane answers `forbidden` unless `mark_reconciled: false` |
 | `ezb_list_journal`   | recent machine-plane writes — what `ezb_undo` would reverse next                             |
 
 **The write tier (18, off by default)**
@@ -857,13 +887,13 @@ and every response echoes its filters, timezone and — if converted — every r
 | `ezb_add_transaction_tags`         | adds tags to named ids or a filter                                                          |
 | `ezb_remove_transaction_tags`      | removes tags from named ids or a filter                                                     |
 | `ezb_add_account`                  | one account — its category, side and currency shown in the preview                          |
-| `ezb_update_account`               | name, comment, colour, card statement date / limit, hidden                                  |
+| `ezb_update_account`               | name, comment, colour, icon, card statement date / limit. **Not `hidden`** — the plane's `PATCH /accounts/:id` refuses it; hiding is `/accounts/:id/hide`, which this server does not expose (a UI action) |
 | `ezb_add_category`                 | a primary or secondary category                                                             |
 | `ezb_add_tag`                      | a tag                                                                                       |
 | `ezb_add_scheduled_transaction`    | a scheduled template — rent on the 1st                                                      |
-| `ezb_update_scheduled_transaction` | edit, pause (hide) or resume a schedule                                                     |
+| `ezb_update_scheduled_transaction` | edit, pause or resume a schedule — pausing is `frequency: "disabled"`, resuming is a real frequency. Hiding a template does **not** pause it: upstream's cron ignores `hidden`, and `/templates/:id/hide` is not exposed here |
 | `ezb_set_custom_exchange_rate`     | the operator's own rate for a currency                                                      |
-| `ezb_apply_reconcile`              | marks reconciled and, only if asked, creates **one** visible adjustment                      |
+| `ezb_apply_reconcile`              | marks reconciled and, only if asked, creates **one** visible adjustment — with the same arguments the plan took |
 | `ezb_undo`                         | reverses the last machine-plane write — **the most important write tool here**              |
 
 **`ezb_undo` is not an afterthought.** ezBookkeeping has no undo of its own; the plane builds one from a
@@ -881,6 +911,7 @@ a row the operator has since edited. It ships in the same phase as the first wri
 | Generating an upstream API or MCP token                      | It would mint a full-access bearer credential that travels (apis.mdx §2.2)                                          |
 | LLM receipt / text recognition                               | It uploads the operator's receipt or text to a third-party model; this server has no egress                          |
 | Pictures and custom icons                                    | Binary uploads; deferred in the plane (apis.mdx §11.1)                                                               |
+| The `hide` routes (`/accounts/:id/hide`, `/templates/:id/hide`, categories, tags) | Hiding is a display decision the operator makes in the UI; and hiding a schedule does not pause it, so exposing it would invite the wrong tool for "stop the rent" |
 | `ezb_reimport_deleted` or any `reimport_deleted` argument    | Resurrecting rows the operator deleted is theirs to type: `ezbk statements apply --reimport-deleted --yes` (§11.3)   |
 | The passthrough (`/machine/v1/api/*`)                        | It bypasses the dry run, the token, the ceiling and the journal (apis.mdx §16). CLI only                            |
 | `ezb_redo`                                                   | A redo is a second decision; the operator types `ezbk redo`                                                          |
@@ -901,27 +932,34 @@ depend on an argument, and a tool that sometimes writes cannot honestly say what
 | Tier         | read (47) · write (18) — 65 total. **`admin` is not a value**; no argument or configuration produces an admin call       |
 | Target       | local (default) · remote (read-only, `https:`, `EZBKMCP_ALLOW_REMOTE=1`)                                                |
 | Write tier   | server off (default) · server on (`ezbk up --allow-write`) + `EZBKMCP_ALLOW_WRITE=1`                                    |
-| Confirmation | none (read) · `confirm` echo of the preview's token (write)                                                             |
+| Confirmation | none (read) · `confirm_token` echo of the preview's token (write; `confirm` is accepted as an alias and sent as `confirm_token`) |
 | Ceiling      | `max_changes` (write; default 200; exceeding refuses and reports the count)                                             |
 | Dry run      | `dry_run: true` **is the default on 17 of the 18 write tools**. **`ezb_undo` has none** — its preview is the thing itself, and it reports what it reversed |
 | Currency     | per-currency (default) · converted with `convert_to` (rates named)                                                      |
 | Truncation   | `truncated: true` + `limitApplied` (+ `nextCursor` for transactions) whenever a cap bound the result                    |
 | Result       | `ok: true` + `data` · `ok: false` + `error` with `isError: true`                                                        |
 
-A shape not in this table does not exist: no write without a confirm, no write against a remote target,
-no unlimited result, no delete.
+A shape not in this table does not exist: no write without a confirm token, no write against a remote
+target, no unlimited result, no delete.
 
 ### 9.7 The write tier — two switches and an echo (LOCKED)
 
 1. **The server's write tier is enabled** — the operator started it with `ezbk up --allow-write`
    (`EZBK_MACHINE_ALLOW_WRITE=1`).
 2. **This MCP's write tier is enabled** — `EZBKMCP_ALLOW_WRITE=1` in the registration or environment.
-3. **The call passes `dry_run: false` and a `confirm` string echoing the `confirm_token`** that the
-   matching `plan_` tool or the tool's own dry run returned. It expires in ten minutes and fingerprints
-   the exact change set; a plan approved an hour ago against books that have since moved is refused
-   with the **new** counts.
+3. **The call passes `dry_run: false` and `confirm_token` echoing the token** that the matching
+   `plan_` tool or the tool's own dry run returned. The argument is named `confirm_token` on the wire
+   and in every schema, exactly as the plane takes it (apis.mdx §9.1); the schemas also accept
+   `confirm` as an alias and send it as `confirm_token`. It expires in ten minutes and fingerprints the
+   exact change set; a plan approved an hour ago against books that have since moved is refused with
+   the **new** counts.
 
-Plus `max_changes`, default 200, refusing with the real number.
+Plus `max_changes`, default 200, refusing with the real number. The refusal comes off the wire as the
+plane's `conflict` carrying `details.would_change` and `details.max_changes`; the MCP recognises that
+shape and answers `too_many_changes` (§12.3).
+
+Code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/tools/tool.ts` — `WRITE_PROPERTIES`, `writeOpts()`, `withoutWriteKeys()`
+Code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/gates.ts` — `checkConfirm()`
 
 Two switches because two people hold them at two times: the server's is an operator decision for the
 session of the app; the MCP's is a decision to let the agent write today.
@@ -1019,7 +1057,7 @@ reaches for `ezb_extract_statements` there is about to spend twenty minutes re-d
 | `ezb_apply_statement_import`    | **write**     | recomputes the plan and imports the new rows                                                                           |
 | `ezb_plan_file_import`          | read          | one file, one account — the Import dialog previewed                                                                    |
 | `ezb_apply_file_import`         | **write**     | …and applied                                                                                                           |
-| `ezb_list_import_fallout`       | read          | what landed in the fallback category, grouped by comment, ready for `ezb_set_transaction_category`                     |
+| `ezb_list_import_fallout`       | read          | what landed in the fallback category, grouped by comment, ready for `ezb_set_transaction_category`; needs `fallback_category_ids` unless `run_id` names a run that recorded its own |
 
 **The archive is read-only**, and three tool descriptions say so.
 
@@ -1046,7 +1084,16 @@ the browser is reported by the plan as _already imported, deleted since_ and is 
 `ezb_apply_statement_import` has **no `reimport_deleted` field**. Resurrecting deliberately deleted
 records is `ezbk statements apply --reimport-deleted --yes`, typed by a human — the catalogue refuses to
 un-delete for the same reason it refuses to delete. Asked why a row did not import, the model reads the
-plan's reason and tells the operator the row was deleted in the app, naming the command.
+plan's reason and tells the operator the row was deleted in the app, naming the command. The plane's
+`/ingest/plan` and `/ingest/file/plan` do publish a `reimport_deleted` argument; no schema on this
+server accepts it, and gate 5 refuses the key.
+
+**An undo is not a browser delete.** `ezb_undo` of an import removes the transactions it created
+**and their `machine_import_record` rows** (an accepted match is re-pointed at its prior transaction),
+so the next plan counts those rows as `new` again — that is the point of undoing an import. A browser
+delete leaves the record in place, pointing at a soft-deleted row, and the next plan counts it
+`already_present_deleted`, never re-added. The model should say which of the two happened when a
+re-run's counts surprise the operator.
 
 ### 11.4 Mapping — what the model must show and must not decide
 
@@ -1132,9 +1179,26 @@ call must not kill a loop. Protocol errors are reserved for transport faults.
 `unauthorized` · `forbidden` · `not_found` · `invalid_input` · `conflict` · `write_disabled` ·
 `confirm_required` · `too_many_changes` · `not_ready` · `wrong_server` · `upstream_error` · `internal`
 
-Twelve codes: the plane's nine, passed through unchanged, plus three minted here. A thirteenth is a spec
-change. This is deliberately the **same twelve** the `actual_budget` server uses, so a model's handling
-of an error code is correct on both.
+Twelve codes: the plane's nine, passed through, plus three minted here. A thirteenth is a spec change.
+This is deliberately the **same twelve** the `actual_budget` server uses, so a model's handling of an
+error code is correct on both.
+
+Three plane shapes are re-read on arrival, in `interpretEnvelope()`:
+
+- **`conflict` with `details.would_change` and `details.max_changes`** — the plane's ceiling refusal
+  (apis.mdx §9.1) — becomes **`too_many_changes`**, message "N changes would be made; the ceiling is M",
+  details passed through. `too_many_changes` is minted here; it never appears on the wire.
+- **`internal`** from the plane becomes **`upstream_error`** ("the app failed"), keeping the plane's
+  hint, which points at `~/T/ezbookkeeping/error.err` (§16.3). `internal` from this server means a
+  fault inside the MCP process itself (§13).
+- **A bare `not_found` with no message** — the gate ladder's 404 — becomes **`not_ready`**: the plane
+  is not armed or refused the socket, and a model retrying a 404 learns nothing.
+
+`confirm_required` is minted by gate 4 before any request leaves the process; `wrong_server` by the
+routing gate.
+
+Code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/client.ts` — `interpretEnvelope()`
+Code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/envelope.ts` — `ERROR_CODES`, `PLANE_CODES`, `MCP_ONLY_CODES`
 
 ---
 
@@ -1149,14 +1213,17 @@ of an error code is correct on both.
 | Credentials file is `0644`                                 | **the server does not start**; one stderr line with the `chmod`   | `chmod 600` and restart Claude Code                    |
 | A write with the tier off                                  | `write_disabled`, both switches named                             | decide whether to enable them                          |
 | A write without the echo                                   | `confirm_required`, naming the `plan_` tool or the dry run        | —                                                      |
-| A write over the ceiling                                   | `too_many_changes` **with the real count**                        | raise `max_changes` deliberately, or narrow            |
+| A write over the ceiling                                   | `too_many_changes` **with the real count** (the plane answered `conflict` with `details.would_change` / `max_changes`; the MCP recodes that shape) | raise `max_changes` deliberately, or narrow            |
 | A statement conflict                                       | `conflict`, both files, both row sets                             | pick the correct file                                  |
 | Import switched off in the `.ini`                          | `forbidden`, naming `[data] enable_import`                        | enable it, or don't                                    |
 | A cross-currency filter with no `currency`                 | `invalid_input`, hint "pass `currency` or `convert_to`"           | —                                                      |
 | An Actual Budget / QuickBooks / ACT3-shaped identifier     | `wrong_server`, naming the right server                           | —                                                      |
 | A result hit a cap                                         | `ok: true`, `truncated: true`, `limitApplied`, `nextCursor`       | narrow, or page                                        |
 | Undo would overwrite a later browser edit                  | `conflict`, naming the row                                        | fix it in the browser                                  |
-| The plane 500s                                             | `upstream_error` with the code, **never a stack**                 | read `~/T/_ezbookkeeping/server.log`                   |
+| An import was undone, then planned again                   | the rows count as `new` again — the undo removed their import records (§11.3) | expected; a browser delete would have stayed `already_present_deleted` |
+| `mark_reconciled` with the user's last-reconciled-time setting off | `forbidden`, naming the setting                            | turn it on in the web UI, or pass `mark_reconciled: false` |
+| The plane 500s                                             | `upstream_error` with the plane's hint, **never a stack**         | read `~/T/ezbookkeeping/error.err` (§16.3)             |
+| The MCP itself faults                                      | `internal`, hint "read ~/T/ezbookkeeping/error.err for the detail" | read it; the record carries the tool name and the stack |
 
 Nothing in this table is a silent success, and nothing is a silent cap.
 
@@ -1175,7 +1242,7 @@ Nothing in this table is a silent success, and nothing is a silent cap.
 | `EZBKMCP_MAX_CHANGES`      | `200`                                | the default write ceiling                                                     |
 | `EZBKMCP_MAX_ROWS`         | `1000`                               | the row cap; clamped, never rejected                                          |
 | `EZBKMCP_MAX_BYTES`        | `1048576`                            | the response byte cap                                                         |
-| `EZBKMCP_TIMEOUT_MS`       | `30000`                              | per-call timeout; `ezb_extract_statements` and the `apply_*import` tools exempt |
+| `EZBKMCP_TIMEOUT_MS`       | `30000`                              | per-call timeout. Exempt, because they parse or import whole archives: `ezb_extract_statements`, `ezb_plan_statement_import`, `ezb_plan_file_import`, `ezb_apply_accounts`, `ezb_apply_statement_import`, `ezb_apply_file_import` (the plane's ingest routes have no server-side timeout either — apis.mdx §18) |
 | `EZBKMCP_TIMEZONE`         | — (credentials file, then system)    | sent as `X-Timezone-Name`                                                     |
 | `EZBKMCP_PROMPT_FILE`      | — (generated constant)               | dev override for the instructions prose (§8.3)                                |
 | `EZBKMCP_LOG_LEVEL`        | `info`                               | `error` · `warn` · `info` · `debug`                                           |
@@ -1208,7 +1275,8 @@ fingerprint).
 - **`~/T/_ezbookkeeping/mcp.err`** — WARN, ERROR and every denial. Also stderr.
 
 Append-only, `0600`, rotated at 8 MB with five generations, never `/tmp`. Logging can never crash the
-server.
+server. These two are the **usage trail**: what was called, by which gate it was refused, how long it
+took. The detail of a fault is not here — it is in the error file (§16.3).
 
 ### 16.2 The audit line
 
@@ -1224,6 +1292,33 @@ server.
 
 Code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/audit.ts` — `auditLine()`, `const LOGGABLE_SCALARS`
 
+### 16.3 The error file
+
+**Every fault this process sees is also written to `~/T/ezbookkeeping/error.err`**, the one
+operator-local error file every process of this fork shares — the server, `ezbk` and this MCP — with
+`app` = `mcp` on each line. The contract is [error_err.mdx](./error_err.mdx); what it means here:
+
+- `index.ts` installs the node sink once at boot (`installNodeErrorFile({ app: 'mcp' })`): the
+  `uncaughtException` / `unhandledRejection` nets, a synchronous flush on exit and signals, and the
+  `RollingFileWriter` (`0600`, five generations).
+- `handleCallTool()` is the one catch around dispatch (error_err.mdx T7). A fault that is not a
+  `ToolError` is reported with `errors.caught(...)` — the record carries the tool name and the stack —
+  and the model gets `internal` with the hint `read ~/T/ezbookkeeping/error.err for the detail`
+  (`ERROR_FILE_HINT`). A gate refusal or a plane answer is `expected(...)`: it is an answer to the
+  caller, not a fault, and it never bloats the file.
+- A plane-side fault arrives as `upstream_error` whose hint the plane wrote, pointing at the same
+  file; the plane wrote the server-side record itself (`pkg/machine/envelope.go`).
+- **Every echo goes to stderr.** The node sink has no code path to stdout; `mcp.info` / `mcp.err` keep
+  their usage-trail job (§16.1), and the stdout-purity canary runs the built server with the sink
+  live (`EZBK_ERROR_FILE` pointed at a temp file) and asserts every stdout line still parses as
+  JSON-RPC.
+- The six shared files under `src/errfile/` are GENERATED copies of `src/lib/errfile`
+  (`scripts/sync-errfile.sh`); `vendor-drift.test.ts` fails on any byte of drift after the header.
+
+Code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/errfile/node.ts` — `installNodeErrorFile()`
+Code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/server.ts` — `handleCallTool()`, `toToolFailure()`
+Code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/envelope.ts` — `ERROR_FILE_HINT`
+
 ---
 
 ## 17. Testing it
@@ -1232,16 +1327,16 @@ Code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/audit.ts` — `auditLine()`, `cons
 | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **The hand-piped probe**   | `printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize",…}' \| node mcp/dist/index.js serve` — a well-formed result, `capabilities.tools`, and `instructions` whose first sentence is §3.4 layer 5 verbatim |
 | **stdout-purity canary**   | greps the **built** `dist/` for `console.log(`, `console.info(`, `process.stdout.write(` — grepping the output catches a violation bundled in from a dependency; plus a scripted session whose stdout must parse line by line as JSON-RPC |
-| **no-network canary**      | no host literal but `127.0.0.1` / `localhost` in the bundle; exactly one module (`src/client.ts`) opens a socket                                                                                |
+| **no-network canary**      | no host literal but `127.0.0.1` / `localhost` in the bundle; exactly one module (`src/client.ts`) opens a socket; no `fetch(` in our own source (undici's `Sec-Fetch-Mode` would be a 404 at the plane — §8) |
 | **no-shell canary**        | no `child_process` / `node:child_process`, no `eval(`, no `new Function(`, no `vm`                                                                                                              |
 | **no-fs-write canary**     | no `fs.write*`, `writeFile`, `appendFile`, `mkdir`, `rm`, `rename` outside `logger.ts` and the credential minter                                                                                  |
-| **origin-gate canary**     | with a valid key: `Origin: https://evil.example` → 404; `Sec-Fetch-Site: cross-site` → 404; bad `Host` → 404; `X-Forwarded-For: 127.0.0.1` from a non-loopback socket → 404 (T14, T15)          |
+| **origin-gate canary**     | with a valid key: `Origin: https://evil.example` → 404; `Sec-Fetch-Site: cross-site` → 404; `Sec-Fetch-Mode: cors` → 404; bad `Host` → 404; `X-Forwarded-For: 127.0.0.1` from a non-loopback socket → 404 (T14, T15) |
 | **currency canary**        | every numeric amount in every test envelope has a reachable currency; no analytics response without `convert_to` holds a cross-currency total (T4)                                             |
 | **upstream-door canary**   | `ezb_health` reports `enable_api_token` / `enable_mcp` when a fixture server has them on (T16)                                                                                                 |
 | **Canary/threat parity**   | §7.0's `Canary` column and `src/canary/` agree both ways                                                                                                                                 |
 | **Catalogue tests**        | every tool has four clauses; every name matches `^ezb_[a-z_]+$`; every verb is in the closed set; no `delete_`; every amount field is `"type":"integer"` with "hundredths"; list and dispatch agree |
 | **Route parity**           | every tool names exactly one route in apis.mdx; every ✅ route in apis.mdx §11 has a tool or an omission row — asserted from a committed fixture, both directions                              |
-| **Gate tests**             | each gate denied and allowed; a write with the tier off, on without confirm, with a stale confirm, over the ceiling                                                                            |
+| **Gate tests**             | each gate denied and allowed; a write with the tier off, on without a `confirm_token`, with a stale token, over the ceiling                                                                    |
 | **Auth negatives**         | no key and mint impossible → refuses to start; `0644` → refuses to start; wrong key → `unauthorized`; remote without the flag → refuses to start; remote + write → refuses                    |
 | **Routing tests**          | an Actual Budget UUID, a `to_budget` request, a QuickBooks realm id and an ACT3 project id each produce `wrong_server` naming the right server                                                 |
 | **Money**                  | a decimal amount rejected with the suggested integer; no decimal or float anywhere in any envelope amount (JSON walk)                                                                          |
@@ -1381,8 +1476,9 @@ no clean sequence is a missing tool; a sentence that needs the model to compute 
    7b. Every `ezb_` name in `ai/mcp_prompt_ezbookkeeping.md` exists.
 8. With the write tier off, all 18 write tools are **listed**, and each returns `write_disabled` naming
    both switches.
-9. With both switches on: no confirm → `confirm_required`; stale confirm → `conflict`; over the ceiling →
-   `too_many_changes` with the real count.
+9. With both switches on: no `confirm_token` → `confirm_required`; stale token → `conflict`; over the
+   ceiling → `too_many_changes` with the real count (recoded from the plane's `conflict` +
+   `details.would_change`).
 10. No envelope contains a non-integer amount, and every amount has a reachable currency.
 11. No analytics response without `convert_to` contains a cross-currency total; with it, every rate is
     named with source and time.
@@ -1396,8 +1492,8 @@ no clean sequence is a missing tool; a sentence that needs the model to compute 
     configured roots.
 16. `mcp.info` after a full session holds no amount, comment, account id or path.
 17. `mcp/` is its own npm package; the root `package.json`, the root `go.mod` and upstream's `pkg/mcp` are unmodified by this spec.
-18. With a valid key, `Origin: https://evil.example` or `Sec-Fetch-Site: cross-site` → 404; a
-    non-loopback socket with `X-Forwarded-For: 127.0.0.1` → 404.
+18. With a valid key, `Origin: https://evil.example`, `Sec-Fetch-Site: cross-site` or
+    `Sec-Fetch-Mode: cors` → 404; a non-loopback socket with `X-Forwarded-For: 127.0.0.1` → 404.
 19. The §7.0 canary column and `src/canary/` agree.
 20. No schema accepts `reimport_deleted`.
 21. `ezb_undo` has no `dry_run`; the other 17 writes default it to `true`. 21a. `ezb_undo` after every
@@ -1440,7 +1536,7 @@ question in §18.1's second group, cannot change anything, and are worth using a
 7. The server computes nothing — no sums, no conversions, no duplicate verdicts.
 8. Money is integer hundredths; every amount carries its currency; no total crosses currencies without
    named rates; every balance carries its date.
-9. Writes need the server's tier **and** this side's switch **and** a `confirm` token from a plan or dry
+9. Writes need the server's tier **and** this side's switch **and** a `confirm_token` from a plan or dry
    run, bounded by `max_changes`; `dry_run` is the default.
    9a. Every tool is exactly one route in apis.mdx.
    9b. This server is never granted the admin tier or the passthrough.
@@ -1462,6 +1558,8 @@ question in §18.1's second group, cannot change anything, and are worth using a
 - [ai/mcp_prompt_ezbookkeeping.md](../ai/mcp_prompt_ezbookkeeping.md) — the instructions payload: money,
   currencies, when to ask, how to plan, how to report.
 - [cli.mdx](./cli.mdx) — the CLI. Same key, same plane, same services.
+- [error_err.mdx](./error_err.mdx) — the error file, `~/T/ezbookkeeping/error.err`: where every fault
+  this server sees is written (§16.3), and the vendored library under `src/errfile/`.
 - [../CLAUDE.md](../CLAUDE.md) — what this fork is and how it extends upstream.
 - `~/BGit/Bryan_git/actual_budget_bryan/pm/mcp.mdx` — the sister fork's MCP, the `actual_budget` server
   §3 routes away from.

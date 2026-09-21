@@ -12,6 +12,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
 	"github.com/mayswind/ezbookkeeping/pkg/datastore"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -467,6 +468,7 @@ func (s *TransactionService) GetTransactionsInMonthByPage(c core.Context, uid in
 	minTransactionTime, maxTransactionTime, err := utils.GetTransactionTimeRangeByYearMonth(year, month)
 
 	if err != nil {
+		errfile.Caught("computing the transaction time range of the month", err)
 		return nil, errs.ErrSystemError
 	}
 
@@ -2552,6 +2554,7 @@ func (s *TransactionService) GetAccountsAndCategoriesMonthlyInflowAndOutflow(c c
 		startTransactionTime, _, err = utils.GetTransactionTimeRangeByYearMonth(startYear, startMonth)
 
 		if err != nil {
+			errfile.Caught("computing the transaction time range of the start month", err)
 			return nil, errs.ErrSystemError
 		}
 	}
@@ -2560,6 +2563,7 @@ func (s *TransactionService) GetAccountsAndCategoriesMonthlyInflowAndOutflow(c c
 		_, endTransactionTime, err = utils.GetTransactionTimeRangeByYearMonth(endYear, endMonth)
 
 		if err != nil {
+			errfile.Caught("computing the transaction time range of the end month", err)
 			return nil, errs.ErrSystemError
 		}
 	}

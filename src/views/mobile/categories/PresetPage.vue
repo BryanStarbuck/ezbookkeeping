@@ -69,6 +69,9 @@ import { type LocalizedPresetCategory, CategoryType } from '@/core/category.ts';
 import { getObjectOwnFieldCount, categorizedArrayToPlainArray } from '@/lib/common.ts';
 import { getCategoryIconType } from '@/lib/icon.ts';
 import { localizedPresetCategoriesToTransactionCategoryCreateWithSubCategories } from '@/lib/category.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/categories/PresetPage.vue');
 
 const props = defineProps<{
     f7route: Router.Route;
@@ -122,6 +125,7 @@ function save(): void {
         showToast('You have added preset categories');
         router.back();
     }).catch(error => {
+        errors.caught('adding the preset categories', error);
         submitting.value = false;
         hideLoading();
 

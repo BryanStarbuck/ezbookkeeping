@@ -9,6 +9,7 @@ import (
 	"golang.org/x/net/html/charset"
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -71,6 +72,7 @@ func (e *EuroCentralBankExchangeRateData) ToLatestExchangeRateResponse(c core.Co
 		}
 
 		if _, err := utils.StringToFloat64(exchangeRate.Rate); err != nil {
+			errfile.Warn("parsing an exchange rate from the euro central bank feed", err, errfile.F("currency", exchangeRate.Currency))
 			continue
 		}
 

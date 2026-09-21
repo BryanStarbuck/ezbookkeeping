@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 )
 
@@ -339,6 +340,7 @@ func FormatTimezoneOffsetFromHoursOffset(hoursOffset string) (string, error) {
 	hoursOffsetValue, err := StringToFloat64(hoursOffset)
 
 	if err != nil {
+		errfile.Expected("parsing the timezone hours offset", err)
 		return "", errs.ErrFormatInvalid
 	}
 

@@ -1,0 +1,47 @@
+{
+  "tool": "ezb_add_tag",
+  "args": {
+    "name": "Trip",
+    "dry_run": false,
+    "confirm_token": "cf_8fc4f73b263204af7858e115a6265af1"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_add_tag",
+    "data": {
+      "changes": {
+        "create": 1
+      },
+      "dry_run": false,
+      "fingerprint": "sha256:a108401c9d93046b",
+      "journal_id": 4,
+      "result": {
+        "tag": {
+          "displayOrder": 1,
+          "groupId": "0",
+          "hidden": false,
+          "id": "3844013758716313600",
+          "name": "Trip"
+        }
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name"
+      ],
+      "dryRun": false,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

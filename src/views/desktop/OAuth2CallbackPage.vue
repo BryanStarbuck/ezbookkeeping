@@ -119,6 +119,9 @@ import {
 import {
     mdiChevronLeft
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/OAuth2CallbackPage.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -203,6 +206,7 @@ function verifyAndLogin(): void  {
         doAfterLogin(authResponse);
         navigateToHome();
     }).catch(error => {
+        errors.caught('logging in with OAuth2', error);
         loggingInByOAuth2.value = false;
 
         if (isUserVerifyEmailEnabled() && error.error && error.error.errorCode === KnownErrorCode.UserEmailNotVerified && error.error.context && error.error.context.email) {
@@ -237,6 +241,7 @@ if (!error.value && props.platform && props.token && !props.userName) {
         doAfterLogin(authResponse);
         navigateToHome();
     }).catch(error => {
+        errors.caught('logging in with OAuth2', error);
         loggingInByOAuth2.value = false;
 
         if (isUserVerifyEmailEnabled() && error.error && error.error.errorCode === KnownErrorCode.UserEmailNotVerified && error.error.context && error.error.context.email) {

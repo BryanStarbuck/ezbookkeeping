@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 )
 
 // audit.go appends one line per write to ~/T/_ezbookkeeping/machine.audit — what happened, never
@@ -14,11 +16,12 @@ import (
 var auditMu sync.Mutex
 
 func auditWrite(mc *Ctx, changed int, ok bool) {
-	defer func() { _ = recover() }() // logging can never break a write
+	defer errfile.RecoverNet("writing the machine audit line")() // logging can never break a write
 
 	dir := StateDir()
 
 	if err := os.MkdirAll(dir, 0o700); err != nil {
+		errfile.Caught("creating the machine state directory for the audit file", err)
 		return
 	}
 
@@ -51,6 +54,7 @@ func auditWrite(mc *Ctx, changed int, ok bool) {
 	f, err := os.OpenFile(filepath.Join(dir, "machine.audit"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 
 	if err != nil {
+		errfile.Caught("opening the machine audit file", err)
 		return
 	}
 

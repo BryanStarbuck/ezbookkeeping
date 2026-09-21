@@ -67,6 +67,9 @@ import { Account, type CategorizedAccountWithDisplayBalance } from '@/models/acc
 import {
     mdiRefresh
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/insights/dialogs/BatchUpdateAccountDialog.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -125,6 +128,7 @@ function reload(): void {
     accountsStore.loadAllAccounts({ force: true }).then(() => {
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading all accounts', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -145,6 +149,7 @@ function confirm(): void {
         showState.value = false;
         resolveFunc?.(updateIds.value.length);
     }).catch(error => {
+        errors.caught('changing the account of the selected transactions', error);
         submitting.value = false;
 
         if (!error.processed) {

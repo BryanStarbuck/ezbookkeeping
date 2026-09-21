@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 	"github.com/mayswind/ezbookkeeping/pkg/services"
 )
@@ -64,6 +65,7 @@ func ingLoadMap(st *ingStaging) (*ingMap, []byte, error) {
 	m := ingNewMap()
 
 	if err := json.Unmarshal(raw, m); err != nil {
+		errfile.Caught("parsing the statements map file", err)
 		return nil, nil, Conflict("the map file is damaged; rebuild it with POST /ingest/accounts/apply or PUT /ingest/map", "the statements map %s/%s cannot be parsed", st.Rel, ingMapFile)
 	}
 
@@ -118,6 +120,7 @@ func ingLoadAccounts(mc *Ctx) (*ingAccountIndex, error) {
 	accounts, err := services.Accounts.GetAllAccountsByUid(mc.Web, mc.Uid)
 
 	if err != nil {
+		errfile.Caught("loading the bound user's accounts", err)
 		return nil, NewFail(CodeUpstreamError, "check ~/T/ezbookkeeping/error.err", "cannot read the bound user's accounts")
 	}
 

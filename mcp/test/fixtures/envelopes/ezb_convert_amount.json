@@ -1,0 +1,62 @@
+{
+  "tool": "ezb_convert_amount",
+  "args": {
+    "amount": 10000,
+    "from": "EUR",
+    "to": "USD"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_convert_amount",
+    "data": {
+      "amount": 10000,
+      "baseCurrency": "EUR",
+      "converted": 11490,
+      "currency": "USD",
+      "from": "EUR",
+      "note": "converted at the app's latest rate; ezBookkeeping keeps no historical rates, so a past amount is converted at today's rate",
+      "provider": "European Central Bank",
+      "rate": "1.149",
+      "rateBasis": "latest",
+      "rateMeaning": "1 EUR = 1.149 USD",
+      "rates": [
+        {
+          "baseCurrency": "EUR",
+          "currency": "EUR",
+          "isBase": true,
+          "provider": "European Central Bank",
+          "rate": "1",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "USD",
+          "provider": "European Central Bank",
+          "rate": "1.1490",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        }
+      ],
+      "referenceUrl": "https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html",
+      "rounding": "once, half away from zero, to hundredths",
+      "to": "USD"
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 179,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "composed": true,
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

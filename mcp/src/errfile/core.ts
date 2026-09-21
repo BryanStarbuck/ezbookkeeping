@@ -13,7 +13,7 @@ import { causesText, describeChain, describeOne, describeThrowable, headlineText
 import type { DescribedError } from './describe.js';
 import { FOLD_MAX_KEYS, FOLD_WINDOW_MS, TRANSIENT_WINDOW_MS, createBurstFolder, normalizeMessage } from './fold.js';
 import type { BurstFolder, FoldSummary } from './fold.js';
-import { clockTime, formatRecord, summaryText } from './format.js';
+import { clockTime, summaryText } from './format.js';
 import type { ErrorLevel, ErrorRecord } from './format.js';
 import { redactData, redactText } from './redact.js';
 import type { ErrorData } from './redact.js';
@@ -25,8 +25,6 @@ export type { ErrorLevel, ErrorRecord, RedactedData } from './format.js';
 export type ErrorSink = {
     /** The runtime tag stamped on records that do not carry one (§3.3). */
     app: string;
-    /** Echo each written record through console.error / console.warn (§11.5). Off in the browser. */
-    echo: boolean;
     /** Write EXPECTED records too (EZBK_ERROR_FILE_VERBOSE=1) — R6. */
     verbose: boolean;
     write(record: ErrorRecord): void;
@@ -280,20 +278,6 @@ function lastResort(message: string, err: unknown): void {
     }
 }
 
-function echo(record: ErrorRecord): void {
-    try {
-        const line = formatRecord(record);
-
-        if (record.level === 'WARN' || record.level === 'EXPECTED') {
-            console.warn(line);
-        } else {
-            console.error(line);
-        }
-    } catch {
-        // echo is a convenience; never let it matter
-    }
-}
-
 function deliver(s: State, record: ErrorRecord): void {
     const sink = s.sink;
 
@@ -315,10 +299,6 @@ function deliver(s: State, record: ErrorRecord): void {
         sink.write(record);
     } catch (e) {
         lastResort('the error sink threw', e);
-    }
-
-    if (sink.echo) {
-        echo(record);
     }
 }
 

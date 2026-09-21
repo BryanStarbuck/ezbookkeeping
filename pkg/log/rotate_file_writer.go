@@ -10,6 +10,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 )
 
@@ -88,7 +89,7 @@ func (w *RotateFileWriter) Write(p []byte) (n int, err error) {
 
 		if today != w.lastRemoveOldFilesDay && w.MaxFileDays > 0 {
 			w.lastRemoveOldFilesDay = today
-			go w.removeOldFiles()
+			errfile.Go("removing rotated log files", w.removeOldFiles)
 		}
 	}
 
@@ -143,6 +144,7 @@ func (w *RotateFileWriter) removeOldFiles() {
 	allLogFiles, err := os.ReadDir(dir)
 
 	if err != nil {
+		errfile.Caught("listing the log directory to remove rotated log files", err)
 		return
 	}
 

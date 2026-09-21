@@ -1,0 +1,55 @@
+{
+  "tool": "ezb_add_category",
+  "args": {
+    "name": "Travel",
+    "type": "expense",
+    "dry_run": false,
+    "confirm_token": "cf_7411bf483044dbd0ff161d08e7c6e043"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_add_category",
+    "data": {
+      "changes": {
+        "create": 1
+      },
+      "dry_run": false,
+      "fingerprint": "sha256:fc33fad56e538000",
+      "journal_id": 12,
+      "result": {
+        "category": {
+          "color": "000000",
+          "comment": "",
+          "displayOrder": 3,
+          "hidden": false,
+          "icon": "1",
+          "iconType": 0,
+          "id": "3844013760729579520",
+          "level": "primary",
+          "name": "Travel",
+          "parentId": "0",
+          "type": "expense",
+          "typeCode": 2
+        }
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name"
+      ],
+      "dryRun": false,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

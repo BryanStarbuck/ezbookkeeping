@@ -1,12 +1,17 @@
 # ezBookkeeping — build and run on localhost (no Docker)
 #
 #   just build   -> Go backend binary (./ezbookkeeping) + Vue frontend (./dist) + ezbk CLI (./cli/bin/ezbk)
+#                   + the MCP server (./mcp/dist), after syncing the vendored errfile copies
 #   just run     -> serves both at http://localhost:8080/
+#   just lint    -> go vet (+ errfile/catch-must-report) for both Go modules, then the two eslint runs
+#   just test    -> every suite: root Go, cli Go, vitest, mcp vitest
+#   just check-errors -> builds bin/errfilecheck and runs the error-file coverage script (pm/error_err.mdx §13.3)
 #
 # Runtime state stays in the repo root, all git-ignored:
 #   data/    sqlite db (data/ezbookkeeping.db) + generated secret key
 #   log/     log/ezbookkeeping.log
 #   storage/ uploaded files (avatars, pictures)
+# Every fault from every runtime goes to ~/T/ezbookkeeping/error.err (pm/error_err.mdx).
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
@@ -17,10 +22,62 @@ bin := "ezbookkeeping"
 default:
     @just --list
 
-# Build backend + frontend + the ezbk CLI
-build: build-backend build-frontend build-cli
+# Build backend + frontend + the ezbk CLI + the MCP server (after syncing the vendored errfile copies)
+build: sync-errfile build-backend build-frontend build-cli build-mcp
     @echo ""
     @echo "Build complete. Start it with: just run"
+
+# Regenerate cli/internal/errfile and mcp/src/errfile from pkg/errfile and src/lib/errfile (pm/error_err.mdx §4.1, §5.5)
+sync-errfile:
+    @bash scripts/sync-errfile.sh
+
+# Build the Go analyzer errfile/catch-must-report into ./bin/errfilecheck (pm/error_err.mdx §13.1)
+build-errfilecheck:
+    @command -v go >/dev/null || { echo "Error: go is required"; exit 127; }
+    @mkdir -p bin
+    cd scripts/errfilecheck && go build -o ../../bin/errfilecheck .
+
+# Prove every source file reports its faults: builds bin/errfilecheck, then runs the coverage script (pm/error_err.mdx §13.3)
+check-errors *ARGS: build-errfilecheck
+    @command -v node >/dev/null || { echo "Error: node is required"; exit 127; }
+    node scripts/error-file-coverage.mjs {{ARGS}}
+
+# go vet (+ errfile/catch-must-report) for both Go modules, then eslint for the web app and the MCP
+lint: build-errfilecheck
+    @echo "==> go vet ./... (root)"
+    go vet ./...
+    @echo "==> go vet ./... (cli)"
+    cd cli && go vet ./...
+    @echo "==> go vet -vettool=bin/errfilecheck ./... (root)"
+    go vet -vettool="{{justfile_directory()}}/bin/errfilecheck" ./...
+    @echo "==> go vet -vettool=bin/errfilecheck ./... (cli)"
+    cd cli && go vet -vettool="{{justfile_directory()}}/bin/errfilecheck" ./...
+    @echo "==> npm run lint"
+    NODE_OPTIONS=--max-old-space-size=8192 npm run lint
+    @if [ -f mcp/package.json ]; then echo "==> mcp: npm run lint"; cd mcp && npm run lint; fi
+
+# Build the MCP server (its own package.json) into ./mcp/dist
+build-mcp:
+    @command -v npm >/dev/null || { echo "Error: node/npm is required"; exit 127; }
+    @[ -f mcp/package.json ] || { echo "mcp/package.json not found; skipping the MCP build"; exit 0; }
+    @echo "==> Building the MCP server..."
+    cd mcp && npm ci --no-audit --no-fund && npm run build
+
+# Print the `claude mcp add` line for the MCP server (pm/mcp.mdx §5.1); `just install-mcp yes` runs it
+install-mcp CONFIRM="":
+    @[ -f mcp/dist/index.js ] || { echo "Error: MCP not built. Run: just build-mcp"; exit 1; }
+    @echo 'claude mcp add --scope user ezbookkeeping -- "{{justfile_directory()}}/mcp/dist/index.js" serve'
+    @if [ "{{CONFIRM}}" = "yes" ]; then claude mcp add --scope user ezbookkeeping -- "{{justfile_directory()}}/mcp/dist/index.js" serve; else echo "(not run: pass 'yes' to register it: just install-mcp yes)"; fi
+
+# Run every suite: root Go, cli Go, the web app's vitest, and the MCP's vitest
+test:
+    @echo "==> go test ./... (root)"
+    go test ./...
+    @echo "==> go test ./... (cli)"
+    cd cli && go test ./...
+    @echo "==> npm test"
+    npm test
+    @if [ -f mcp/package.json ]; then echo "==> mcp: npm test"; cd mcp && npm test; fi
 
 # Build the Go backend binary (sqlite needs cgo)
 build-backend:
@@ -75,4 +132,4 @@ dev:
 # Remove build outputs (keeps data/)
 clean:
     rm -f {{bin}}
-    rm -rf dist cli/bin
+    rm -rf dist cli/bin bin mcp/dist

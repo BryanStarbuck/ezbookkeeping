@@ -7,6 +7,7 @@ import (
 	"github.com/mayswind/ezbookkeeping/pkg/converters/converter"
 	"github.com/mayswind/ezbookkeeping/pkg/converters/datatable"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 	"github.com/mayswind/ezbookkeeping/pkg/utils"
@@ -39,6 +40,7 @@ func (c *defaultTransactionDataJsonImporter) ParseImportedData(ctx core.Context,
 	var importRequest models.ImportTransactionRequest
 
 	if err := json.Unmarshal(data, &importRequest); err != nil {
+		errfile.Expected("parsing the imported json file", err)
 		return nil, nil, nil, nil, nil, nil, errs.ErrInvalidJSONFile
 	}
 
@@ -71,6 +73,7 @@ func (c *defaultTransactionDataJsonImporter) createNewDefaultTransactionDataTabl
 		utcOffset, err := utils.StringToInt(transaction.UtcOffset)
 
 		if err != nil {
+			errfile.Expected("parsing the utc offset of the imported transaction", err)
 			return nil, errs.ErrTransactionTimeZoneInvalid
 		}
 

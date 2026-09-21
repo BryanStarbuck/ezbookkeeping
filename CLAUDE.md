@@ -16,7 +16,7 @@ Upstream ezBookkeeping ships three things we build on:
 * Upstream API tokens. These are optional, full-access and off by default.
 * A small HTTP MCP endpoint (`POST /mcp`, 7 tools). Optional and off by default.
 
-Our fork adds six things:
+Our fork adds seven things:
 1. **Machine-plane API** at `/machine/v1`, inside the same Go server. It only answers loopback callers, and every call needs the API secret key (below). It calls the same `pkg/services` the browser's API uses, so the browser, the CLI and the agent never disagree about a number. Spec: `pm/apis.mdx`.
 2. **CLI `ezbk`**: a thin Go client of the machine plane. It starts the app if it is down. Its flagship job is importing years of bank statements exactly once. Spec: `pm/cli.mdx`.
 3. **MCP server `ezbookkeeping`** (tools prefixed `ezb_`): a thin Node + TypeScript stdio client of the machine plane, for Claude Code.
@@ -27,12 +27,16 @@ Our fork adds six things:
 5. **Statement ingest** on top of ezBookkeeping's own converters (OFX, QFX, QIF, CAMT, MT940, CSV and more). Upstream's importer has no duplicate detection, so the machine plane keeps its own `machine_import_record` table. On this fork, that table decides what counts as a duplicate.
 6. **Undo journal.** ezBookkeeping has no undo, so the machine plane journals its own writes and `ezb_undo` / `ezbk undo` can reverse them.
 
+7. **The error file.** Every fault from every runtime (browser, service worker, Go server, the binary's admin subcommands, `ezbk`, the MCP) is written once to `~/T/ezbookkeeping/error.err`, by `pkg/errfile` (Go, stdlib only; `cli/internal/errfile` is a byte-identical vendored copy) and `src/lib/errfile` (TypeScript, zero deps; `mcp/src/errfile` carries a drift-checked copy plus the node sink). Coverage is enforced, not assumed: the Go analyzer `scripts/errfilecheck` (run as `go vet -vettool`) and the ESLint rule `errfile/catch-must-report` fail the build on any silent error site, and `just check-errors` proves 100% file coverage. Spec: `pm/error_err.mdx`. When you write a `catch`, an `if err != nil` that swallows, a `recover()`, or a `go` statement, follow its §7 patterns — `just lint` will tell you if you did not.
+
 Upstream's own API tokens (`[security] enable_api_token`) and its MCP endpoint (`[mcp] enable_mcp`) stay **off**. We neither use them nor modify them.
 
-**Keep upstream merges cheap.** New code goes in new directories (`pkg/machine/`, `cli/`, `mcp/`). The whole delta to upstream's files should be:
-* one `machine.Mount(router, config)` line in `cmd/webserver.go`,
-* one `machine.Arm()` call at server startup,
+**Keep upstream merges cheap.** New code goes in new directories (`pkg/machine/`, `pkg/errfile/`, `cli/`, `mcp/`, `src/lib/errfile/`, `scripts/`). The delta to upstream's files is deliberately small and fully listed:
+* one `machine.Mount(router, config)` line and one `machine.Arm()` call in `cmd/webserver.go`,
+* the error-file nets of `pm/error_err.mdx` §8 — about 30 lines across `cmd/initializer.go`, `cmd/utility.go`, `pkg/log/logger.go` (`AddHook`), `pkg/middlewares/recovery.go`, `pkg/cron/cron_job.go`, `ezbookkeeping.go`, `src/desktop-main.ts`, `src/mobile-main.ts`, `src/sw.ts`, `src/lib/logger.ts`, `vite.config.ts`, `vitest.config.ts`, `eslint.config.mjs`,
+* one added report line at each upstream error site that used to swallow its error (`pm/error_err.mdx` §17 — the operator decided complete fault coverage is worth this; a merge conflict at such a site is two lines with an obvious resolution: keep upstream's logic, re-apply the one call),
 * the justfile.
+Upstream sites that already log through `pkg/log` or `src/lib/logger.ts` are never edited: those two loggers are hooked once, so they report with zero call-site changes.
 
 Anything that benefits every ezBookkeeping user, such as converter fixes or bug fixes, goes upstream as its own small PR.
 
@@ -75,7 +79,7 @@ The machine-plane API goes in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/`, a s
 
 ## Running it locally
 
-* `just build` builds two things: the Go binary `./ezbookkeeping` and the Vue front end in `./dist`. It will also build `cli/` and `mcp/` once those exist.
+* `just build` builds the Go binary `./ezbookkeeping`, the Vue front end in `./dist`, the CLI `./cli/bin/ezbk` and the MCP `./mcp/dist/index.js`, after syncing the vendored errfile copies. `just lint` runs go vet (plus the errfile analyzer) for both Go modules and the two ESLint runs; `just test` runs every suite; `just check-errors` runs the error-file coverage script; `just install-mcp yes` registers the MCP with Claude Code.
 * `just run` serves http://localhost:8080/ in the foreground, bound to 127.0.0.1. Set `EBK_PORT` to change the port.
 * `just dev` runs the Vite hot-reload server on :8081. It needs `just run` running in another terminal.
 * Config lives in `conf/ezbookkeeping.ini`, which is upstream's file and is checked in.
@@ -90,6 +94,7 @@ The machine-plane API goes in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/`, a s
   * `cli.info` and `cli.err`
   * `mcp.info` and `mcp.err`
   * `machine.audit`
+* Every fault from every runtime goes to **`~/T/ezbookkeeping/error.err`** (`EZBK_ERROR_FILE` overrides; `EZBK_ERROR_FILE_VERBOSE=1` also writes expected failures; `EZBK_ERROR_FILE_ECHO=1` echoes to stderr). `tail -f` that file first when anything misbehaves. The coverage report lands beside it as `error_file_coverage.json`.
 
 ## The API secret key
 

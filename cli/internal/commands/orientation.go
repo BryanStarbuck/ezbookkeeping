@@ -33,6 +33,7 @@ import (
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/bringup"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/client"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/credentials"
+	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/errfile"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/exitcode"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/logger"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/render"
@@ -393,6 +394,7 @@ func orIniValue(path, section, key string) (string, bool) {
 	f, err := os.Open(path)
 
 	if err != nil {
+		errfile.Expected("opening the optional ini file", err)
 		return "", false
 	}
 
@@ -1306,6 +1308,7 @@ func orRunLogs(c *app.Ctx) error {
 		fmt.Fprintf(&b, "==> %s <==\n", orAbs(f.Path))
 
 		if _, err := os.Stat(f.Path); err != nil {
+			errfile.Expected("probing for the log file to show", err)
 			fmt.Fprintf(&b, "(absent)\n\n")
 			continue
 		}
@@ -1359,6 +1362,7 @@ func orFollow(c *app.Ctx, files []orLogFile) error {
 			st, err := os.Stat(f.Path)
 
 			if err != nil {
+				errfile.Expected("probing the followed log file", err)
 				continue
 			}
 
@@ -1375,6 +1379,7 @@ func orFollow(c *app.Ctx, files []orLogFile) error {
 			chunk, err := orReadFrom(f.Path, off, st.Size())
 
 			if err != nil {
+				errfile.Expected("reading the next chunk of the followed log file", err)
 				continue
 			}
 
@@ -1626,6 +1631,7 @@ func orParseVersion(v string) []int {
 		n, err := strconv.Atoi(digits)
 
 		if err != nil {
+			errfile.Expected("parsing a version component", err)
 			break
 		}
 
@@ -1663,6 +1669,7 @@ func orGoModVersion(path string) string {
 	data, err := os.ReadFile(path)
 
 	if err != nil {
+		errfile.Expected("reading the optional go.mod", err)
 		return ""
 	}
 
@@ -1682,6 +1689,7 @@ func orCheckGo(root string) orCheck {
 	gobin, err := exec.LookPath("go")
 
 	if err != nil {
+		errfile.Expected("probing for the go toolchain", err)
 		ch.Status, ch.Detail, ch.Fix = orFAIL, "go is not on PATH — the server will not build", "install Go (https://go.dev/dl/) and put it on PATH"
 		return ch
 	}
@@ -1690,6 +1698,7 @@ func orCheckGo(root string) orCheck {
 	have := strings.TrimSpace(string(out))
 
 	if err != nil || have == "" {
+		errfile.Expected("reading GOVERSION from go env", err)
 		if o, e := exec.Command(gobin, "version").Output(); e == nil {
 			if m := orGoVersionRe.FindStringSubmatch(string(o)); m != nil {
 				have = "go" + m[1]
@@ -1726,10 +1735,13 @@ func orCheckNode() orCheck {
 
 	switch {
 	case e1 != nil && e2 != nil:
+		errfile.Expected("probing for node and npm", errors.Join(e1, e2))
 		ch.Status, ch.Detail, ch.Fix = orFAIL, "neither node nor npm is on PATH — the UI will not build", "install Node.js (it brings npm)"
 	case e1 != nil:
+		errfile.Expected("probing for node", e1)
 		ch.Status, ch.Detail, ch.Fix = orFAIL, "node is not on PATH", "install Node.js"
 	case e2 != nil:
+		errfile.Expected("probing for npm", e2)
 		ch.Status, ch.Detail, ch.Fix = orFAIL, "npm is not on PATH", "install npm"
 	default:
 		v := ""
@@ -1832,6 +1844,7 @@ func orCheckBuilt(root string) orCheck {
 
 	for _, rel := range []string{"ezbookkeeping", filepath.Join("dist", "index.html")} {
 		if _, err := os.Stat(filepath.Join(root, rel)); err != nil {
+			errfile.Expected("probing for a build artifact", err)
 			missing = append(missing, rel)
 		}
 	}
@@ -2028,6 +2041,7 @@ func orCheckSecretKey(root string) orCheck {
 	val := strings.TrimSpace(string(data))
 
 	if err != nil || val == "" {
+		errfile.Expected("reading the optional data/.secret_key", err)
 		iniVal, _ := orIniValue(filepath.Join(root, "conf", "ezbookkeeping.ini"), "security", "secret_key")
 
 		if env := os.Getenv("EBK_SECURITY_SECRET_KEY"); env != "" {
@@ -2113,6 +2127,7 @@ func orCheckOnPath(root string) orCheck {
 	}
 
 	if err != nil {
+		errfile.Expected("probing for ezbk on PATH", err)
 		ch.Status, ch.Detail = orWARN, "ezbk is not on PATH"
 
 		if root != "" {

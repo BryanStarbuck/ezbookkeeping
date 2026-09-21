@@ -250,6 +250,9 @@ import type { Account, AccountShowingIds } from '@/models/account.ts';
 import { getCurrentUnixTime } from '@/lib/datetime.ts';
 import { getAccountIconType } from '@/lib/icon.ts';
 import { onSwipeoutDeleted } from '@/lib/ui/mobile.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/accounts/ListPage.vue');
 
 const props = defineProps<{
     f7router: Router.Router;
@@ -332,6 +335,7 @@ function init(): void {
     }).then(() => {
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading all accounts', error);
         if (error.processed) {
             loading.value = false;
         } else {
@@ -358,6 +362,7 @@ function reload(done?: () => void): void {
             showToast('Account list has been updated');
         }
     }).catch(error => {
+        errors.caught('loading all accounts', error);
         done?.();
 
         if (!error.processed) {
@@ -405,6 +410,7 @@ function updateLastReconciledTime(account: Account | null): void {
                 reload();
             }
         }).catch(error => {
+            errors.caught('updating the last reconciled time of the account', error);
             updatingLastReconciledTime.value = false;
             hideLoading();
 
@@ -462,6 +468,7 @@ function clearAllTransactions(password: string): void {
         showInputPasswordSheetForClearAllTransactions.value = false;
         showToast('All transactions in this account have been cleared');
     }).catch(error => {
+        errors.caught('clearing all transactions of the account', error);
         clearingData.value = false;
         hideLoading();
 
@@ -480,6 +487,7 @@ function hide(account: Account, hidden: boolean): void {
     }).then(() => {
         hideLoading();
     }).catch(error => {
+        errors.caught('hiding or showing the account', error);
         hideLoading();
 
         if (!error.processed) {
@@ -512,6 +520,7 @@ function remove(account: Account | null, confirm: boolean): void {
     }).then(() => {
         hideLoading();
     }).catch(error => {
+        errors.caught('deleting the account', error);
         hideLoading();
 
         if (!error.processed) {
@@ -548,6 +557,7 @@ function saveSortResult(): void {
         sortable.value = false;
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('updating the account display orders', error);
         displayOrderSaving.value = false;
         hideLoading();
 
@@ -577,6 +587,7 @@ function cancelSort(): void {
         sortable.value = false;
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('loading all accounts', error);
         displayOrderSaving.value = false;
         hideLoading();
 
@@ -612,6 +623,7 @@ function onSort(event: { el: { id: string }; from: number; to: number }): void {
     }).then(() => {
         displayOrderModified.value = true;
     }).catch(error => {
+        errors.caught('changing the account display order', error);
         showToast(error.message || error);
     });
 }

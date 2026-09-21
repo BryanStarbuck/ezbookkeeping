@@ -42,6 +42,9 @@ import { ref, useTemplateRef } from 'vue';
 import { useI18n } from '@/locales/helpers.ts';
 
 import { useTransactionsStore } from '@/stores/transaction.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/insights/dialogs/BatchDeleteDialog.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -88,6 +91,7 @@ function confirm(): void {
         showState.value = false;
         resolveFunc?.(deleteIds.value.length);
     }).catch(error => {
+        errors.caught('deleting the selected transactions', error);
         deleting.value = false;
 
         if (!error.processed) {

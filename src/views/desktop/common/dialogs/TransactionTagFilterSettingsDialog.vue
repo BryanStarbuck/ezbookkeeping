@@ -156,6 +156,9 @@ import {
     mdiDotsVertical,
     mdiPound
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/common/dialogs/TransactionTagFilterSettingsDialog.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -213,6 +216,7 @@ function init(): void {
             snackbar.value?.showError('Parameter Invalid');
         }
     }).catch(error => {
+        errors.caught('loading the transaction tag list', error);
         loading.value = false;
 
         if (!error.processed) {

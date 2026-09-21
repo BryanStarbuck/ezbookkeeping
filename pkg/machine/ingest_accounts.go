@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/mayswind/ezbookkeeping/pkg/api"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -598,6 +599,7 @@ func ingApplyAccounts(mc *Ctx, plan *ingAccountsPlan, changes []*ingAccountChang
 		}
 
 		if failure != nil {
+			reportLost("applying an account change", failure)
 			break
 		}
 	}
@@ -687,6 +689,7 @@ func ingUndoMapRestore(mc *Ctx, payload json.RawMessage, check json.RawMessage) 
 	var c ingMapRestoreCheck
 
 	if err := json.Unmarshal(payload, &p); err != nil {
+		errfile.Caught("decoding the map inverse from the journal", err)
 		return NewFail(CodeInternal, "the journal entry is damaged", "cannot read the map inverse")
 	}
 
@@ -738,6 +741,7 @@ func ingUndoAccountCreate(mc *Ctx, payload json.RawMessage, check json.RawMessag
 	}
 
 	if err := json.Unmarshal(payload, &p); err != nil {
+		errfile.Caught("decoding the account inverse from the journal", err)
 		return NewFail(CodeInternal, "the journal entry is damaged", "cannot read the account inverse")
 	}
 
@@ -751,6 +755,10 @@ func ingUndoAccountCreate(mc *Ctx, payload json.RawMessage, check json.RawMessag
 	acct, gerr := services.Accounts.GetAccountByAccountId(mc.Web, mc.Uid, id)
 
 	if gerr != nil || acct == nil || acct.Deleted {
+		if gerr != nil && !errors.Is(gerr, errs.ErrAccountNotFound) {
+			errfile.Caught("loading the account to undo its creation", gerr)
+		}
+
 		return nil // already gone
 	}
 
@@ -818,6 +826,7 @@ func ingParseMapArg(raw json.RawMessage) (map[string]string, error) {
 	}
 
 	if err := json.Unmarshal(raw, &list); err != nil {
+		errfile.Expected("decoding the account map argument", err)
 		return nil, Invalid("pass map as {\"entity/institution/last4\": \"account id\"}; ids are strings", "map is malformed")
 	}
 

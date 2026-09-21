@@ -25,6 +25,7 @@ func Recovery(c *core.WebContext) {
 	defer func() {
 		if err := recover(); err != nil {
 			stack := stack(3)
+
 			errfile.Recovered("handling "+c.Request.Method+" "+c.FullPath(), err, errfile.F("request_id", c.GetContextId()))
 			log.ErrorfWithExtra(c, string(stack), "System Error! because %s", err)
 			utils.PrintJsonErrorResult(c, errs.ErrSystemError)
@@ -53,6 +54,7 @@ func stack(skip int) []byte {
 			data, err := os.ReadFile(file)
 
 			if err != nil {
+				errfile.Expected("reading a source file for the panic stack", err)
 				continue
 			}
 

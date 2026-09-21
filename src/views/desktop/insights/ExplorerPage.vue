@@ -268,6 +268,9 @@ import {
     mdiTableEdit,
     mdiTableCheck
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/insights/ExplorerPage.vue');
 
 interface InsightsExplorerProps {
     initId?: string;
@@ -494,6 +497,7 @@ function init(initProps: InsightsExplorerProps): void {
         loading.value = false;
         initing.value = false;
     }).catch(error => {
+        errors.caught('loading the insights explorer page', error);
         loading.value = false;
         initing.value = false;
 
@@ -515,6 +519,7 @@ function reload(force: boolean): Promise<unknown> | null {
             snackbar.value?.showMessage('Data has been updated');
         }
     }).catch(error => {
+        errors.caught('loading all transactions', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -554,6 +559,7 @@ function loadExploration(explorationId: string, force?: boolean, init?: boolean)
 
         router.push(getFilterLinkUrl());
     }).catch(error => {
+        errors.caught('loading the exploration', error);
         if (!init) {
             loading.value = false;
         }
@@ -583,7 +589,8 @@ function showChangeExplorerDisplayOrderDialog(): void {
                 force: false
             }).then(() => {
                 loading.value = false;
-            }).catch(() => {
+            }).catch(error => {
+                errors.caught('loading the exploration list', error);
                 loading.value = false;
             });
         }
@@ -620,6 +627,7 @@ function doSaveExploration(saveAs?: boolean): Promise<unknown> {
             router.push(getFilterLinkUrl());
         }
     }).catch(error => {
+        errors.caught('saving the exploration', error);
         updating.value = false;
 
         if (!error.processed) {
@@ -663,6 +671,7 @@ function hideExploration(hidden: boolean): void {
 
         currentExploration.value.hidden = hidden;
     }).catch(error => {
+        errors.caught('hiding or showing the exploration', error);
         updating.value = false;
 
         if (!error.processed) {
@@ -685,6 +694,7 @@ function removeExploration(): void {
             updating.value = false;
             createNewExploration();
         }).catch(error => {
+            errors.caught('deleting the exploration', error);
             updating.value = false;
 
             if (!error.processed) {
@@ -874,6 +884,7 @@ function onShowTransaction(transaction: TransactionInsightDataItem): void {
 
         reload(false);
     }).catch(error => {
+        errors.expected('opening the edit dialog', error);
         if (error) {
             snackbar.value?.showError(error);
         }

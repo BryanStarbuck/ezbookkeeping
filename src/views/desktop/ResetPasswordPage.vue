@@ -122,6 +122,9 @@ import { getClientDisplayVersion } from '@/lib/version.ts';
 import {
     mdiChevronLeft
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/ResetPasswordPage.vue');
 
 type ConfirmDialogType = InstanceType<typeof ConfirmDialog>;
 type SnackBarType = InstanceType<typeof SnackBar>;
@@ -192,6 +195,7 @@ function resetPassword(): void  {
         passwordChanged.value = true;
         snackbar.value?.showMessage('Password has been updated');
     }).catch(error => {
+        errors.caught('resetting the password', error);
         updating.value = false;
         passwordChanged.value = false;
 

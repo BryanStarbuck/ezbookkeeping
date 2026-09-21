@@ -2,6 +2,7 @@ package machine
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"reflect"
@@ -14,6 +15,7 @@ import (
 	"github.com/mayswind/ezbookkeeping/pkg/api"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
 	"github.com/mayswind/ezbookkeeping/pkg/datastore"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 	"github.com/mayswind/ezbookkeeping/pkg/services"
 	"github.com/mayswind/ezbookkeeping/pkg/utils"
@@ -629,6 +631,7 @@ func txnBuildTagFilter(anyTagIds []string, raw string, untagged bool) (string, e
 
 	if raw != "" {
 		if _, err := models.ParseTransactionTagFilter(raw); err != nil {
+			errfile.Expected("parsing the tag_filter query parameter", err)
 			return "", Invalid("tag_filter is upstream's syntax: <mode>:<id>,<id>[;…] with mode 0 has-any, 1 has-all, 2 not-any, 3 not-all — or use tag_ids / tag_names", "tag_filter %q is malformed", raw)
 		}
 	}
@@ -1201,6 +1204,7 @@ func txnHandleList(mc *Ctx) (any, error) {
 		cursor, err = strconv.ParseInt(c, 10, 64)
 
 		if err != nil || cursor <= 0 {
+			errfile.Expected("parsing the cursor query parameter", err)
 			return nil, Invalid("pass back the nextCursor a previous page returned", "cursor %q is not a cursor this route issued", c)
 		}
 	}
@@ -2641,6 +2645,7 @@ func (g *txnGeoArg) validate() (string, string, error) {
 	lon, err2 := strconv.ParseFloat(g.Longitude.String(), 64)
 
 	if err1 != nil || err2 != nil || lat < -90 || lat > 90 || lon < -180 || lon > 180 {
+		errfile.Expected("parsing the geo location of a transaction row", errors.Join(err1, err2))
 		return "", "", Invalid("geo is {\"latitude\": -90..90, \"longitude\": -180..180}", "geo %s,%s is not a location", g.Latitude, g.Longitude)
 	}
 
@@ -2677,6 +2682,7 @@ func txnResolveWhen(date, instant string, loc *time.Location) (int64, int16, err
 		parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(instant))
 
 		if err != nil {
+			errfile.Expected("parsing the time of a transaction row", err)
 			return 0, 0, Invalid("time is an RFC 3339 instant such as 2026-09-21T14:30:00-07:00 — or pass date as YYYY-MM-DD", "time %q is not RFC 3339", instant)
 		}
 
@@ -3564,6 +3570,7 @@ func txnCheckRows(mc *Ctx, expected []txnState) (map[int64]*txnState, error) {
 		id, err := strconv.ParseInt(s.Id, 10, 64)
 
 		if err != nil {
+			errfile.Caught("parsing a transaction id from the undo journal", err)
 			return nil, Conflict("the journal entry is damaged; it cannot be undone", "bad id %q in journal", s.Id)
 		}
 
@@ -3659,6 +3666,7 @@ func txnExecDelete(mc *Ctx, payload json.RawMessage, check json.RawMessage) erro
 		id, err := strconv.ParseInt(s, 10, 64)
 
 		if err != nil {
+			errfile.Caught("parsing a transaction id from the undo journal payload", err)
 			return Conflict("the journal entry is damaged; it cannot be undone", "bad id %q in journal", s)
 		}
 

@@ -22,6 +22,7 @@ import (
 
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/app"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/client"
+	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/errfile"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/exitcode"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/render"
 )
@@ -419,6 +420,7 @@ func wrResolveDate(v string, mode wrDateMode, loc *time.Location, now time.Time)
 		t, err := time.ParseInLocation("2006-01-02", v, loc)
 
 		if err != nil {
+			errfile.Expected("parsing a typed date", err)
 			return "", false, fmt.Errorf("%q is not a real date", v)
 		}
 
@@ -429,6 +431,7 @@ func wrResolveDate(v string, mode wrDateMode, loc *time.Location, now time.Time)
 		first, err := time.ParseInLocation("2006", v, loc)
 
 		if err != nil {
+			errfile.Expected("parsing a typed year", err)
 			return "", false, fmt.Errorf("%q is not a real year", v)
 		}
 
@@ -439,6 +442,7 @@ func wrResolveDate(v string, mode wrDateMode, loc *time.Location, now time.Time)
 		first, err := time.ParseInLocation("2006-01", v, loc)
 
 		if err != nil {
+			errfile.Expected("parsing a typed month", err)
 			return "", false, fmt.Errorf("%q is not a real month", v)
 		}
 
@@ -1028,6 +1032,7 @@ func wrEmitFlat(c *app.Ctx, raw []byte) error {
 	dec.UseNumber()
 
 	if err := dec.Decode(&envelope); err != nil {
+		errfile.Caught("decoding the captured write envelope", err)
 		_, werr := c.Out.Write(raw)
 		return werr
 	}
@@ -1585,6 +1590,7 @@ func wrInstant(date, clock string, loc *time.Location) (string, error) {
 	t, err := time.ParseInLocation("2006-01-02 15:04:05", date+" "+clock, loc)
 
 	if err != nil {
+		errfile.Expected("parsing a typed date and time", err)
 		return "", fmt.Errorf("%s %s is not a valid date and time", date, clock)
 	}
 

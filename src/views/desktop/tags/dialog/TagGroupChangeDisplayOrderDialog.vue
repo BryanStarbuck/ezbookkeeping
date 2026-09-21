@@ -86,6 +86,9 @@ import {
     mdiCheck,
     mdiDrag
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/tags/dialog/TagGroupChangeDisplayOrderDialog.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -114,6 +117,7 @@ function open(): Promise<void> {
         loading.value = false;
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('loading all tag groups', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -137,6 +141,7 @@ function reload(): void {
 
         snackbar.value?.showMessage('Tag group list has been updated');
     }).catch(error => {
+        errors.caught('loading all tag groups', error);
         loading.value = false;
 
         if (error && error.isUpToDate) {
@@ -160,6 +165,7 @@ function saveDisplayOrder(): void {
         loading.value = false;
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('updating the tag group display orders', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -196,6 +202,7 @@ function onMove(event: { moved: { element: { id: string }; oldIndex: number; new
     }).then(() => {
         displayOrderModified.value = true;
     }).catch(error => {
+        errors.caught('changing the tag group display order', error);
         snackbar.value?.showError(error);
     });
 }

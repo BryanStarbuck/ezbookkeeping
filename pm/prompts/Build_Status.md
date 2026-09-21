@@ -50,11 +50,27 @@ THE CLI  (cli/, its own Go module, stdlib only — `ezbk`, 141 verbs)
 THE MCP SERVER  (mcp/, Node + TypeScript, stdio, `ezb_` tools)
 --------------------------------------------------------------------------------------------------
 
-[IN-PR]  P1-P9 of pm/mcp.mdx §20 — being built in one pass by builder agent B3 of the error-file
+[ DONE]  P1-P9 of pm/mcp.mdx §20 — built in one pass by builder agent B3 of the error-file
               rollout (pm/error_err.mdx §16.2), against the errfile API from the start.
-              65 tools (47 read, 18 write), the six gates, credentials vectors, canaries,
-              instructions pipeline from ai/mcp_prompt_ezbookkeeping.md, audit line.
-              started: 2026-09-21
+              65 tools (47 read, 18 write; none deletes), the six gates, credentials vectors,
+              the twelve canaries of §7.0, instructions pipeline from
+              ai/mcp_prompt_ezbookkeeping.md, audit line, node error sink (§16.3).
+              started : 2026-09-21
+              built   : 2026-09-21
+              tests   : 22 files, 158 tests, all green (vitest: catalogue, gates, credentials
+                        vectors, instructions freshness, canary parity, the 12 canaries, the
+                        vendored errfile suite, and the LIVE integration suite against a real
+                        server on an ephemeral port with temp SQLite and synthetic books)
+              verified: hand-piped initialize over stdio (serverInfo.name ezbookkeeping,
+                        capabilities {tools:{}}, instructions first sentence = §3.4 layer 5);
+                        dist/ grep clean of console.log / process.stdout.write; no fetch(,
+                        no child_process, one socket opener; write tier off -> all 18 listed
+                        and refusing with both switches named; on -> confirm_required, stale
+                        token conflict, ceiling too_many_changes with the real count;
+                        plan twice identical, apply then plan -> 0 new; undo after every write
+                        restores the row hash. Where pm/mcp.mdx disagreed with pkg/machine the
+                        builder followed the plane; the spec was reconciled 2026-09-21 (Phase D).
+              register: just install-mcp yes   (prints and runs the `claude mcp add` line)
 
 --------------------------------------------------------------------------------------------------
 THE ERROR FILE  (pkg/errfile, src/lib/errfile, ~/T/ezbookkeeping/error.err — pm/error_err.mdx)
@@ -62,16 +78,26 @@ THE ERROR FILE  (pkg/errfile, src/lib/errfile, ~/T/ezbookkeeping/error.err — p
 
 [ DONE]  A    the spec pm/error_err.mdx and the cross-language vectors
               pkg/errfile/testdata/vectors.json        2026-09-21
-[IN-PR]  B1   Go library pkg/errfile + pkg/errfile/server, vendored cli/internal/errfile,
-              nets N5 N7 N8 N9 N10 N11 N13, scripts/errfilecheck analyzer, justfile recipes
-[IN-PR]  B2   TS library src/lib/errfile, node sink in mcp/src/errfile, nets N1 N2 N3 N4 N15,
-              ESLint rule, scripts/error-file-coverage.mjs
-[IN-PR]  B3   the MCP server with N14 (see above)
-[     ]  C    twelve partitioned retrofit agents (every violating file in pkg/, cmd/, cli/,
-              src/, mcp/)
-[     ]  D    rule flipped to "error", coverage 100%, private-data check, spec/CLAUDE.md updates
+[ DONE]  B1   Go library pkg/errfile + pkg/errfile/server, vendored cli/internal/errfile, the
+              server nets (recovery middleware, machine-plane wrap, cron, main), the
+              scripts/errfilecheck analyzer, justfile recipes            2026-09-21
+[ DONE]  B2   TS library src/lib/errfile (browser sink + node sink in mcp/src/errfile), the web
+              nets, the eslint errfile rule, scripts/error-file-coverage.mjs   2026-09-21
+[ DONE]  B3   the MCP server with N14 — see THE MCP SERVER above            2026-09-21
+[ DONE]  C    twelve partition agents over pkg/, cmd/, cli/, src/, mcp/: 629 violations -> 0
+              across 199 files                                              2026-09-21
+[ DONE]  D    eslint rule flipped to "error"; coverage report 875 files, 0 violating,
+              0 unwired; every suite green (root Go, cli Go, vitest, mcp vitest); the four
+              PM specs reconciled to the code (pm/apis.mdx, pm/cli.mdx, pm/mcp.mdx, this
+              file)                                                        2026-09-21
 
-NEXT: finish B1-B3, run scripts/error-file-coverage.mjs --partition 12, run Phase C, close with D.
+NEXT: (1) point db_path, log_path and the storage root at ~/T/ (outside the repo) BEFORE importing
+      real statements — CLAUDE.md "Runtime state location"; (2) register the MCP with
+      `just install-mcp yes` and confirm `claude mcp list` shows ezbookkeeping connected;
+      (3) first real run: ezbk doctor, ezbk statements plan against the prepared archive, read the
+      unmapped list, then apply with --write; (4) the three code notes from the Phase D
+      reconciliation (mcp.mdx / apis.mdx reviewer report) — ezb_update_scheduled_transaction's
+      `hidden` and `time` arguments, and the MCP's server.log fallback hints — are small follow-ups.
 
 --------------------------------------------------------------------------------------------------
 KNOWN

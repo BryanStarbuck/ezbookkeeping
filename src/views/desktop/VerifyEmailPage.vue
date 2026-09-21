@@ -103,6 +103,9 @@ import { getClientDisplayVersion } from '@/lib/version.ts';
 import {
     mdiChevronLeft
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/VerifyEmailPage.vue');
 
 type ConfirmDialogType = InstanceType<typeof ConfirmDialog>;
 type SnackBarType = InstanceType<typeof SnackBar>;
@@ -147,6 +150,7 @@ function init(): void {
         verified.value = true;
         snackbar.value?.showMessage('Email address is verified');
     }).catch(error => {
+        errors.caught('verifying the email address', error);
         loading.value = false;
         verified.value = false;
 
@@ -167,6 +171,7 @@ function resendEmail(): void {
         resending.value = false;
         snackbar.value?.showMessage('Validation email has been sent');
     }).catch(error => {
+        errors.caught('resending the verification email', error);
         resending.value = false;
 
         if (!error.processed) {

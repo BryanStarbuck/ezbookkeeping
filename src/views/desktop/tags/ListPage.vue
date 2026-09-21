@@ -376,6 +376,9 @@ import {
     mdiDotsVertical,
     mdiPound
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/tags/ListPage.vue');
 
 type TagGroupChangeDisplayOrderDialogType = InstanceType<typeof TagGroupChangeDisplayOrderDialog>;
 type RenameDialogType = InstanceType<typeof RenameDialog>;
@@ -443,6 +446,7 @@ function reload(): void {
 
         snackbar.value?.showMessage('Tag list has been updated');
     }).catch(error => {
+        errors.caught('loading all tags', error);
         loading.value = false;
 
         if (error && error.isUpToDate) {
@@ -473,6 +477,7 @@ function addTagGroup(): void {
             updating.value = false;
             activeTagGroupId.value = tagGroup.id;
         }).catch(error => {
+            errors.caught('saving the tag group', error);
             updating.value = false;
 
             if (!error.processed) {
@@ -501,6 +506,7 @@ function renameTagGroup(): void {
         }).then(() => {
             updating.value = false;
         }).catch(error => {
+            errors.caught('saving the tag group', error);
             updating.value = false;
 
             if (!error.processed) {
@@ -519,7 +525,8 @@ function showChangeGroupDisplayOrderDialog(): void {
                 force: false
             }).then(() => {
                 loading.value = false;
-            }).catch(() => {
+            }).catch(error => {
+                errors.caught('loading all tag groups', error);
                 loading.value = false;
             });
         }
@@ -554,6 +561,7 @@ function removeTagGroup(): void {
                 activeTagGroupId.value = DEFAULT_TAG_GROUP_ID;
             }
         }).catch(error => {
+            errors.caught('deleting the tag group', error);
             updating.value = false;
 
             if (!error.processed) {
@@ -587,6 +595,7 @@ function moveTagToGroup(tag: TransactionTag | null, targetTagGroupId: string): v
         updating.value = false;
         tagMoving.value[tag.id] = false;
     }).catch(error => {
+        errors.caught('saving the tag', error);
         updating.value = false;
         tagMoving.value[tag.id] = false;
 
@@ -615,6 +624,7 @@ function save(tag: TransactionTag): void {
             newTag.value = null;
         }
     }).catch(error => {
+        errors.caught('saving the tag', error);
         updating.value = false;
         tagUpdating.value[tag.id || ''] = false;
 
@@ -652,6 +662,7 @@ function saveSortResult(): void {
         loading.value = false;
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('updating the tag display orders', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -671,6 +682,7 @@ function hide(tag: TransactionTag, hidden: boolean): void {
         updating.value = false;
         tagHiding.value[tag.id] = false;
     }).catch(error => {
+        errors.caught('hiding or showing the tag', error);
         updating.value = false;
         tagHiding.value[tag.id] = false;
 
@@ -691,6 +703,7 @@ function remove(tag: TransactionTag): void {
             updating.value = false;
             tagRemoving.value[tag.id] = false;
         }).catch(error => {
+            errors.caught('deleting the tag', error);
             updating.value = false;
             tagRemoving.value[tag.id] = false;
 
@@ -720,6 +733,7 @@ function onMove(event: { moved: { element: { id: string }; oldIndex: number; new
     }).then(() => {
         displayOrderModified.value = true;
     }).catch(error => {
+        errors.caught('changing the tag display order', error);
         snackbar.value?.showError(error);
     });
 }
@@ -729,6 +743,7 @@ transactionTagsStore.loadAllTags({
 }).then(() => {
     loading.value = false;
 }).catch(error => {
+    errors.caught('loading all tags', error);
     loading.value = false;
 
     if (!error.processed) {

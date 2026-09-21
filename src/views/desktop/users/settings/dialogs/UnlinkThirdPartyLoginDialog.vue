@@ -40,6 +40,9 @@ import { ref, useTemplateRef } from 'vue';
 import { useI18n } from '@/locales/helpers.ts';
 
 import { useUserExternalAuthStore } from '@/stores/userExternalAuth.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/users/settings/dialogs/UnlinkThirdPartyLoginDialog.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -85,6 +88,7 @@ function confirm(): void {
         resolveFunc?.();
         showState.value = false;
     }).catch(error => {
+        errors.caught('unlinking the third-party login', error);
         unlinking.value = false;
 
         if (!error.processed) {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
 	"github.com/mayswind/ezbookkeeping/pkg/datastore"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -250,6 +251,7 @@ func (s *TokenService) DeleteTokenByClaims(c core.Context, claims *core.UserToke
 	userTokenId, err := utils.StringToInt64(claims.UserTokenId)
 
 	if err != nil {
+		errfile.Expected("parsing the user token id from the token claims", err)
 		return errs.ErrInvalidUserTokenId
 	}
 
@@ -332,18 +334,21 @@ func (s *TokenService) ParseFromTokenId(tokenId string) (*models.TokenRecord, er
 	uid, err := utils.StringToInt64(pairs[0])
 
 	if err != nil {
+		errfile.Expected("parsing the uid part of the token id", err)
 		return nil, errs.ErrInvalidTokenId
 	}
 
 	createdUnixTime, err := utils.StringToInt64(pairs[1])
 
 	if err != nil {
+		errfile.Expected("parsing the created time part of the token id", err)
 		return nil, errs.ErrInvalidTokenId
 	}
 
 	userTokenId, err := utils.StringToInt64(pairs[2])
 
 	if err != nil {
+		errfile.Expected("parsing the user token id part of the token id", err)
 		return nil, errs.ErrInvalidTokenId
 	}
 

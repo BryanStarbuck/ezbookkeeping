@@ -1,0 +1,21 @@
+{
+  "tool": "ezb_add_tag",
+  "args": {
+    "name": "nope"
+  },
+  "envelope": {
+    "ok": false,
+    "tool": "ezb_add_tag",
+    "error": {
+      "code": "write_disabled",
+      "message": "The write tier is off.",
+      "hint": "Restart the app with `ezbk stop && ezbk up --allow-write` (EZBK_MACHINE_ALLOW_WRITE=1) and set EZBKMCP_ALLOW_WRITE=1 for this server, then retry."
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15.719Z",
+      "tookMs": 1
+    }
+  }
+}

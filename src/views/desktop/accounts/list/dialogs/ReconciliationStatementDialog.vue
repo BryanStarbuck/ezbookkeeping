@@ -376,6 +376,9 @@ import {
     mdiKeyboardTab,
     mdiPencilBoxOutline
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/accounts/list/dialogs/ReconciliationStatementDialog.vue');
 
 type OneColumnDialogLayoutType = InstanceType<typeof OneColumnDialogLayout>;
 type SnackBarType = InstanceType<typeof SnackBar>;
@@ -549,6 +552,7 @@ function open(options: { accountId: string, startTime: number, endTime: number }
         setReconciliationStatements(result);
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading the reconciliation statements', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -581,6 +585,7 @@ function reload(force: boolean): void {
         setReconciliationStatements(result);
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading the reconciliation statements', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -599,6 +604,7 @@ function addTransaction(): void {
 
         reload(false);
     }).catch(error => {
+        errors.caught('opening the transaction edit dialog', error);
         if (error) {
             snackbar.value?.showError(error);
         }
@@ -664,6 +670,7 @@ function updateClosingBalance(): void {
 
             reload(false);
         }).catch(error => {
+            errors.caught('opening the transaction edit dialog', error);
             if (error) {
                 snackbar.value?.showError(error);
             }
@@ -695,6 +702,7 @@ function showTransaction(transaction: TransactionReconciliationStatementResponse
 
         reload(false);
     }).catch(error => {
+        errors.caught('opening the transaction edit dialog', error);
         if (error) {
             snackbar.value?.showError(error);
         }
@@ -712,6 +720,7 @@ function updateLastReconciledTime(): void {
         updatingLastReconciledTime.value = false;
         snackbar.value?.showMessage('Last reconciled time have been updated');
     }).catch(error => {
+        errors.caught('updating the last reconciled time', error);
         updatingLastReconciledTime.value = false;
 
         if (error) {

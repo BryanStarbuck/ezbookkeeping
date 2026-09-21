@@ -145,6 +145,9 @@ import {
     mdiCellphone,
     mdiMonitor,
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/settings/ApplicationCloudSyncSettingsPage.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -181,6 +184,7 @@ function init(): void {
         setUserApplicationCloudSettings(response);
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading the application cloud sync settings', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -201,6 +205,7 @@ function enable(update: boolean): void {
             snackbar.value?.showMessage('Synchronized settings have been updated');
         }
     }).catch(error => {
+        errors.caught('enabling the application cloud sync', error);
         enabling.value = false;
 
         if (!error.processed) {
@@ -217,6 +222,7 @@ function disable(): void {
         disabling.value = false;
         snackbar.value?.showMessage('Settings sync has been disabled');
     }).catch(error => {
+        errors.caught('disabling the application cloud sync', error);
         disabling.value = false;
 
         if (!error.processed) {

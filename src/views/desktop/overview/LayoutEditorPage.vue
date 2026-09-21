@@ -109,6 +109,9 @@ import {
     mdiPlus,
     mdiRestore
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/overview/LayoutEditorPage.vue');
 
 type ConfirmDialogType = InstanceType<typeof ConfirmDialog>;
 type SnackBarType = InstanceType<typeof SnackBar>;
@@ -227,6 +230,7 @@ function reload(force: boolean): void {
             snackbar.value?.showMessage('Data has been updated');
         }
     }).catch(error => {
+        errors.caught('loading the overview layout editor', error);
         loadingOverview.value = false;
 
         if (!error.processed && !error.isUpToDate) {

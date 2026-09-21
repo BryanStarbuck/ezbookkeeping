@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/errfile"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/exitcode"
 )
 
@@ -121,6 +122,7 @@ func IsLoopbackURL(raw string) bool {
 	u, err := url.Parse(raw)
 
 	if err != nil {
+		errfile.Expected("parsing the base URL to test for loopback", err)
 		return false
 	}
 
@@ -140,6 +142,7 @@ func CheckTarget(raw string) error {
 	u, err := url.Parse(raw)
 
 	if err != nil || u.Scheme == "" || u.Host == "" {
+		errfile.Expected("parsing the target URL", err)
 		return fmt.Errorf("%q is not a URL like http://127.0.0.1:8080", raw)
 	}
 
@@ -260,6 +263,7 @@ func parseEnvelope(resp *http.Response, data []byte) (*Envelope, error) {
 	dec.UseNumber()
 
 	if err := dec.Decode(env); err != nil {
+		errfile.Caught("decoding the machine-plane envelope", err, errfile.F("http_status", resp.StatusCode))
 		return nil, fmt.Errorf("the server answered with something that is not the machine-plane envelope (HTTP %d)", resp.StatusCode)
 	}
 
@@ -352,6 +356,7 @@ func Healthz(baseURL string, timeout time.Duration) (map[string]any, error) {
 	var m map[string]any
 
 	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
+		errfile.Caught("decoding healthz.json", err)
 		return nil, fmt.Errorf("healthz.json did not answer JSON")
 	}
 

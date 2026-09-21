@@ -1,0 +1,285 @@
+{
+  "tool": "ezb_add_transactions",
+  "args": {
+    "transactions": [
+      {
+        "type": "income",
+        "date": "2026-07-01",
+        "account_name": "Northbank Checking",
+        "amount": 500000,
+        "category_name": "Paycheck",
+        "comment": "ACME PAYROLL"
+      },
+      {
+        "type": "expense",
+        "date": "2026-07-03",
+        "account_name": "Northbank Checking",
+        "amount": 12350,
+        "category_name": "Groceries",
+        "comment": "NORTHSIDE MARKET"
+      },
+      {
+        "type": "expense",
+        "date": "2026-07-15",
+        "account_name": "Northbank Checking",
+        "amount": 18900,
+        "category_name": "Other",
+        "comment": "ACME HARDWARE"
+      },
+      {
+        "type": "income",
+        "date": "2026-08-01",
+        "account_name": "Northbank Checking",
+        "amount": 500000,
+        "category_name": "Paycheck",
+        "comment": "ACME PAYROLL"
+      },
+      {
+        "type": "expense",
+        "date": "2026-08-02",
+        "account_name": "Northbank Checking",
+        "amount": 13100,
+        "category_name": "Groceries",
+        "comment": "NORTHSIDE MARKET"
+      },
+      {
+        "type": "transfer",
+        "date": "2026-08-05",
+        "account_name": "Northbank Checking",
+        "amount": 100000,
+        "destination_account_name": "Meridian Savings",
+        "destination_amount": 100000,
+        "category_name": "General Transfer",
+        "comment": "monthly savings"
+      },
+      {
+        "type": "expense",
+        "date": "2026-08-14",
+        "account_name": "Northbank Checking",
+        "amount": 7600,
+        "category_name": "Other",
+        "comment": "ACME HARDWARE"
+      },
+      {
+        "type": "expense",
+        "date": "2026-08-20",
+        "account_name": "Euro Card",
+        "amount": 8250,
+        "category_name": "Restaurants",
+        "comment": "LISBON BISTRO",
+        "tag_names": [
+          "Trip"
+        ]
+      },
+      {
+        "type": "expense",
+        "date": "2026-09-02",
+        "account_name": "Northbank Checking",
+        "amount": 12800,
+        "category_name": "Groceries",
+        "comment": "NORTHSIDE MARKET"
+      }
+    ]
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_add_transactions",
+    "data": {
+      "changes": {
+        "create": 9
+      },
+      "confirm_token": "cf_769195c20690cd280699384204ef141e",
+      "dry_run": true,
+      "expires_at": "2026-09-21T16:43:15Z",
+      "fingerprint": "sha256:874648a92435e0b2",
+      "preview": {
+        "rows": [
+          {
+            "categoryId": "3844013758582095876",
+            "categoryName": "Salary > Paycheck",
+            "comment": "ACME PAYROLL",
+            "date": "2026-07-01",
+            "hideAmount": false,
+            "index": 0,
+            "sourceAccountId": "3844013758313660416",
+            "sourceAccountName": "Northbank Checking",
+            "sourceAmount": 500000,
+            "sourceCurrency": "USD",
+            "tagIds": [],
+            "tagNames": [],
+            "time": 1782907200,
+            "typeName": "income",
+            "utcOffset": 0
+          },
+          {
+            "categoryId": "3844013758582095877",
+            "categoryName": "Food > Groceries",
+            "comment": "NORTHSIDE MARKET",
+            "date": "2026-07-03",
+            "hideAmount": false,
+            "index": 1,
+            "sourceAccountId": "3844013758313660416",
+            "sourceAccountName": "Northbank Checking",
+            "sourceAmount": 12350,
+            "sourceCurrency": "USD",
+            "tagIds": [],
+            "tagNames": [],
+            "time": 1783080000,
+            "typeName": "expense",
+            "utcOffset": 0
+          },
+          {
+            "categoryId": "3844013758582095880",
+            "categoryName": "Home > Other",
+            "comment": "ACME HARDWARE",
+            "date": "2026-07-15",
+            "hideAmount": false,
+            "index": 2,
+            "sourceAccountId": "3844013758313660416",
+            "sourceAccountName": "Northbank Checking",
+            "sourceAmount": 18900,
+            "sourceCurrency": "USD",
+            "tagIds": [],
+            "tagNames": [],
+            "time": 1784116800,
+            "typeName": "expense",
+            "utcOffset": 0
+          },
+          {
+            "categoryId": "3844013758582095876",
+            "categoryName": "Salary > Paycheck",
+            "comment": "ACME PAYROLL",
+            "date": "2026-08-01",
+            "hideAmount": false,
+            "index": 3,
+            "sourceAccountId": "3844013758313660416",
+            "sourceAccountName": "Northbank Checking",
+            "sourceAmount": 500000,
+            "sourceCurrency": "USD",
+            "tagIds": [],
+            "tagNames": [],
+            "time": 1785585600,
+            "typeName": "income",
+            "utcOffset": 0
+          },
+          {
+            "categoryId": "3844013758582095877",
+            "categoryName": "Food > Groceries",
+            "comment": "NORTHSIDE MARKET",
+            "date": "2026-08-02",
+            "hideAmount": false,
+            "index": 4,
+            "sourceAccountId": "3844013758313660416",
+            "sourceAccountName": "Northbank Checking",
+            "sourceAmount": 13100,
+            "sourceCurrency": "USD",
+            "tagIds": [],
+            "tagNames": [],
+            "time": 1785672000,
+            "typeName": "expense",
+            "utcOffset": 0
+          },
+          {
+            "categoryId": "3844013758582095881",
+            "categoryName": "Transfer > General Transfer",
+            "comment": "monthly savings",
+            "date": "2026-08-05",
+            "destinationAccountId": "3844013758313660417",
+            "destinationAccountName": "Meridian Savings",
+            "destinationAmount": 100000,
+            "destinationCurrency": "USD",
+            "hideAmount": false,
+            "index": 5,
+            "sourceAccountId": "3844013758313660416",
+            "sourceAccountName": "Northbank Checking",
+            "sourceAmount": 100000,
+            "sourceCurrency": "USD",
+            "tagIds": [],
+            "tagNames": [],
+            "time": 1785931200,
+            "typeName": "transfer",
+            "utcOffset": 0
+          },
+          {
+            "categoryId": "3844013758582095880",
+            "categoryName": "Home > Other",
+            "comment": "ACME HARDWARE",
+            "date": "2026-08-14",
+            "hideAmount": false,
+            "index": 6,
+            "sourceAccountId": "3844013758313660416",
+            "sourceAccountName": "Northbank Checking",
+            "sourceAmount": 7600,
+            "sourceCurrency": "USD",
+            "tagIds": [],
+            "tagNames": [],
+            "time": 1786708800,
+            "typeName": "expense",
+            "utcOffset": 0
+          },
+          {
+            "categoryId": "3844013758582095878",
+            "categoryName": "Food > Restaurants",
+            "comment": "LISBON BISTRO",
+            "date": "2026-08-20",
+            "hideAmount": false,
+            "index": 7,
+            "sourceAccountId": "3844013758313660418",
+            "sourceAccountName": "Euro Card",
+            "sourceAmount": 8250,
+            "sourceCurrency": "EUR",
+            "tagIds": [
+              "3844013758716313600"
+            ],
+            "tagNames": [
+              "Trip"
+            ],
+            "time": 1787227200,
+            "typeName": "expense",
+            "utcOffset": 0
+          },
+          {
+            "categoryId": "3844013758582095877",
+            "categoryName": "Food > Groceries",
+            "comment": "NORTHSIDE MARKET",
+            "date": "2026-09-02",
+            "hideAmount": false,
+            "index": 8,
+            "sourceAccountId": "3844013758313660416",
+            "sourceAccountName": "Northbank Checking",
+            "sourceAmount": 12800,
+            "sourceCurrency": "USD",
+            "tagIds": [],
+            "tagNames": [],
+            "time": 1788350400,
+            "typeName": "expense",
+            "utcOffset": 0
+          }
+        ]
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 3,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name",
+        "sourceAccount.name",
+        "destinationAccount.name",
+        "category.name",
+        "tags.name"
+      ],
+      "composed": true,
+      "dryRun": true,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

@@ -196,6 +196,9 @@ import {
     mdiOnepassword,
     mdiHelpCircleOutline
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/LoginPage.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -277,6 +280,7 @@ function login(): void {
         doAfterLogin(authResponse);
         router.replace('/');
     }).catch(error => {
+        errors.caught('logging in with the password', error);
         loggingInByPassword.value = false;
 
         if (isUserVerifyEmailEnabled() && error.error && error.error.errorCode === KnownErrorCode.UserEmailNotVerified && error.error.context && error.error.context.email) {
@@ -315,6 +319,7 @@ function verify(): void {
         doAfterLogin(authResponse);
         router.replace('/');
     }).catch(error => {
+        errors.caught('verifying the two-factor passcode', error);
         verifying.value = false;
 
         if (!error.processed) {

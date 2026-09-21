@@ -3,6 +3,7 @@ package api
 import (
 	"github.com/mayswind/ezbookkeeping/pkg/core"
 	"github.com/mayswind/ezbookkeeping/pkg/duplicatechecker"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -135,6 +136,7 @@ func (a *TransactionPicturesApi) TransactionPictureGetHandler(c *core.WebContext
 	pictureId, err := utils.StringToInt64(fileBaseName)
 
 	if err != nil {
+		errfile.Expected("parsing the requested transaction picture id", err)
 		return nil, "", errs.ErrTransactionPictureIdInvalid
 	}
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
 	"github.com/mayswind/ezbookkeeping/pkg/duplicatechecker"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -215,6 +216,7 @@ func (a *UserCustomIconsApi) CustomIconGetHandler(c *core.WebContext) ([]byte, s
 	iconId, err := utils.StringToInt64(fileBaseName)
 
 	if err != nil {
+		errfile.Expected("parsing the custom icon id from the file name", err)
 		return nil, "", errs.ErrUserCustomIconIdInvalid
 	}
 

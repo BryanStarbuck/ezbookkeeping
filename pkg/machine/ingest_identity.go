@@ -54,10 +54,10 @@ func ingMintId(accountKey, date string, amount int64, currency, normDesc string,
 
 	for i, part := range []string{accountKey, date, strconv.FormatInt(amount, 10), currency, normDesc, strconv.Itoa(ordinal)} {
 		if i > 0 {
-			h.Write([]byte{0x1f})
+			_, _ = h.Write([]byte{0x1f})
 		}
 
-		h.Write([]byte(part))
+		_, _ = h.Write([]byte(part))
 	}
 
 	return hex.EncodeToString(h.Sum(nil))[:32]

@@ -457,6 +457,9 @@ import { DEFAULT_RECONCILIATION_STATEMENT_DATE_RANGE_IN_MOBILE } from '@/core/st
 
 import { findNameByValue, findDisplayNameByType } from '@/lib/common.ts';
 import { isDefaultMobileOverviewLayout, parseMobileOverviewLayout } from '@/lib/overview_layout.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/settings/PreferencesSettingsPage.vue');
 
 const {
     tt,
@@ -513,7 +516,8 @@ const allCreditCardAmountDisplayTypes = computed<TypeAndDisplayName[]>(() => get
 const overviewPageLayoutDisplayContent = computed<string>(() => {
     try {
         return tt(isDefaultMobileOverviewLayout(parseMobileOverviewLayout(settingsStore.appSettings.mobileOverviewPageLayout)) ? 'Default' : 'Custom');
-    } catch {
+    } catch (e) {
+        errors.expected('parsing the saved overview page layout', e);
         return tt('Custom');
     }
 });
@@ -552,6 +556,7 @@ function init(): void {
     }).then(() => {
         loadingAccounts.value = false;
     }).catch(error => {
+        errors.caught('loading all accounts', error);
         loadingAccounts.value = false;
 
         if (!error.processed) {
@@ -564,6 +569,7 @@ function init(): void {
     }).then(() => {
         loadingTransactionCategories.value = false;
     }).catch(error => {
+        errors.caught('loading all categories', error);
         loadingTransactionCategories.value = false;
 
         if (!error.processed) {

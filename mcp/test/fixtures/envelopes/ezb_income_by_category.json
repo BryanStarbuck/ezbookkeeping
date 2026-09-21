@@ -1,0 +1,114 @@
+{
+  "tool": "ezb_income_by_category",
+  "args": {
+    "start": "2026-07-01",
+    "end": "2026-09-30"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_income_by_category",
+    "data": {
+      "direction": "income",
+      "groupBy": "primary",
+      "interval": "none",
+      "periods": [
+        {
+          "end": "2026-09-30",
+          "period": "2026-07-01..2026-09-30",
+          "start": "2026-07-01"
+        }
+      ],
+      "provenance": {
+        "absentPeriodsAreOmitted": true,
+        "accountIds": [
+          "3844013758313660416",
+          "3844013758313660418",
+          "3844013758313660417"
+        ],
+        "accountsExplicit": false,
+        "amountUnit": "integer hundredths of the currency named beside each figure",
+        "convertedFiguresRounding": null,
+        "filters": {
+          "balanceModifications": "excluded",
+          "categoryIds": [],
+          "excludeCategoryIds": [],
+          "groupBy": "primary",
+          "includeHiddenAccounts": false,
+          "includeTransfers": false,
+          "includeZero": false,
+          "interval": "none",
+          "tagFilter": "",
+          "topN": 0,
+          "useTransactionTimezone": false
+        },
+        "grouping": {
+          "rowsOutsideFilters": 0,
+          "rowsUnknownEntities": 0,
+          "rowsUsed": 1
+        },
+        "hiddenAccountsExcluded": [],
+        "range": {
+          "end": "2026-09-30",
+          "endUnix": 1790812799,
+          "start": "2026-07-01",
+          "startUnix": 1782864000,
+          "timezone": "UTC"
+        },
+        "rates": [],
+        "rowCount": 6,
+        "signConvention": "signed: money in is positive, money out is negative",
+        "timezone": "UTC",
+        "upstream": [
+          "GET /api/v1/accounts/list.json",
+          "GET /api/v1/transaction/categories/list.json",
+          "GET /api/v1/transactions/statistics.json"
+        ]
+      },
+      "series": [
+        {
+          "currency": "USD",
+          "id": "3844013758582095872",
+          "key": "3844013758582095872",
+          "kind": "category",
+          "label": "Salary",
+          "points": [
+            {
+              "amount": 1000000,
+              "period": "2026-07-01..2026-09-30"
+            }
+          ],
+          "total": 1000000
+        }
+      ],
+      "topN": 0,
+      "totals": [
+        {
+          "amount": 1000000,
+          "currency": "USD"
+        }
+      ],
+      "unconverted": []
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 3,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "label",
+        "name",
+        "comment",
+        "variants",
+        "text"
+      ],
+      "composed": true,
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

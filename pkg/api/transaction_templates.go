@@ -7,6 +7,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
 	"github.com/mayswind/ezbookkeeping/pkg/duplicatechecker"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -148,6 +149,7 @@ func (a *TransactionTemplatesApi) TemplateCreateHandler(c *core.WebContext) (any
 			frequencyValue, err := utils.StringToInt(*templateCreateReq.ScheduledFrequency)
 
 			if err != nil || frequencyValue <= 0 {
+				errfile.Expected("parsing the submitted scheduled transaction frequency", err)
 				return nil, errs.ErrScheduledTransactionFrequencyInvalid
 			}
 		}
@@ -259,6 +261,7 @@ func (a *TransactionTemplatesApi) TemplateModifyHandler(c *core.WebContext) (any
 			frequencyValue, err := utils.StringToInt(*templateModifyReq.ScheduledFrequency)
 
 			if err != nil || frequencyValue <= 0 {
+				errfile.Expected("parsing the submitted scheduled transaction frequency", err)
 				return nil, errs.ErrScheduledTransactionFrequencyInvalid
 			}
 		}
@@ -557,6 +560,7 @@ func (a *TransactionTemplatesApi) getOrderedFrequencyValues(frequencyValue strin
 		value, err := utils.StringToInt(items[i])
 
 		if err != nil {
+			errfile.Expected("parsing a submitted scheduled frequency value", err)
 			continue
 		}
 

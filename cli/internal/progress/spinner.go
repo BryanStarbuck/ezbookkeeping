@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/errfile"
 )
 
 var frames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -65,7 +67,7 @@ func (s *Spinner) Start(phase string) {
 	s.done = make(chan struct{})
 	s.mu.Unlock()
 
-	go s.loop()
+	errfile.Go("drawing the progress spinner", s.loop)
 }
 
 // Tick updates the phase text and an optional "n/total" count

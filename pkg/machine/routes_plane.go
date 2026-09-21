@@ -2,10 +2,12 @@ package machine
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"github.com/mayswind/ezbookkeeping/pkg/core"
 	"github.com/mayswind/ezbookkeeping/pkg/datastore"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 )
 
 // routes_plane.go — ping · whoami · capabilities · health (apis.mdx §10.0). These answer WITHOUT a
@@ -48,19 +50,19 @@ func handleWhoami(mc *Ctx) (any, error) {
 		"serverVersion":   core.Version,
 		"commit":          core.CommitHash,
 		"keyFingerprint":  st.fingerprint,
-		"credentialsFile": st.credsPath,
+		"credentialsFile": homeRelative(st.credsPath),
 		"tiers":           tiersOf(st),
 		"timezone":        mc.Loc.String(),
 		"armedAt":         st.armedAt.UTC().Format(time.RFC3339),
 	}
 
 	if wd, err := os.Getwd(); err == nil {
-		out["installPath"] = wd
+		out["installPath"] = homeRelative(wd)
 	}
 
 	if creds, err := ReadCredentials(); err == nil {
 		if creds.StatementsRoot != "" {
-			out["statementsRoot"] = creds.StatementsRoot
+			out["statementsRoot"] = homeRelative(creds.StatementsRoot)
 		} else {
 			out["statementsRoot"] = nil
 		}
@@ -149,4 +151,29 @@ func handleHealth(mc *Ctx) (any, error) {
 	out["next"] = next
 
 	return out, nil
+}
+
+// homeRelative rewrites a path under the operator's home directory as ~/…, so a response never
+// carries an absolute path outside the statements root (apis.mdx §19.3). Other paths pass through.
+func homeRelative(p string) string {
+	home, err := os.UserHomeDir()
+
+	if err != nil {
+		errfile.Expected("finding the home directory to shorten a path", err)
+		return p
+	}
+
+	if home == "" || p == "" {
+		return p
+	}
+
+	if p == home {
+		return "~"
+	}
+
+	if strings.HasPrefix(p, home+string(os.PathSeparator)) {
+		return "~" + p[len(home):]
+	}
+
+	return p
 }

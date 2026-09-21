@@ -1,0 +1,1711 @@
+{
+  "tool": "ezb_capabilities",
+  "args": {},
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_capabilities",
+    "data": {
+      "apiVersion": "v1",
+      "errorCodes": [
+        "unauthorized",
+        "forbidden",
+        "not_found",
+        "invalid_input",
+        "conflict",
+        "write_disabled",
+        "not_ready",
+        "upstream_error",
+        "internal"
+      ],
+      "features": [
+        "analytics",
+        "batch",
+        "currency.convert",
+        "currency.rates",
+        "ingest.fallout",
+        "ingest.prepared",
+        "ingest.raw",
+        "passthrough",
+        "reconcile",
+        "transactions",
+        "undo"
+      ],
+      "limits": {
+        "defaultLimit": 200,
+        "maxBodyBytes": 16777216,
+        "maxChangesDefault": 200,
+        "maxLimit": 5000
+      },
+      "routes": [
+        {
+          "methods": [
+            "GET",
+            "POST"
+          ],
+          "path": "/accounts",
+          "status": {
+            "GET": "live",
+            "POST": "live"
+          },
+          "summary": {
+            "GET": "Accounts with balances (integer hundredths in each account's own currency; a parent's balance is null), sub-accounts nested. Args: include_hidden (false), category, currency, with_sub_accounts (true), name (flat rows, exact then case-insensitive).",
+            "POST": "Create an account. Body: name, category (cash, checking, savings, credit_card, virtual, debt, receivables, investment, certificate_of_deposit), currency (immutable later), initial_balance (hundredths; liabilities negative for money owed), initial_balance_date, color, icon, comment, credit_card_statement_date, credit_card_limit, sub_accounts: [{name, currency, initial_balance, initial_balance_date, color, icon, comment}], idempotency_key; dry_run default true."
+          },
+          "tier": {
+            "GET": "read",
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "DELETE",
+            "GET",
+            "PATCH"
+          ],
+          "path": "/accounts/:id",
+          "status": {
+            "DELETE": "live",
+            "GET": "live",
+            "PATCH": "live"
+          },
+          "summary": {
+            "DELETE": "Delete an account with its sub-accounts and opening balances; refused while transactions or templates use it, naming the count.",
+            "GET": "One account (id or name; sub-accounts too) with its sub-accounts or parent name.",
+            "PATCH": "Edit an account or sub-account. Body: name, color, icon, comment, credit_card_statement_date, credit_card_limit. Currency and category are immutable here."
+          },
+          "tier": {
+            "DELETE": "admin",
+            "GET": "read",
+            "PATCH": "write"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/accounts/:id/balance",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "One account's balance as of a date (default today), composed from the daily asset trend."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/accounts/:id/balance-history",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "One account's closing balance over time (day, week or month)."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/accounts/:id/hide",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Hide or show an account. Body: hidden (default true)."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/accounts/:id/move",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Reorder an account among its siblings (same category, or same parent). Body: to_index (0-based)."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/accounts/:id/properties",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Transaction count, first/last transaction, last reconciled time, credit-card statement date and limit, and the opening-balance rows."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "POST"
+          ],
+          "path": "/accounts/:id/reconcile/apply",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Mark the account reconciled; with create_adjustment, first add ONE visible adjustment for the difference."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "POST"
+          ],
+          "path": "/accounts/:id/reconcile/plan",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "The app's balance as of a date against the operator's figure, the difference, and the rows since the last reconciliation; returns the confirm_token for apply."
+          },
+          "tier": {
+            "POST": "read"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/accounts/:id/reconciliation",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Upstream's reconciliation statement: opening, inflows, outflows, closing, per-row running balance."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "methods": [
+            "DELETE"
+          ],
+          "path": "/accounts/:id/sub-accounts/:sub_id",
+          "status": {
+            "DELETE": "live"
+          },
+          "summary": {
+            "DELETE": "Delete one sub-account (never the last one); refused while transactions or templates use it."
+          },
+          "tier": {
+            "DELETE": "admin"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "POST"
+          ],
+          "path": "/accounts/batch",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Create many accounts in order under one token; on a failure the ones already created are removed again and the failing index is named. Body: accounts: [create bodies]."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/admin/data/clear",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Clear data (dry_run default): scope all | transactions | transactions_of_account (with account_id). Not undoable. Body: {scope, account_id?, dry_run, confirm_token, max_changes}."
+          },
+          "tier": {
+            "POST": "admin"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/admin/key/rotate",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Mint a new API secret key into the credentials file (dry_run default). Answers fingerprints only; the running server keeps the old key until it is restarted (ezbk stop && ezbk up)."
+          },
+          "tier": {
+            "POST": "admin"
+          }
+        },
+        {
+          "methods": [
+            "DELETE"
+          ],
+          "path": "/admin/pictures/unused",
+          "status": {
+            "DELETE": "live"
+          },
+          "summary": {
+            "DELETE": "Remove transaction pictures uploaded but never attached (dry_run default). Body: {ids?, older_than_days? (default 1), dry_run, confirm_token, max_changes}."
+          },
+          "tier": {
+            "DELETE": "admin"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/admin/sessions",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "The bound user's upstream sessions and API/MCP tokens: id, type, user agent, last seen. Never a token value."
+          },
+          "tier": {
+            "GET": "admin"
+          }
+        },
+        {
+          "methods": [
+            "DELETE"
+          ],
+          "path": "/admin/sessions/:token_id",
+          "status": {
+            "DELETE": "live"
+          },
+          "summary": {
+            "DELETE": "Revoke one upstream session or token (dry_run default). An id already gone answers ok with deleted: 0."
+          },
+          "tier": {
+            "DELETE": "admin"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/analytics/anomalies",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Categories unusually far from their own trailing monthly norm, with the evidence."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/analytics/cash-flow",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Opening balance, money in, money out and closing balance per interval, for a set of accounts."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/analytics/category-trend",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "One category (with its sub-categories) over time, with mean and median."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/analytics/import-fallout",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Rows an import placed in its fallback category, by account and month, so they can be re-categorised."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/analytics/income-by-category",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Income by primary or secondary category (or account), per interval, with top_n and an 'other' bucket."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/analytics/income-vs-expense",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Income, expense and net per interval (day, week, month, quarter, year)."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/analytics/net-worth",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Assets, liabilities and net worth per interval, and each account's closing balance."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/analytics/payee-leaderboard",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Who got the money, grouped by normalised transaction comment (ezBookkeeping has no payee entity), with the raw variants merged."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/analytics/period-summary",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Income and expense per named period (today, this_week, this_month, this_year, last_month, custom …), per currency — the Overview page."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/analytics/recurring",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Detected repeating charges (and income) not yet scheduled, their cadence, evidence and annualised cost."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/analytics/runway",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Liquid assets divided by the trailing average monthly net outflow, in months."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/analytics/spending-by-category",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Expense by primary or secondary category (or account), per interval, with top_n and an 'other' bucket — the pie / bar chart."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/analytics/tag-breakdown",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Spending and income per tag — what the trip cost."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "methods": [
+            "GET",
+            "POST"
+          ],
+          "path": "/api/*path",
+          "status": {
+            "GET": "live",
+            "POST": "live"
+          },
+          "summary": {
+            "GET": "Passthrough: any upstream GET /api/v1/<path> as the bound user; data is upstream's result verbatim (amounts stay upstream's strings). tokens/*, users/2fa/*, users/external_auth/*, users/avatar/*, users/verify_email/*, llm/* are refused.",
+            "POST": "Passthrough: any upstream POST /api/v1/<path> as the bound user, with NO dry run, confirm token, ceiling or journal. */delete.json, */batch_delete.json, data/clear/*, */remove_unused.json need the admin tier; tokens/*, users/2fa/*, users/external_auth/*, users/avatar/*, users/verify_email/*, llm/* are refused."
+          },
+          "tier": {
+            "GET": "read",
+            "POST": "write"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "POST"
+          ],
+          "path": "/batch",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Apply an ordered list of write operations under one confirm token, one ceiling (counting changes, not operations) and one journal entry; on the first failure the applied ones are reversed through the journal and the response says rolledBack. Body: {operations: [{op: \"METHOD /path\", params?, query?, args?}], dry_run, confirm_token, max_changes}. GET /batch/ops lists the closed op set."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/batch/ops",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "The closed set of operations POST /batch accepts (every live, dry-runnable write-tier route)."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/capabilities",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "The machine-readable route table of this build."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "methods": [
+            "GET",
+            "POST"
+          ],
+          "path": "/categories",
+          "status": {
+            "GET": "live",
+            "POST": "live"
+          },
+          "summary": {
+            "GET": "Categories, primaries with secondaries nested. Args: type (income|expense|transfer), include_hidden (false), parent_id (id or name → its children, flat), name (exact, then case-insensitive → flat rows), flat.",
+            "POST": "Create a category. Body: name, type (omit under a parent), parent_id|parent_name (omit for a primary), color, icon, comment, idempotency_key; dry_run default true."
+          },
+          "tier": {
+            "GET": "read",
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "DELETE",
+            "GET",
+            "PATCH"
+          ],
+          "path": "/categories/:id",
+          "status": {
+            "DELETE": "live",
+            "GET": "live",
+            "PATCH": "live"
+          },
+          "summary": {
+            "DELETE": "Delete a category and its secondaries; refused while transactions or templates use it, naming the count.",
+            "GET": "One category (id or name), with its secondaries when primary.",
+            "PATCH": "Edit a category. Body: name, parent_id|parent_name (secondaries only, same type), color, icon, comment."
+          },
+          "tier": {
+            "DELETE": "admin",
+            "GET": "read",
+            "PATCH": "write"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/categories/:id/hide",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Hide or show a category. Body: hidden (default true)."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/categories/:id/move",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Reorder a category among its siblings (same type and parent). Body: to_index (0-based)."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/categories/batch",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Create primaries with their secondaries (the web UI's default-categories preset). Body: categories: [{name, type, color, icon, comment, sub_categories: [{name, color, icon, comment}]}]."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/data/export",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Upstream's ezBookkeeping-format export as a raw file. Args: format (csv|tsv), start, end (YYYY-MM-DD)."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/data/statistics",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Counts of accounts, categories, tags, transactions, pictures, templates, schedules, insights and custom icons."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/exchange-rates",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "The app's latest exchange rates (units per ONE base-currency unit), each with source (provider|custom), provider and updateTime, plus the stored custom rates and whether upstream uses them. Args: currencies (list)."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "POST"
+          ],
+          "path": "/exchange-rates/convert",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Convert an amount with the app's own rates. Body: amount (hundredths), from, to. Returns converted (hundredths), the rate used, both source rates with their source and updateTime, rateBasis latest."
+          },
+          "tier": {
+            "POST": "read"
+          }
+        },
+        {
+          "methods": [
+            "DELETE",
+            "PUT"
+          ],
+          "path": "/exchange-rates/custom/:currency",
+          "status": {
+            "DELETE": "live",
+            "PUT": "live"
+          },
+          "summary": {
+            "DELETE": "Remove a custom rate (a preference, not a record — write tier). Not set is ok with deleted: 0.",
+            "PUT": "Set a custom rate: rate = units of :currency per ONE unit of the user's default currency (a decimal). Used by upstream only when [exchange_rates] data_source = user_custom; the preview says so."
+          },
+          "tier": {
+            "DELETE": "write",
+            "PUT": "write"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/health",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Database open? user bindable? upstream doors on? what to do next."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "POST"
+          ],
+          "path": "/ingest/accounts/apply",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Create the plan's create rows, link the link rows and write the map (confirm_token from /ingest/accounts/plan, dry_run). Ambiguous rows are never created. Undoable."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/ingest/accounts/plan",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Plan the accounts from the manifest (root, naming, kind_to_category, overrides, accounts[]): per row create/link/skip/ambiguous with the category, its asset/liability side and the currency read aloud. Creates nothing; returns the confirm_token for /ingest/accounts/apply."
+          },
+          "tier": {
+            "POST": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "POST"
+          ],
+          "path": "/ingest/apply",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Import the plan (confirm_token, max_changes, dry_run; or the plan's arguments again). Recomputes the plan and refuses on a moved fingerprint; creates through upstream's import service path; records machine_import_record; undoable. NDJSON progress with Accept: application/x-ndjson."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/ingest/converters",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "The fileTypes this build's pkg/converters supports, which are enabled, which carry bank ids, and what each needs (qif date order, column map)."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/ingest/coverage",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Which account-months are present and which are missing (root, account, manifest_path, from_rows)."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/ingest/dupes",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "What both de-duplication layers collapsed, and why (root, mode, account, prefer, date_order): duplicate_identical, superseded (with the deciding rule), conflicts, same-bank-id collapses."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "POST"
+          ],
+          "path": "/ingest/extract",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "RAW MODE ONLY. Read-tier but WRITES to the staging directory only: produce ezBookkeeping CSV per account-month from _claude/_brew/_ocr sidecars with a conservative line parser (root, force, date_order, accounts[], prefer[], max_statements). Zero-row statements are named. NDJSON progress with Accept: application/x-ndjson."
+          },
+          "tier": {
+            "POST": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "POST"
+          ],
+          "path": "/ingest/file/apply",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Import one planned file (confirm_token, dry_run, max_changes). Undoable."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "POST"
+          ],
+          "path": "/ingest/file/plan",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "The Import dialog for one file: account_id (or account_name), path under the root OR multipart field \"file\", file_type, column_map for custom files; category_map, fallback_category_ids, accept_matches[]. Returns the plan and the confirm_token for /ingest/file/apply."
+          },
+          "tier": {
+            "POST": "read"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/ingest/manifest",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Read the archive's manifest (root, manifest_path): per account the converter the plane will use, combined/monthly files, formats, warnings; missing columns reported, never guessed."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "methods": [
+            "GET",
+            "PUT"
+          ],
+          "path": "/ingest/map",
+          "status": {
+            "GET": "live",
+            "PUT": "live"
+          },
+          "summary": {
+            "GET": "The statements→books map (root): each account key's ezBookkeeping account and whether it is still usable; manifest accounts not yet mapped.",
+            "PUT": "Write the statements→books map beside the statements ({ROOT}/.ezbk-staging/_map.json, never the repo). Args: root, map {account_key: account_id}, replace, dry_run, confirm_token. Undoable."
+          },
+          "tier": {
+            "GET": "read",
+            "PUT": "write"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/ingest/map/infer",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Propose account mappings for the manifest (root, manifest_path): map, exact name, last4; never saves."
+          },
+          "tier": {
+            "POST": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "POST"
+          ],
+          "path": "/ingest/plan",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Plan the import of a statements root (root, accounts[], start, end, category_map, fallback_category_ids, accept_matches[], accept_transfers[], reimport_deleted, prefer[], qif_date_order): per account parsed, collapsed, already present (and deleted since), possible matches, transfer candidates, unmapped, NEW; plus the confirm_token for /ingest/apply."
+          },
+          "tier": {
+            "POST": "read"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/ingest/roots",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Configured statement roots, whether each is readable, its manifest and staging directory."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/ingest/rows",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "The de-duplicated statement rows with their import_id and their verdict against the books (root, account, start, end, status, limit, offset)."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/ingest/runs",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "The ingest run log of the bound user, newest first (limit)."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/ingest/runs/:id",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "One run's full report: per-account outcome, unmapped categories, the rows that went to a fallback category, the journal entry that undoes it."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/ingest/scan",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Walk the statements root and classify every file (root, mode, entity, institution, account, year, manifest_path): statements per account-year-month, missing months, duplicate scans, unusable files. Changes nothing."
+          },
+          "tier": {
+            "POST": "read"
+          }
+        },
+        {
+          "methods": [
+            "GET",
+            "POST"
+          ],
+          "path": "/insights",
+          "status": {
+            "GET": "live",
+            "POST": "live"
+          },
+          "summary": {
+            "GET": "Saved Insights Explorer definitions (not numbers — those come from /analytics). Args: include_hidden (false), name.",
+            "POST": "Save an insight definition. Body: name, definition (object), idempotency_key."
+          },
+          "tier": {
+            "GET": "read",
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "DELETE",
+            "GET",
+            "PATCH"
+          ],
+          "path": "/insights/:id",
+          "status": {
+            "DELETE": "live",
+            "GET": "live",
+            "PATCH": "live"
+          },
+          "summary": {
+            "DELETE": "Delete a saved insight.",
+            "GET": "One saved insight (id or name) with its definition as data.",
+            "PATCH": "Rename an insight or replace its definition. Body: name, definition."
+          },
+          "tier": {
+            "DELETE": "admin",
+            "GET": "read",
+            "PATCH": "write"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/insights/:id/hide",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Hide or show an insight. Body: hidden (default true)."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/insights/:id/move",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Reorder an insight. Body: to_index (0-based)."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/journal",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Recent machine-plane writes of the bound user: route, when, change counts, client, summary, undone? Never amounts. Args: limit, offset, include_undone."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/ping",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Liveness, key fingerprint, tiers, server version."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/redo",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Re-apply the most recently undone machine-plane write, available until a newer write lands. Body: {journal_id?}."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/schedules/upcoming",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "What the scheduled transactions will create in the window, computed with the cron's own calendar rule, firing nothing. Args: days (30), from (YYYY-MM-DD, default today), template_ids (ids or names), limit."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "methods": [
+            "GET",
+            "POST"
+          ],
+          "path": "/tag-groups",
+          "status": {
+            "GET": "live",
+            "POST": "live"
+          },
+          "summary": {
+            "GET": "Tag groups with their tag counts. Args: name.",
+            "POST": "Create a tag group. Body: name, idempotency_key."
+          },
+          "tier": {
+            "GET": "read",
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "DELETE",
+            "GET",
+            "PATCH"
+          ],
+          "path": "/tag-groups/:id",
+          "status": {
+            "DELETE": "live",
+            "GET": "live",
+            "PATCH": "live"
+          },
+          "summary": {
+            "DELETE": "Delete an empty tag group; refused while it holds tags.",
+            "GET": "One tag group (id or name) with its tags.",
+            "PATCH": "Rename a tag group. Body: name."
+          },
+          "tier": {
+            "DELETE": "admin",
+            "GET": "read",
+            "PATCH": "write"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/tag-groups/:id/move",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Reorder a tag group. Body: to_index (0-based)."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "GET",
+            "POST"
+          ],
+          "path": "/tags",
+          "status": {
+            "GET": "live",
+            "POST": "live"
+          },
+          "summary": {
+            "GET": "Tags. Args: include_hidden (false), group_id|group_name (0 = ungrouped), name.",
+            "POST": "Create a tag. Body: name, group_id|group_name, idempotency_key."
+          },
+          "tier": {
+            "GET": "read",
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "DELETE",
+            "GET",
+            "PATCH"
+          ],
+          "path": "/tags/:id",
+          "status": {
+            "DELETE": "live",
+            "GET": "live",
+            "PATCH": "live"
+          },
+          "summary": {
+            "DELETE": "Delete a tag; refused while transactions or templates carry it, naming the count.",
+            "GET": "One tag (id or name), with how many transactions carry it.",
+            "PATCH": "Rename a tag or move it to another group. Body: name, group_id|group_name (\"0\" = no group)."
+          },
+          "tier": {
+            "DELETE": "admin",
+            "GET": "read",
+            "PATCH": "write"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/tags/:id/hide",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Hide or show a tag. Body: hidden (default true)."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/tags/:id/move",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Reorder a tag within its group. Body: to_index (0-based)."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/tags/batch",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Create many tags in one group. Body: tags: [\"name\", …] or [{name}], group_id|group_name, skip_existing (true)."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "GET",
+            "POST"
+          ],
+          "path": "/templates",
+          "status": {
+            "GET": "live",
+            "POST": "live"
+          },
+          "summary": {
+            "GET": "Transaction templates and scheduled transactions. Args: kind (normal|scheduled|all, default all), include_hidden (false), name.",
+            "POST": "Create a template (kind normal) or a scheduled transaction (kind scheduled). Body: kind, name, type, account_id|account_name, destination_account_id|destination_account_name, amount, destination_amount, category_id|category_name, tag_ids|tag_names, comment, hide_amount; scheduled: frequency (daily|weekly|monthly|yearly|every_n_days|disabled), frequency_value, start, end, timezone; idempotency_key."
+          },
+          "tier": {
+            "GET": "read",
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "DELETE",
+            "GET",
+            "PATCH"
+          ],
+          "path": "/templates/:id",
+          "status": {
+            "DELETE": "live",
+            "GET": "live",
+            "PATCH": "live"
+          },
+          "summary": {
+            "DELETE": "Delete a template or schedule (transactions it already created are kept).",
+            "GET": "One template or schedule (id or name), with its next occurrence.",
+            "PATCH": "Edit a template or schedule: any create field; absent means unchanged; end \"\" removes the end date; frequency \"disabled\" pauses a schedule."
+          },
+          "tier": {
+            "DELETE": "admin",
+            "GET": "read",
+            "PATCH": "write"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/templates/:id/hide",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Hide or show a template. For a schedule this does NOT pause it (upstream's cron ignores hidden); the response says so. Body: hidden (default true)."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/templates/:id/move",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Reorder a template among its kind. Body: to_index (0-based)."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET",
+            "POST"
+          ],
+          "path": "/transactions",
+          "status": {
+            "GET": "live",
+            "POST": "live"
+          },
+          "summary": {
+            "GET": "Transactions matching the filters, newest first, walked through upstream's cursor up to limit (cap 5000); nextCursor pages on.",
+            "POST": "Add transactions (income, expense, transfer); names resolve to ids; dry run by default."
+          },
+          "tier": {
+            "GET": "read",
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "DELETE",
+            "GET",
+            "PATCH"
+          ],
+          "path": "/transactions/:id",
+          "status": {
+            "DELETE": "live",
+            "GET": "live",
+            "PATCH": "live"
+          },
+          "summary": {
+            "DELETE": "Delete one transaction (admin). Undo re-creates it with a new id.",
+            "GET": "One transaction, with its tags, pictures metadata and both sides of a transfer.",
+            "PATCH": "Edit one transaction; the preview is the exact field-by-field before/after."
+          },
+          "tier": {
+            "DELETE": "admin",
+            "GET": "read",
+            "PATCH": "write"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "DELETE"
+          ],
+          "path": "/transactions/bulk",
+          "status": {
+            "DELETE": "live"
+          },
+          "summary": {
+            "DELETE": "Delete transactions by ids[] (admin). Undo re-creates them with new ids."
+          },
+          "tier": {
+            "DELETE": "admin"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/transactions/count",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "How many transactions match the filters (a transfer counts once)."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/transactions/earliest",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "The earliest transaction, optionally of one account."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/transactions/export",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "The matching transactions as upstream's ezBookkeeping CSV or TSV."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "GET"
+          ],
+          "path": "/transactions/latest",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "The latest transaction, optionally of one account."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "POST"
+          ],
+          "path": "/transactions/move-all",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Move every transaction of one account to another account of the same currency."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "POST"
+          ],
+          "path": "/transactions/set-account",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Move transactions chosen by ids[] or filter{} to another account of the same currency."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "POST"
+          ],
+          "path": "/transactions/set-category",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Re-categorise transactions chosen by ids[] or by filter{} (the GET /transactions filter language)."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "POST"
+          ],
+          "path": "/transactions/tags/add",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Add tags to transactions chosen by ids[] or filter{}."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "POST"
+          ],
+          "path": "/transactions/tags/clear",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Remove every tag from transactions chosen by ids[] or filter{}."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "composed": true,
+          "methods": [
+            "POST"
+          ],
+          "path": "/transactions/tags/remove",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Remove tags from transactions chosen by ids[] or filter{}."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "path": "/undo",
+          "status": {
+            "POST": "live"
+          },
+          "summary": {
+            "POST": "Undo the most recent machine-plane write of the bound user (no dry_run: it returns what it reversed). Machine-plane writes only; a browser edit cannot be undone, and undo refuses with conflict when a row it would touch was edited since. Body: {journal_id?}."
+          },
+          "tier": {
+            "POST": "write"
+          }
+        },
+        {
+          "methods": [
+            "GET",
+            "PATCH"
+          ],
+          "path": "/user/profile",
+          "status": {
+            "GET": "live",
+            "PATCH": "live"
+          },
+          "summary": {
+            "GET": "The bound user's profile: nickname, default currency, first day of week, fiscal year start, display formats.",
+            "PATCH": "Change nickname, default_currency, first_day_of_week (0-6 or name), fiscal_year_start (MM-DD), use_last_reconciled_time. Never password, email or avatar."
+          },
+          "tier": {
+            "GET": "read",
+            "PATCH": "write"
+          }
+        },
+        {
+          "methods": [
+            "GET",
+            "PATCH"
+          ],
+          "path": "/user/settings",
+          "status": {
+            "GET": "live",
+            "PATCH": "live"
+          },
+          "summary": {
+            "GET": "The web UI's synchronised application settings, with the allowed keys and their types.",
+            "PATCH": "Set one or more application settings. Body: settings: {key: value}; values are type-checked against allowedKeys."
+          },
+          "tier": {
+            "GET": "read",
+            "PATCH": "write"
+          }
+        },
+        {
+          "methods": [
+            "GET"
+          ],
+          "path": "/whoami",
+          "status": {
+            "GET": "live"
+          },
+          "summary": {
+            "GET": "Install, bound user, default currency, timezone, tiers, key fingerprint, statements root."
+          },
+          "tier": {
+            "GET": "read"
+          }
+        }
+      ],
+      "serverVersion": "",
+      "tiers": {
+        "admin": false,
+        "read": true,
+        "write": true
+      },
+      "upstreamFeatures": {
+        "apiToken": false,
+        "dataExport": true,
+        "dataImport": true,
+        "mcp": false,
+        "scheduledTransactions": true,
+        "transactionPictures": true
+      },
+      "userBound": true
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 1,
+      "truncated": false,
+      "serverVersion": "",
+      "timezone": "UTC",
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

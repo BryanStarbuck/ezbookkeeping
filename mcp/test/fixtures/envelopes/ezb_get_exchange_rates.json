@@ -1,0 +1,309 @@
+{
+  "tool": "ezb_get_exchange_rates",
+  "args": {},
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_get_exchange_rates",
+    "data": {
+      "baseCurrency": "EUR",
+      "convention": "rate = units of that currency per ONE unit of baseCurrency; convert with amount × toRate ÷ fromRate (POST /machine/v1/exchange-rates/convert does it for you)",
+      "count": 30,
+      "customRates": [],
+      "customRatesActive": false,
+      "defaultCurrency": "USD",
+      "missing": [],
+      "note": "ezBookkeeping keeps only the latest rates, not historical ones",
+      "provider": "European Central Bank",
+      "rateBasis": "latest",
+      "rates": [
+        {
+          "baseCurrency": "EUR",
+          "currency": "AUD",
+          "provider": "European Central Bank",
+          "rate": "1.6098",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "BRL",
+          "provider": "European Central Bank",
+          "rate": "5.8920",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "CAD",
+          "provider": "European Central Bank",
+          "rate": "1.6091",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "CHF",
+          "provider": "European Central Bank",
+          "rate": "0.9438",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "CNY",
+          "provider": "European Central Bank",
+          "rate": "7.6930",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "CZK",
+          "provider": "European Central Bank",
+          "rate": "24.352",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "DKK",
+          "provider": "European Central Bank",
+          "rate": "7.4755",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "EUR",
+          "isBase": true,
+          "provider": "European Central Bank",
+          "rate": "1",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "GBP",
+          "provider": "European Central Bank",
+          "rate": "0.85780",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "HKD",
+          "provider": "European Central Bank",
+          "rate": "9.0144",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "HUF",
+          "provider": "European Central Bank",
+          "rate": "362.40",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "IDR",
+          "provider": "European Central Bank",
+          "rate": "20532.06",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "ILS",
+          "provider": "European Central Bank",
+          "rate": "3.4602",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "INR",
+          "provider": "European Central Bank",
+          "rate": "110.0975",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "ISK",
+          "provider": "European Central Bank",
+          "rate": "138.80",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "JPY",
+          "provider": "European Central Bank",
+          "rate": "180.70",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "KRW",
+          "provider": "European Central Bank",
+          "rate": "1576.63",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "MXN",
+          "provider": "European Central Bank",
+          "rate": "19.7533",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "MYR",
+          "provider": "European Central Bank",
+          "rate": "4.6850",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "NOK",
+          "provider": "European Central Bank",
+          "rate": "10.8130",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "NZD",
+          "provider": "European Central Bank",
+          "rate": "2.0035",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "PHP",
+          "provider": "European Central Bank",
+          "rate": "72.151",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "PLN",
+          "provider": "European Central Bank",
+          "rate": "4.3530",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "RON",
+          "provider": "European Central Bank",
+          "rate": "5.2647",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "SEK",
+          "provider": "European Central Bank",
+          "rate": "11.2750",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "SGD",
+          "provider": "European Central Bank",
+          "rate": "1.4647",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "THB",
+          "provider": "European Central Bank",
+          "rate": "38.187",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "TRY",
+          "provider": "European Central Bank",
+          "rate": "56.0701",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "USD",
+          "provider": "European Central Bank",
+          "rate": "1.1490",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        },
+        {
+          "baseCurrency": "EUR",
+          "currency": "ZAR",
+          "provider": "European Central Bank",
+          "rate": "18.6819",
+          "source": "provider",
+          "updateTime": 1789999200,
+          "updatedAt": "2026-09-21T14:00:00Z"
+        }
+      ],
+      "referenceUrl": "https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html",
+      "updateTime": 1789999200,
+      "updatedAt": "2026-09-21T14:00:00Z"
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 173,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

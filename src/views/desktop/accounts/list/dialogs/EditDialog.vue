@@ -241,6 +241,9 @@ import {
     mdiPlus,
     mdiDeleteOutline
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/accounts/list/dialogs/EditDialog.vue');
 
 interface AccountEditResponse {
     message: string;
@@ -346,6 +349,7 @@ function open(options?: { id?: string, currentAccount?: Account, category?: numb
             initAccount.value = Account.of(response);
             loading.value = false;
         }).catch(error => {
+            errors.caught('loading the account to edit', error);
             loading.value = false;
             showState.value = false;
 
@@ -401,6 +405,7 @@ function save(): void {
         resolveFunc?.({ message });
         showState.value = false;
     }).catch(error => {
+        errors.caught('saving the account', error);
         submitting.value = false;
 
         if (!error.processed) {

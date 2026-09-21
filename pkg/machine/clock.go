@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 )
 
 // clock.go is the ONE place a YYYY-MM-DD becomes unix seconds (apis.mdx §17.4)
@@ -51,6 +53,7 @@ func ParseDate(name, v string, loc *time.Location) (time.Time, error) {
 	t, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(v), loc)
 
 	if err != nil {
+		errfile.Expected("parsing a YYYY-MM-DD date argument", err)
 		return time.Time{}, Invalid("dates are YYYY-MM-DD; relative dates are resolved by the client", "%s %q is not a YYYY-MM-DD date", name, v)
 	}
 
@@ -62,6 +65,7 @@ func ParseMonth(name, v string, loc *time.Location) (time.Time, error) {
 	t, err := time.ParseInLocation("2006-01", strings.TrimSpace(v), loc)
 
 	if err != nil {
+		errfile.Expected("parsing a YYYY-MM month argument", err)
 		return time.Time{}, Invalid("months are YYYY-MM", "%s %q is not a YYYY-MM month", name, v)
 	}
 

@@ -8,6 +8,8 @@ import (
 	"github.com/mayswind/ezbookkeeping/pkg/core"
 	"github.com/mayswind/ezbookkeeping/pkg/datastore"
 	"github.com/mayswind/ezbookkeeping/pkg/duplicatechecker"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
+	errfileserver "github.com/mayswind/ezbookkeeping/pkg/errfile/server"
 	"github.com/mayswind/ezbookkeeping/pkg/exchangerates"
 	"github.com/mayswind/ezbookkeeping/pkg/llm"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
@@ -63,7 +65,8 @@ func initializeSystem(c *core.CliContext) (*settings.Config, error) {
 	}
 
 	settings.SetCurrentConfig(config)
-	installErrorFile(config) // pm/error_err.mdx §8 N5 + N6
+	errfile.Install(errfileOptions(config)) // pm/error_err.mdx §8 N5: every subcommand runs through here
+	errfileserver.InstallLogHook()          // N6: every existing log.Errorf / log.Warnf becomes a report
 
 	err = datastore.InitializeDataStore(config)
 
@@ -160,6 +163,7 @@ func getConfigWithoutSensitiveData(config *settings.Config) *settings.Config {
 	err := utils.Clone(config, clonedConfig)
 
 	if err != nil {
+		errfile.Caught("cloning the configuration to mask its secrets", err)
 		return config
 	}
 

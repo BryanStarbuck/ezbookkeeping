@@ -1,0 +1,151 @@
+{
+  "tool": "ezb_plan_accounts",
+  "args": {},
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_plan_accounts",
+    "data": {
+      "apply": "POST /machine/v1/ingest/accounts/apply",
+      "change_set": [],
+      "changes": {
+        "create": 0,
+        "link": 0
+      },
+      "confirm_token": "cf_04cd0b94954423f9da6ba0b76321714e",
+      "currency_defaulted": [],
+      "expires_at": "2026-09-21T16:43:16Z",
+      "fingerprint": "sha256:4f53cda18c2baa0c",
+      "kind_to_category": {
+        "brokerage": "investment",
+        "card": "credit_card",
+        "cash": "cash",
+        "cd": "certificate_of_deposit",
+        "checking": "checking",
+        "loan": "debt",
+        "savings": "savings"
+      },
+      "liabilities": [],
+      "manifest_path": "import/accounts.csv",
+      "naming": "{Entity} · {Institution} {Kind} ••{last4}",
+      "plan": [
+        {
+          "account_key": "household/Northbank/4021",
+          "action": "link",
+          "existing": {
+            "category": "checking",
+            "currency": "USD",
+            "id": "3844013760461144066",
+            "name": "Household · Northbank Checking ••4021",
+            "side": "asset"
+          },
+          "manifest": {
+            "currency": "USD",
+            "entity": "household",
+            "institution": "Northbank",
+            "kind": "checking",
+            "label": "Checking_x4021",
+            "last4": "4021",
+            "line": 2,
+            "path": "bank/household/Northbank/Checking_x4021"
+          },
+          "proposed": {
+            "category": "checking",
+            "currency": "USD",
+            "name": "Household · Northbank Checking ••4021",
+            "side": "asset"
+          },
+          "reason": "already mapped in _map.json",
+          "warnings": []
+        },
+        {
+          "account_key": "household/Northbank/7734",
+          "action": "link",
+          "existing": {
+            "category": "credit_card",
+            "currency": "USD",
+            "id": "3844013760461144067",
+            "name": "Household · Northbank Card ••7734",
+            "side": "liability"
+          },
+          "manifest": {
+            "currency": "USD",
+            "entity": "household",
+            "institution": "Northbank",
+            "kind": "card",
+            "label": "Card_x7734",
+            "last4": "7734",
+            "line": 3,
+            "path": "bank/household/Northbank/Card_x7734"
+          },
+          "proposed": {
+            "category": "credit_card",
+            "currency": "USD",
+            "name": "Household · Northbank Card ••7734",
+            "side": "liability"
+          },
+          "reason": "already mapped in _map.json",
+          "warnings": [
+            "1 statement(s) did not reconcile in the archive"
+          ]
+        },
+        {
+          "account_key": "acme_llc/Meridian/5520",
+          "action": "link",
+          "existing": {
+            "category": "savings",
+            "currency": "USD",
+            "id": "3844013760461144065",
+            "name": "Acme LLC · Meridian Savings ••5520",
+            "side": "asset"
+          },
+          "manifest": {
+            "currency": "USD",
+            "entity": "acme_llc",
+            "institution": "Meridian",
+            "kind": "savings",
+            "label": "Savings_x5520",
+            "last4": "5520",
+            "line": 4,
+            "path": "bank/acme_llc/Meridian/Savings_x5520"
+          },
+          "proposed": {
+            "category": "savings",
+            "currency": "USD",
+            "currency_defaulted": true,
+            "name": "Acme LLC · Meridian Savings ••5520",
+            "side": "asset"
+          },
+          "reason": "already mapped in _map.json",
+          "warnings": [
+            "currency not stated; defaulted to the bound user's default currency USD"
+          ]
+        }
+      ],
+      "root": "{ROOT}",
+      "staging": ".ezbk-staging",
+      "summary": {
+        "ambiguous": 0,
+        "create": 0,
+        "link": 3,
+        "skip": 0
+      },
+      "warnings": []
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 1,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "name"
+      ],
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

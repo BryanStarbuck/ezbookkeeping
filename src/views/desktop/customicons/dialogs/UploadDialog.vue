@@ -67,6 +67,9 @@ import { ThemeType } from '@/core/theme.ts';
 import { SUPPORTED_IMAGE_EXTENSIONS } from '@/consts/file.ts';
 
 import { generateRandomUUID } from '@/lib/misc.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/customicons/dialogs/UploadDialog.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -215,6 +218,7 @@ function upload(): void {
             uploading.value = false;
             showState.value = false;
         }).catch(error => {
+            errors.caught('uploading the custom icon', error);
             uploading.value = false;
 
             if (!error.processed) {

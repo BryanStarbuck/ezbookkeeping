@@ -13,7 +13,10 @@
  */
 import fs from 'node:fs';
 
+import { errorFileFor } from './errfile/index.js';
 import { READ_TOOLS, TOTAL_TOOLS, WRITE_TOOL_COUNT } from './tools/registry.js';
+
+const errors = errorFileFor('mcp/src/prompt.ts');
 
 /** The closed token map (§8.3). Adding one here and in the prompt is a deliberate change. */
 export const PROMPT_TOKENS = ['SERVER_KEY', 'TOOL_PREFIX', 'TOTAL_TOOLS', 'READ_TOOLS', 'WRITE_TOOLS', 'CLI_BINARY', 'API_URL', 'CREDENTIALS_FILE', 'APP_URL'] as const;
@@ -89,17 +92,20 @@ export function resolveInstructionsFrom(source: string, values: PromptValues, pr
       const text = fs.readFileSync(promptFile, 'utf8');
       return substitute(text, values);
     } catch (err) {
+      errors.warn('reading the EZBKMCP_PROMPT_FILE override', err);
       warn(`EZBKMCP_PROMPT_FILE=${promptFile} was not used (${(err as Error).message}); falling back to the built-in instructions`);
     }
   }
   return substitute(source, values);
 }
 
-/** Every `ezb_` name the prose mentions (so a test can assert each exists in the registry). */
+/** Every `ezb_` name the prose mentions (so a test can assert each exists in the registry). `ezb_something` is the prose's own placeholder for "any tool". */
 export function toolNamesMentioned(text: string): string[] {
   const names = new Set<string>();
   for (const m of text.matchAll(/\bezb_[a-z_]+/g)) {
-    names.add(m[0]);
+    if (m[0] !== `${TOOL_PREFIX}something`) {
+      names.add(m[0]);
+    }
   }
   return [...names].sort();
 }

@@ -156,6 +156,9 @@ import {
 import { generateRandomUUID } from '@/lib/misc.ts';
 import { useI18nUIComponents } from '@/lib/ui/mobile.ts';
 import logger from '@/lib/logger.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/overview/LayoutEditorPage.vue');
 
 type WidgetSettingsPopupType = InstanceType<typeof WidgetSettingsPopup>;
 
@@ -280,6 +283,7 @@ function reload(force: boolean): void {
             showToast('Data has been updated');
         }
     }).catch(error => {
+        errors.caught('loading the overview layout editor', error);
         loadingOverview.value = false;
 
         if (!error.processed && !error.isUpToDate) {

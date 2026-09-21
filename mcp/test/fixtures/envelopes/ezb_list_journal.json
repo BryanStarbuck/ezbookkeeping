@@ -1,0 +1,108 @@
+{
+  "tool": "ezb_list_journal",
+  "args": {
+    "limit": 5
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_list_journal",
+    "data": {
+      "entries": [
+        {
+          "changes": 9,
+          "client": "ezbookkeeping-mcp/0.1.0",
+          "createdAt": "2026-09-21T16:33:15Z",
+          "journalId": "5",
+          "redoable": false,
+          "route": "POST /transactions",
+          "stepKinds": [
+            "txn.delete"
+          ],
+          "steps": 1,
+          "summary": "created 9 transactions",
+          "undone": false,
+          "undoneAt": null
+        },
+        {
+          "changes": 1,
+          "client": "ezbookkeeping-mcp/0.1.0",
+          "createdAt": "2026-09-21T16:33:15Z",
+          "journalId": "4",
+          "redoable": true,
+          "route": "POST /tags",
+          "stepKinds": [
+            "ref.delete_tag"
+          ],
+          "steps": 1,
+          "summary": "create tag 3844013758716313600",
+          "undone": false,
+          "undoneAt": null
+        },
+        {
+          "changes": 1,
+          "client": "ezbookkeeping-mcp/0.1.0",
+          "createdAt": "2026-09-21T16:33:15Z",
+          "journalId": "3",
+          "redoable": true,
+          "route": "POST /accounts",
+          "stepKinds": [
+            "ref.delete_account"
+          ],
+          "steps": 1,
+          "summary": "create account 3844013758313660418",
+          "undone": false,
+          "undoneAt": null
+        },
+        {
+          "changes": 1,
+          "client": "ezbookkeeping-mcp/0.1.0",
+          "createdAt": "2026-09-21T16:33:15Z",
+          "journalId": "2",
+          "redoable": true,
+          "route": "POST /accounts",
+          "stepKinds": [
+            "ref.delete_account"
+          ],
+          "steps": 1,
+          "summary": "create account 3844013758313660417",
+          "undone": false,
+          "undoneAt": null
+        },
+        {
+          "changes": 1,
+          "client": "ezbookkeeping-mcp/0.1.0",
+          "createdAt": "2026-09-21T16:33:15Z",
+          "journalId": "1",
+          "redoable": true,
+          "route": "POST /accounts",
+          "stepKinds": [
+            "ref.delete_account"
+          ],
+          "steps": 1,
+          "summary": "create account 3844013758313660416",
+          "undone": false,
+          "undoneAt": null
+        }
+      ],
+      "nextRedo": null,
+      "nextUndo": "5",
+      "note": "undo reverses machine-plane writes only; edits made in the browser are not in the journal"
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 1,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "summary"
+      ],
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

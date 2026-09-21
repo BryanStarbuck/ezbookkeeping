@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mayswind/ezbookkeeping/pkg/api"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/exchangerates"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 	"github.com/mayswind/ezbookkeeping/pkg/services"
@@ -37,6 +38,7 @@ func refLatestRates(mc *Ctx) (*models.LatestExchangeRateResponse, error) {
 	resp, err := exchangerates.Container.GetLatestExchangeRates(mc.Web, mc.Uid, mc.Config)
 
 	if err != nil || resp == nil {
+		errfile.Caught("fetching the app's latest exchange rates", err)
 		return nil, NewFail(CodeUpstreamError, "the rate source ("+mc.Config.ExchangeRatesDataSource+") could not be read; check the server's network, or set [exchange_rates] data_source in conf/ezbookkeeping.ini", "the exchange rates are unavailable")
 	}
 
@@ -93,6 +95,7 @@ func refRateMeaning(base, currency, rate string) string {
 	r, err := ParseRate(rate)
 
 	if err != nil {
+		errfile.Expected("parsing a rate to spell its meaning out", err)
 		return ""
 	}
 
@@ -329,12 +332,14 @@ func refHandleConvert(mc *Ctx) (any, error) {
 	fromRate, err := ParseRate(fromView.Rate)
 
 	if err != nil {
+		errfile.Caught("parsing the source's exchange rate", err, errfile.F("currency", from))
 		return nil, NewFail(CodeUpstreamError, "the rate source returned an unusable rate; refresh the rates in the web UI", "the %s rate %q is not a positive decimal", from, fromView.Rate)
 	}
 
 	toRate, err := ParseRate(toView.Rate)
 
 	if err != nil {
+		errfile.Caught("parsing the source's exchange rate", err, errfile.F("currency", to))
 		return nil, NewFail(CodeUpstreamError, "the rate source returned an unusable rate; refresh the rates in the web UI", "the %s rate %q is not a positive decimal", to, toView.Rate)
 	}
 
@@ -435,6 +440,7 @@ func refHandleCustomRatePut(mc *Ctx) (any, error) {
 		r, err := ParseRate(string(req.Rate))
 
 		if err != nil {
+			errfile.Expected("parsing the rate argument", err)
 			return nil, Invalid("a rate is a positive decimal: units of "+cur+" per ONE "+mc.User.DefaultCurrency, "rate %q is not a positive decimal", string(req.Rate))
 		}
 
@@ -566,6 +572,7 @@ func refCustomRateCheck(current refCustomRateState, check json.RawMessage) bool 
 	var want refCustomRateState
 
 	if err := json.Unmarshal(check, &want); err != nil {
+		errfile.Caught("decoding the custom-rate journal check", err)
 		return false
 	}
 

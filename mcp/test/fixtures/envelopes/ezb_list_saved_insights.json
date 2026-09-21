@@ -1,0 +1,32 @@
+{
+  "tool": "ezb_list_saved_insights",
+  "args": {},
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_list_saved_insights",
+    "data": {
+      "count": 0,
+      "filters": {
+        "includeHidden": false
+      },
+      "insights": [],
+      "note": "these are saved query definitions, not numbers; the numbers come from /machine/v1/analytics/*"
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 0,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "name"
+      ],
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

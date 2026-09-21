@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mayswind/ezbookkeeping/pkg/api"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 )
 
@@ -132,10 +133,12 @@ func ingParseUpstream(mc *Ctx, data []byte, fileName, fileType string, custom *i
 	raw, merr := json.Marshal(result)
 
 	if merr != nil {
+		errfile.Caught("re-encoding the converter result", merr)
 		return nil, NewFail(CodeInternal, "read ~/T/ezbookkeeping/error.err", "unexpected parse result")
 	}
 
 	if uerr := json.Unmarshal(raw, &wrapper); uerr != nil {
+		errfile.Caught("decoding the converter result", uerr)
 		return nil, NewFail(CodeInternal, "read ~/T/ezbookkeeping/error.err", "unexpected parse result")
 	}
 
@@ -464,6 +467,7 @@ func ingDecimalHundredths(s string) (int64, bool) {
 	n, err := strconv.ParseInt(intPart+frac, 10, 64)
 
 	if err != nil {
+		errfile.Expected("parsing an amount from a statement row", err)
 		return 0, false
 	}
 

@@ -1110,11 +1110,22 @@ should be able to tell them apart.
 - **`~/T/_ezbookkeeping/cli.err`** — WARN and ERROR lines, **and** stderr.
 - `~/T/_ezbookkeeping/server.log` — the server's stdout/stderr when `ezbk` started it.
 - `log/ezbookkeeping.log` — the app's own log, written by upstream code, git-ignored.
+- **`~/T/ezbookkeeping/error.err`** — the error file ([error_err.mdx](./error_err.mdx)), shared by the
+  server, `ezbk` and the MCP, each line tagged with its `app`. **Every fault `ezbk` sees is written
+  here**: a failed HTTP call, an unreadable credentials file, a bring-up that died, a converter that
+  choked — with the cause chain and, for a panic, the stack. `cli.info` and `cli.err` keep their
+  **usage-trail** job (what was run, against which target, how it went); they do not carry the detail.
 
 Rules: the key is never in any of them, only its fingerprint; **no financial data** — counts yes, an
 amount, a comment, an account name or number no; logging can never crash the CLI; files rotate at 8 MB,
-five generations; never `/tmp`; a panic is recovered at top level, logged with its stack to `cli.err`,
-printed as one sentence plus the remediation, and exits `1`.
+five generations; never `/tmp`. A panic is recovered at top level: its record and stack go to
+`error.err` (`errfile.Recovered`, flushed before anything else happens), `cli.err` gets one
+`panic: …` line, the operator gets one sentence plus the hint _"the stack is in
+~/T/ezbookkeeping/error.err"_, and the exit code is `1`. When the server answers `internal` or
+`upstream_error`, the plane's own hint points at the same file, and `ezbk` prints it as it is.
+
+Code: `~/BGit/Bryan_git/ezbookkeeping/cli/internal/app/main.go` — the top-level `recover()` in `Main()`
+Code: `~/BGit/Bryan_git/ezbookkeeping/cli/internal/errfile/` — the vendored Go copy of `pkg/errfile` (error_err.mdx §4.1)
 
 ---
 
@@ -1293,6 +1304,8 @@ worth using** — every question answered, nothing changeable.
 - **[apis.mdx](./apis.mdx) — the machine plane this CLI is a client of.** The authority on every route,
   argument and error code.
 - [mcp.mdx](./mcp.mdx) — the MCP server. Same key, same plane, same services.
+- [error_err.mdx](./error_err.mdx) — the error file, `~/T/ezbookkeeping/error.err`: where every fault
+  `ezbk` sees, and every panic's stack, is written (§16).
 - [../CLAUDE.md](../CLAUDE.md) — what this fork is, where things live, the open-source rule.
 - `~/BGit/Bryan_git/actual_budget_bryan/pm/cli.mdx` — `abx`, the sister fork's CLI this spec was grown
   from.

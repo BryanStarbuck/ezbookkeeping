@@ -7,6 +7,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/converters/datatable"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 	"github.com/mayswind/ezbookkeeping/pkg/utils"
 )
@@ -81,6 +82,7 @@ func (c *DataTableTransactionDataExporter) getDisplayTransactionTypeName(transac
 	transactionType, err := transactionDbType.ToTransactionType()
 
 	if err != nil {
+		errfile.Caught("converting the transaction type for export", err)
 		return ""
 	}
 

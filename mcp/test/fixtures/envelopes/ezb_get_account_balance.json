@@ -1,0 +1,54 @@
+{
+  "tool": "ezb_get_account_balance",
+  "args": {
+    "account_id": "3844013758313660416",
+    "as_of": "2026-08-31"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_get_account_balance",
+    "data": {
+      "accountId": "3844013758313660416",
+      "asOf": "2026-08-31",
+      "balance": 1098050,
+      "category": "checking",
+      "currency": "USD",
+      "currentBalance": 1085250,
+      "hidden": false,
+      "isAsset": true,
+      "isLiability": false,
+      "name": "Northbank Checking",
+      "provenance": {
+        "basis": "closing balance at the end of as_of in the call's timezone, from the app's daily running balance",
+        "currentBalance": "the app's balance now (includes transactions dated after as_of)",
+        "rowCount": 3,
+        "upstream": [
+          "GET /api/v1/accounts/list.json",
+          "GET /api/v1/transactions/statistics/asset_trends.json"
+        ]
+      },
+      "timezone": "UTC"
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 1,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "label",
+        "name",
+        "comment",
+        "variants",
+        "text"
+      ],
+      "composed": true,
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

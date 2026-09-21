@@ -2,6 +2,7 @@ package fireflyIII
 
 import (
 	"github.com/mayswind/ezbookkeeping/pkg/converters/datatable"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 	"github.com/mayswind/ezbookkeeping/pkg/utils"
@@ -40,6 +41,7 @@ func (p *fireflyIIITransactionDataRowParser) Parse(data map[datatable.Transactio
 		dateTime, err := utils.ParseFromLongDateTimeWithTimezoneRFC3339Format(rowData[datatable.TRANSACTION_DATA_TABLE_TRANSACTION_TIME])
 
 		if err != nil {
+			errfile.Expected("parsing the transaction time of the imported row", err)
 			return nil, false, errs.ErrTransactionTimeInvalid
 		}
 
@@ -53,6 +55,7 @@ func (p *fireflyIIITransactionDataRowParser) Parse(data map[datatable.Transactio
 		amount, err := utils.ParseAmount(rowData[datatable.TRANSACTION_DATA_TABLE_AMOUNT])
 
 		if err != nil {
+			errfile.Expected("parsing the amount of the imported row", err)
 			return nil, false, errs.ErrAmountInvalid
 		}
 
@@ -68,6 +71,7 @@ func (p *fireflyIIITransactionDataRowParser) Parse(data map[datatable.Transactio
 		amount, err := utils.ParseAmount(rowData[datatable.TRANSACTION_DATA_TABLE_RELATED_AMOUNT])
 
 		if err != nil {
+			errfile.Expected("parsing the related amount of the imported row", err)
 			return nil, false, errs.ErrAmountInvalid
 		}
 

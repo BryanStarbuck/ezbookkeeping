@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 )
 
 var imageFileExtensionContentTypeMap = map[string]string{
@@ -31,12 +33,14 @@ func ListFileNamesWithPrefixAndSuffix(path string, prefix string, suffix string)
 	dir, err := os.Open(path)
 
 	if err != nil {
+		errfile.Caught("opening the directory to list files", err)
 		return nil
 	}
 
 	fileInfos, err := dir.Readdir(0)
 
 	if err != nil {
+		errfile.Caught("reading the directory to list files", err)
 		return nil
 	}
 

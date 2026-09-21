@@ -274,6 +274,9 @@ import { useAccountsStore } from '@/stores/account.ts';
 import { useTransactionCategoriesStore } from '@/stores/transactionCategory.ts';
 
 import { isObjectEmpty, findDisplayNameByType } from '@/lib/common.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/statistics/SettingsPage.vue');
 
 const { tt } = useI18n();
 const { showToast } = useI18nUIComponents();
@@ -321,6 +324,7 @@ function init(): void {
     }).then(() => {
         loadingAccounts.value = false;
     }).catch(error => {
+        errors.caught('loading all accounts', error);
         loadingAccounts.value = false;
 
         if (!error.processed) {
@@ -333,6 +337,7 @@ function init(): void {
     }).then(() => {
         loadingTransactionCategories.value = false;
     }).catch(error => {
+        errors.caught('loading all categories', error);
         loadingTransactionCategories.value = false;
 
         if (!error.processed) {

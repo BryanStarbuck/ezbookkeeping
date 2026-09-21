@@ -13,6 +13,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"xorm.io/xorm"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/settings"
 )
@@ -66,6 +67,7 @@ func initializeDatabase(dbConfig *settings.DatabaseConfig) (*Database, error) {
 
 	if dbConfig.DatabaseType == settings.Sqlite3DbType {
 		if _, err = os.Stat(dbConfig.DatabasePath); err != nil {
+			errfile.Expected("checking whether the sqlite database file exists", err)
 			file, err := os.Create(dbConfig.DatabasePath)
 
 			if err != nil {
@@ -135,6 +137,7 @@ func getPostgresConnectionString(dbConfig *settings.DatabaseConfig) (string, err
 		host, port, err := net.SplitHostPort(dbConfig.DatabaseHost)
 
 		if err != nil {
+			errfile.Caught("splitting the database host and port", err)
 			return "", errs.ErrDatabaseHostInvalid
 		}
 

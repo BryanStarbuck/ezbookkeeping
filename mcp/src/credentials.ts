@@ -24,6 +24,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { errorFileFor } from './errfile/index.js';
+
+const errors = errorFileFor('mcp/src/credentials.ts');
+
 export const PRODUCT = 'ezbookkeeping';
 
 /** 64 lowercase hex characters — 32 bytes from a CSPRNG (apis.mdx §5.2). */
@@ -63,7 +67,7 @@ export function isWellFormedKey(key: string): boolean {
   return KEY_PATTERN.test(key);
 }
 
-/** 32 bytes from crypto.randomBytes (a CSPRNG), never Math.random. */
+/** 32 bytes from crypto.randomBytes (a CSPRNG); a seeded PRNG is never used. */
 export function mintKey(): string {
   return crypto.randomBytes(32).toString('hex');
 }
@@ -141,7 +145,7 @@ export function readProduct(file: string): ProductCredentials {
   if (sub === null || typeof sub !== 'object' || Array.isArray(sub)) {
     throw new CredentialsError(`the "${PRODUCT}" subtree of ${file} is not an object`, `fix or remove ${file}`);
   }
-  return sub as ProductCredentials;
+  return sub;
 }
 
 /**
@@ -168,7 +172,8 @@ function writeMerged(file: string, mutate: (doc: CredentialsFile) => void): void
   let destIsLink = false;
   try {
     destIsLink = fs.lstatSync(file).isSymbolicLink();
-  } catch {
+  } catch (err) {
+    errors.expected('checking the credentials file for a symlink before the rename', err); // absent is the normal first-mint case
     destIsLink = false;
   }
   if (destIsLink) {
@@ -190,7 +195,7 @@ export type ResolvedKey = {
 
 function assertKeyShape(key: string, where: string): string {
   if (!isWellFormedKey(key)) {
-    throw new CredentialsError(`the API secret key from ${where} is not 64 lowercase hex characters`, 'rotate it with: ezbk key rotate --yes');
+    throw new CredentialsError(`the api_key from ${where} is malformed (not 64 lowercase hex characters); rotate it with: ezbk key rotate --yes`, 'ezbk key rotate --yes');
   }
   return key;
 }
@@ -236,7 +241,7 @@ export function resolveKey(opts: { env?: NodeJS.ProcessEnv; file: string; mint: 
   const minted = mintKey();
   writeMerged(file, doc => {
     // Compare-and-set: re-read inside the write and yield to a key that appeared meanwhile.
-    const product = (doc[PRODUCT] ??= {}) as ProductCredentials;
+    const product = (doc[PRODUCT] ??= {});
     const machine = (product.machine ??= {});
     if (machine.api_key !== undefined && isWellFormedKey(machine.api_key)) {
       return;

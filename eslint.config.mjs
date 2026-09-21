@@ -34,6 +34,6 @@ export default [
         files: ['src/**/*.{vue,ts,tsx,mts}'],
         ignores: ERRFILE_LINT_IGNORES,
         plugins: { errfile: errfilePlugin },
-        rules: { 'errfile/catch-must-report': 'warn' } // Phase C: "warn"; Phase D flips it to "error" (pm/error_err.mdx §13.2)
+        rules: { 'errfile/catch-must-report': 'error' } // pm/error_err.mdx §13.2
     },
 ];

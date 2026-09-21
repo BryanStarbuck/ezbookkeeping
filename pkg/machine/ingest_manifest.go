@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/validators"
 )
 
@@ -109,6 +110,7 @@ func ingFindManifest(root *ingRoot, manifestPath string) (string, error) {
 		}
 
 		if info, serr := os.Stat(real); serr != nil || info.IsDir() {
+			errfile.Expected("checking the manifest path under the statements root", serr)
 			return "", NotFound("pass manifest_path relative to the statements root, e.g. import/accounts.csv", "no manifest at %q", manifestPath)
 		}
 
@@ -119,6 +121,7 @@ func ingFindManifest(root *ingRoot, manifestPath string) (string, error) {
 		real, err := root.Resolve(cand)
 
 		if err != nil {
+			errfile.Expected("resolving a manifest candidate path", err)
 			continue
 		}
 
@@ -135,6 +138,7 @@ func ingReadManifest(root *ingRoot, real, defaultCurrency string) (*ingManifest,
 	data, err := os.ReadFile(real)
 
 	if err != nil {
+		errfile.Caught("reading the manifest file", err)
 		return nil, NotFound("check the server's user can read the manifest", "the manifest %q cannot be read", root.Rel(real))
 	}
 
@@ -300,6 +304,7 @@ func ingOptInt(s string) *int64 {
 	n, err := strconv.ParseInt(s, 10, 64)
 
 	if err != nil {
+		errfile.Expected("parsing an integer cell of the manifest", err)
 		return nil
 	}
 
@@ -576,6 +581,7 @@ func ingSniff(real string, n int) string {
 	f, err := os.Open(real)
 
 	if err != nil {
+		errfile.Expected("opening a statement file to sniff its format", err)
 		return ""
 	}
 
@@ -626,6 +632,7 @@ func ingScanAccountShelf(root *ingRoot, row *ingManifestRow, qifOrder string) (*
 	shelf.Dir = dir
 
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		errfile.Expected("checking whether the statement directory of the account exists", err)
 		return shelf, nil
 	}
 
@@ -639,6 +646,7 @@ func ingScanAccountShelf(root *ingRoot, row *ingManifestRow, qifOrder string) (*
 
 	_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
+			errfile.Warn("walking the statement directory of the account", err)
 			return nil
 		}
 
@@ -657,6 +665,7 @@ func ingScanAccountShelf(root *ingRoot, row *ingManifestRow, qifOrder string) (*
 		real, rerr := filepath.EvalSymlinks(p)
 
 		if rerr != nil || !ingWithin(root.Real, real) {
+			errfile.Expected("resolving a statement file path", rerr)
 			return nil
 		}
 
@@ -680,6 +689,7 @@ func ingScanAccountShelf(root *ingRoot, row *ingManifestRow, qifOrder string) (*
 		info, ierr := os.Stat(real)
 
 		if ierr != nil {
+			errfile.Warn("reading the size of a statement file", ierr)
 			return nil
 		}
 

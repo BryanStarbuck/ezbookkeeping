@@ -1,6 +1,9 @@
 package models
 
-import "github.com/mayswind/ezbookkeeping/pkg/utils"
+import (
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
+	"github.com/mayswind/ezbookkeeping/pkg/utils"
+)
 
 // ImportTransaction represents the imported transaction data
 type ImportTransaction struct {
@@ -66,6 +69,7 @@ func (t ImportTransaction) ToImportTransactionResponse() *ImportTransactionRespo
 	transactionType, err := t.Type.ToTransactionType()
 
 	if err != nil {
+		errfile.Caught("converting the imported transaction type for the response", err, errfile.F("transaction_id", t.TransactionId))
 		return nil
 	}
 

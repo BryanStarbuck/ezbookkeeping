@@ -34,6 +34,9 @@ import {
     parseDesktopOverviewLayout
 } from '@/lib/overview_layout.ts';
 import logger from '@/lib/logger.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/HomePage.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -122,6 +125,7 @@ function reload(force: boolean): void {
             snackbar.value?.showMessage('Data has been updated');
         }
     }).catch(error => {
+        errors.caught('loading the overview data', error);
         loadingOverview.value = false;
 
         if (!error.processed) {

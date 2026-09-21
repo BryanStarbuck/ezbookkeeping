@@ -14,6 +14,7 @@ import (
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/bringup"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/client"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/credentials"
+	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/errfile"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/exitcode"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/logger"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/progress"
@@ -104,6 +105,7 @@ func (c *Ctx) Int(name string, def int) (int, error) {
 	n, err := strconv.Atoi(v)
 
 	if err != nil {
+		errfile.Expected("parsing a whole-number flag", err)
 		return 0, Usage(fmt.Sprintf("--%s must be a whole number, got %q", name, v), "ezbk help "+c.Verb.Name)
 	}
 

@@ -127,6 +127,9 @@ import { type TokenGenerateAPIResponse, type TokenGenerateMCPResponse } from '@/
 
 import { isAPITokenEnabled, isMCPServerEnabled } from '@/lib/server_settings.ts';
 import { copyTextToClipboard } from '@/lib/ui/common.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/users/settings/dialogs/UserGenerateTokenDialog.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -220,6 +223,7 @@ function generateToken(): void {
 
         generatedToken.value = result.token;
     }).catch(error => {
+        errors.caught('generating the API token', error);
         generating.value = false;
 
         if (!error.processed) {

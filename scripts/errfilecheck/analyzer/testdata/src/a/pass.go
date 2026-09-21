@@ -24,6 +24,10 @@ type route struct {
 
 type verb struct{ Name string }
 
+type webCtx struct{ Method string }
+
+func (c *webCtx) FullPath() string { return "/api/v1/x/:id" }
+
 // P1 — G1: the block reports through errfile before returning a sentinel
 func p1() error {
 	if err := os.Remove("x"); err != nil {
@@ -161,6 +165,8 @@ func p14(r *route, v *verb) {
 	errfile.Caught("handling "+r.Method+" "+r.Path, errOperationFailed)
 	errfile.Caught("running "+verbName, errOperationFailed)
 	errfile.Caught("running the cron job "+v.Name, errOperationFailed)
+	c := &webCtx{}
+	errfile.Recovered("handling "+c.Method+" "+c.FullPath(), "x")
 }
 
 // P15 — a case clause that hands the error on
@@ -215,4 +221,9 @@ func p20(r *result) error {
 	}
 
 	return nil
+}
+
+// P21 — a thin wrapper may pass its own `doing` parameter through
+func p21(doing string, err error) {
+	errfile.Caught(doing, err)
 }

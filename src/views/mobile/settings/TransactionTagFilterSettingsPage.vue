@@ -188,6 +188,9 @@ import { values } from '@/core/base.ts';
 import { TransactionTagFilterType } from '@/core/transaction.ts';
 
 import { isDefined } from '@/lib/common.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/settings/TransactionTagFilterSettingsPage.vue');
 
 interface CollapseState {
     opened: boolean;
@@ -259,6 +262,7 @@ function init(): void {
             loadingError.value = 'Parameter Invalid';
         }
     }).catch(error => {
+        errors.caught('loading all tags', error);
         if (error.processed) {
             loading.value = false;
         } else {

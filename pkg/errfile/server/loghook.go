@@ -76,6 +76,11 @@ func (hook) Fire(entry *logrus.Entry) error {
 		NoDedupe:     true, // there is no error value to remember
 	})
 
+	// logrus exits right after a Fatal/Panic entry's hooks have run: the record must be on disk first (R9)
+	if level == errfile.LevelFatal {
+		errfile.Flush()
+	}
+
 	return nil
 }
 

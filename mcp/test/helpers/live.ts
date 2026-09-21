@@ -31,6 +31,8 @@ export type LiveServer = {
   mcpEnv: (extra?: Record<string, string>) => NodeJS.ProcessEnv;
   /** One raw machine-plane request, for the gate canaries. */
   plane: (method: string, route: string, opts?: { headers?: Record<string, string>; body?: unknown; key?: string | null }) => Promise<{ status: number; text: string; json: unknown }>;
+  /** One upstream /api/v1 call as the synthetic user's browser session (JWT from registration) — the "done in the browser" edits the specs talk about. */
+  browser: (method: string, route: string, body?: unknown) => Promise<{ status: number; text: string; json: unknown }>;
   stop: () => Promise<void>;
 };
 
@@ -182,7 +184,7 @@ export async function startLiveServer(opts: LiveOptions = {}): Promise<LiveServe
   }
 
   // The plane mints the key into EZBK_CREDENTIALS_FILE at boot (apis.mdx §5.4).
-  const armed = await waitFor(async () => fs.existsSync(credentialsFile), 10_000, child);
+  const armed = await waitFor(() => Promise.resolve(fs.existsSync(credentialsFile)), 10_000, child);
   if (!armed) {
     await stop();
     return null; // a binary without the machine plane
@@ -217,6 +219,7 @@ export async function startLiveServer(opts: LiveOptions = {}): Promise<LiveServe
     return null;
   }
 
+  let jwt = '';
   if (opts.registerUser !== false) {
     const categories = SYNTHETIC_CATEGORIES.map(c => ({
       name: c.name,
@@ -231,7 +234,25 @@ export async function startLiveServer(opts: LiveOptions = {}): Promise<LiveServe
       await stop();
       throw new Error(`registering the synthetic user failed: ${r.status} ${r.text.slice(0, 200)}`);
     }
+    jwt = (JSON.parse(r.text) as { result: { token: string } }).result.token;
   }
+
+  const browser: LiveServer['browser'] = async (method, route, body) => {
+    const headers: Record<string, string> = { Authorization: `Bearer ${jwt}`, 'X-Timezone-Offset': '0', Accept: 'application/json' };
+    let text: string | undefined;
+    if (body !== undefined) {
+      text = JSON.stringify(body);
+      headers['Content-Type'] = 'application/json';
+    }
+    const r = await rawRequest(`${apiUrl}/api/v1${route}`, method, headers, text);
+    let json: unknown = null;
+    try {
+      json = JSON.parse(r.text);
+    } catch {
+      json = null;
+    }
+    return { status: r.status, text: r.text, json };
+  };
 
   const mcpEnv = (extra: Record<string, string> = {}): NodeJS.ProcessEnv => ({
     PATH: process.env.PATH ?? '',
@@ -244,5 +265,5 @@ export async function startLiveServer(opts: LiveOptions = {}): Promise<LiveServe
     ...extra,
   });
 
-  return { apiUrl, port, workDir, credentialsFile, stateDir, errorFile, key, mcpEnv, plane, stop };
+  return { apiUrl, port, workDir, credentialsFile, stateDir, errorFile, key, mcpEnv, plane, browser, stop };
 }

@@ -1,0 +1,46 @@
+{
+  "tool": "ezb_undo",
+  "args": {},
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_undo",
+    "data": {
+      "entry": {
+        "changes": 6,
+        "client": "ezbookkeeping-mcp/0.1.0",
+        "createdAt": "2026-09-21T16:33:16Z",
+        "journalId": "19",
+        "redoable": false,
+        "route": "POST /ingest/apply",
+        "stepKinds": [
+          "ing.import"
+        ],
+        "steps": 1,
+        "summary": "ingest statements run_20260921T163316Z_aadc801b: 6 created, 0 linked",
+        "undone": true,
+        "undoneAt": "2026-09-21T16:33:16Z"
+      },
+      "nextUndo": "18",
+      "note": "undo reverses machine-plane writes only; edits made in the browser are not in the journal",
+      "redoAvailable": false,
+      "stepsReversed": 1,
+      "undone": true
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 7,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "summary"
+      ],
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

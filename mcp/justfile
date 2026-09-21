@@ -1,0 +1,56 @@
+# ezbookkeeping MCP server (pm/mcp.mdx). Run `just` to list.
+#
+#   just build   -> ai/mcp_prompt_ezbookkeeping.md -> src/instructions.ts, tsc, dist/index.js stamped executable
+#   just test    -> catalogue, gate, credentials-vector, instructions, canary and (with a server binary) live tests
+#   just probe   -> hand-pipe an initialize over stdio to the built server
+#   just lint    -> eslint (the errfile rule at "warn")
+#
+# The live tests need the Go binary: EZBK_SERVER_BIN=/path/to/ezbookkeeping, else ../ezbookkeeping.
+
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+root := justfile_directory()
+
+default:
+    @just --list
+
+# Install the two runtime deps (and the dev deps) into mcp/node_modules from mcp/package-lock.json — never the repo lockfile.
+install:
+    cd "{{root}}" && npm ci --no-audit --no-fund
+
+_ensure-deps:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{root}}"
+    if [ ! -d node_modules/@modelcontextprotocol/sdk ] || [ ! -d node_modules/zod ] || [ ! -d node_modules/typescript ]; then
+      echo "mcp deps missing — installing into mcp/node_modules"
+      npm ci --no-audit --no-fund
+    fi
+
+# Generate src/instructions.ts from ../ai/mcp_prompt_ezbookkeeping.md, compile, stamp dist/index.js executable.
+build: _ensure-deps
+    cd "{{root}}" && npm run build
+
+typecheck: _ensure-deps
+    cd "{{root}}" && npm run typecheck
+
+# Every test (builds first: the canaries grep dist/ and the live suite spawns it).
+test: build
+    cd "{{root}}" && npm test
+
+# ESLint with the shared errfile rule.
+lint: _ensure-deps
+    cd "{{root}}" && npm run lint
+
+# Speak JSON-RPC to the built server by hand: initialize, then tools/list, on stdout; the banner on stderr.
+probe: build
+    cd "{{root}}" && node scripts/probe.ts
+
+# Print the registration command (does not run it — registering is the operator's call).
+register:
+    @echo 'claude mcp add --scope user ezbookkeeping -- "{{root}}/dist/index.js" serve'
+    @echo '  The bare -- is load-bearing: everything after it is the command and its argv.'
+    @echo '  To let the agent write this session: add --env EZBKMCP_ALLOW_WRITE=1 and start the app with `ezbk up --allow-write`.'
+
+clean:
+    rm -rf "{{root}}/dist"

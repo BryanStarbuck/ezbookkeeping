@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 )
 
@@ -61,12 +62,14 @@ func (c *WebContext) ClientPort() uint16 {
 	_, remotePort, err := net.SplitHostPort(c.Request.RemoteAddr)
 
 	if err != nil {
+		errfile.Expected("splitting the remote address of the request", err)
 		return 0
 	}
 
 	remotePortNum, err := strconv.ParseInt(remotePort, 10, 32)
 
 	if err != nil {
+		errfile.Expected("parsing the remote port of the request", err)
 		return 0
 	}
 
@@ -169,6 +172,7 @@ func (c *WebContext) GetTokenStringFromCookie() string {
 	tokenCookie, err := c.Cookie(tokenCookieParam)
 
 	if err != nil {
+		errfile.Expected("reading the token cookie from the request", err)
 		return ""
 	}
 

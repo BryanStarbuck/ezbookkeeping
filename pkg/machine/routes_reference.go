@@ -14,6 +14,7 @@ import (
 	"github.com/mayswind/ezbookkeeping/pkg/api"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
 	"github.com/mayswind/ezbookkeeping/pkg/datastore"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 	"github.com/mayswind/ezbookkeeping/pkg/services"
 	"github.com/mayswind/ezbookkeeping/pkg/settings"
@@ -64,6 +65,7 @@ func (f *refFlex) UnmarshalJSON(b []byte) error {
 	var n json.Number
 
 	if err := dec.Decode(&n); err != nil {
+		errfile.Expected("parsing a flexible string-or-number field", err)
 		return fmt.Errorf("expected a string or a number")
 	}
 
@@ -92,6 +94,7 @@ func refIcon(v refFlex, def int64) (int64, error) {
 	n, err := strconv.ParseInt(s, 10, 64)
 
 	if err != nil || n < 1 {
+		errfile.Expected("parsing the icon id", err)
 		return 0, Invalid("icon is the numeric id of one of the app's built-in icons (1 is the default)", "icon %q is not an icon id", s)
 	}
 
@@ -448,6 +451,7 @@ func refCreatedId(v any) (int64, error) {
 	}
 
 	if err := json.Unmarshal(data, &out); err != nil || out.Id == "" {
+		errfile.Caught("decoding the id of an upstream create response", err)
 		return 0, NewFail(CodeUpstreamError, "list the entities to see whether it was created", "the server did not return the new id")
 	}
 
@@ -969,16 +973,19 @@ func refCheckMatches(current any, check json.RawMessage) bool {
 	}
 
 	if err := decode(check, &want); err != nil {
+		errfile.Caught("decoding a journal check", err)
 		return false
 	}
 
 	data, err := json.Marshal(current)
 
 	if err != nil {
+		errfile.Caught("encoding the current state for a journal check", err)
 		return false
 	}
 
 	if err := decode(data, &have); err != nil {
+		errfile.Caught("decoding the current state for a journal check", err)
 		return false
 	}
 
@@ -1678,6 +1685,7 @@ func refCategoryModify(c *models.TransactionCategory, f refCategoryFields) (*mod
 	parentId, err := strconv.ParseInt(f.ParentId, 10, 64)
 
 	if err != nil {
+		errfile.Caught("parsing the parent id of the category fields", err)
 		return nil, Invalid("parent ids are decimal strings", "parent id %q is invalid", f.ParentId)
 	}
 
@@ -1905,6 +1913,12 @@ func refInvRestoreCategory(mc *Ctx, payload, check json.RawMessage) error {
 	c, err := services.TransactionCategories.GetCategoryByCategoryId(mc.Web, mc.Uid, id)
 
 	if err != nil || c == nil {
+		if isAnswer(err) {
+			errfile.Expected("loading the category to restore", err)
+		} else {
+			errfile.Caught("loading the category to restore", err, errfile.F("category_id", want.Id))
+		}
+
 		return Conflict("the category was deleted since; nothing to restore", "category %s no longer exists", want.Id)
 	}
 
@@ -2410,6 +2424,8 @@ func refTagBatchNames(raw []json.RawMessage) ([]string, error) {
 		var s string
 
 		if err := json.Unmarshal(r, &s); err != nil {
+			errfile.Expected("parsing a tag entry as a bare name", err)
+
 			var obj struct {
 				Name string `json:"name"`
 			}
@@ -2418,6 +2434,7 @@ func refTagBatchNames(raw []json.RawMessage) ([]string, error) {
 			dec.DisallowUnknownFields()
 
 			if err := dec.Decode(&obj); err != nil {
+				errfile.Expected("parsing a tag entry as a {name} object", err)
 				return nil, Invalid("tags is an array of names, or of {name} objects", "tags[%d] is neither a name nor {name}", i)
 			}
 
@@ -2583,6 +2600,7 @@ func refApplyTagFields(mc *Ctx, f refTagFields) error {
 	gid, err := strconv.ParseInt(f.GroupId, 10, 64)
 
 	if err != nil {
+		errfile.Caught("parsing the group id of the tag fields", err)
 		return Invalid("group ids are decimal strings", "group id %q is invalid", f.GroupId)
 	}
 
@@ -2743,6 +2761,12 @@ func refInvRestoreTag(mc *Ctx, payload, check json.RawMessage) error {
 	t, err := services.TransactionTags.GetTagByTagId(mc.Web, mc.Uid, id)
 
 	if err != nil || t == nil {
+		if isAnswer(err) {
+			errfile.Expected("loading the tag to restore", err)
+		} else {
+			errfile.Caught("loading the tag to restore", err, errfile.F("tag_id", want.Id))
+		}
+
 		return Conflict("the tag was deleted since; nothing to restore", "tag %s no longer exists", want.Id)
 	}
 
@@ -3122,6 +3146,12 @@ func refInvRestoreTagGroup(mc *Ctx, payload, check json.RawMessage) error {
 	g, err := services.TransactionTagGroups.GetTagGroupByTagGroupId(mc.Web, mc.Uid, id)
 
 	if err != nil || g == nil {
+		if isAnswer(err) {
+			errfile.Expected("loading the tag group to restore", err)
+		} else {
+			errfile.Caught("loading the tag group to restore", err, errfile.F("tag_group_id", want.Id))
+		}
+
 		return Conflict("the tag group was deleted since; nothing to restore", "tag group %s no longer exists", want.Id)
 	}
 
@@ -3301,6 +3331,7 @@ func refInsightFull(mc *Ctx, id int64) (*refInsightView, string, error) {
 	resp, err := e.ToInsightsExplorerInfoResponse()
 
 	if err != nil {
+		errfile.Caught("decoding a saved insight's definition", err, errfile.F("insight_id", e.ExplorerId))
 		return nil, "", NewFail(CodeUpstreamError, "re-save the insight in the web UI", "the saved insight's definition is not valid JSON")
 	}
 
@@ -3431,6 +3462,7 @@ func refApplyInsightFields(mc *Ctx, f refInsightFields, hidden bool) error {
 	var data map[string]any
 
 	if err := json.Unmarshal([]byte(f.Data), &data); err != nil {
+		errfile.Caught("decoding a stored insight definition", err, errfile.F("insight_id", f.Id))
 		return NewFail(CodeInternal, "read ~/T/ezbookkeeping/error.err", "a stored insight definition is not JSON")
 	}
 
@@ -3497,6 +3529,7 @@ func refHandleInsightPatch(mc *Ctx) (any, error) {
 			data, err := json.Marshal(req.Definition)
 
 			if err != nil {
+				errfile.Expected("encoding the submitted insight definition", err)
 				return nil, Invalid("definition must be a JSON object", "definition cannot be encoded")
 			}
 
@@ -3556,6 +3589,12 @@ func refInvRestoreInsight(mc *Ctx, payload, check json.RawMessage) error {
 	e, err := services.InsightsExplorers.GetExplorationByExplorationId(mc.Web, mc.Uid, id)
 
 	if err != nil || e == nil {
+		if isAnswer(err) {
+			errfile.Expected("loading the insight to restore", err)
+		} else {
+			errfile.Caught("loading the insight to restore", err, errfile.F("insight_id", want.Id))
+		}
+
 		return Conflict("the insight was deleted since; nothing to restore", "insight %s no longer exists", want.Id)
 	}
 
@@ -3730,6 +3769,7 @@ func refFrequencyTokens(raw json.RawMessage) ([]string, error) {
 
 	if strings.HasPrefix(s, "[") {
 		if err := json.Unmarshal(raw, &items); err != nil {
+			errfile.Expected("parsing the frequency_value array", err)
 			return nil, Invalid("frequency_value is a number, a comma-separated string, or an array", "frequency_value is malformed")
 		}
 	} else {
@@ -3742,6 +3782,7 @@ func refFrequencyTokens(raw json.RawMessage) ([]string, error) {
 		var f refFlex
 
 		if err := json.Unmarshal(it, &f); err != nil {
+			errfile.Expected("parsing a frequency_value item", err)
 			return nil, Invalid("frequency_value items are numbers or strings", "frequency_value holds %s", string(it))
 		}
 
@@ -3815,6 +3856,7 @@ func refParseFrequency(ft models.TransactionScheduleFrequencyType, raw json.RawM
 			n, err := strconv.Atoi(t)
 
 			if err != nil || n < 0 || n > 6 {
+				errfile.Expected("parsing a weekday token", err)
 				return "", nil, Invalid("weekly takes weekdays: sun..sat, or 0-6 with Sunday 0", "%q is not a weekday", t)
 			}
 
@@ -3825,6 +3867,7 @@ func refParseFrequency(ft models.TransactionScheduleFrequencyType, raw json.RawM
 			n, err := strconv.Atoi(t)
 
 			if err != nil || n == 0 || n > 31 || n < -31 {
+				errfile.Expected("parsing a day-of-month token", err)
 				return "", nil, Invalid("monthly takes days of the month: 1-31, or -1 for the last day (-2 the day before, …)", "%q is not a day of the month", t)
 			}
 
@@ -3844,6 +3887,7 @@ func refParseFrequency(ft models.TransactionScheduleFrequencyType, raw json.RawM
 			} else if n, err := strconv.Atoi(t); err == nil {
 				m, d = n/100, n%100
 			} else {
+				errfile.Expected("parsing a month-and-day token", err)
 				return "", nil, Invalid("yearly takes MM-DD dates (or MMDD numbers like 1225)", "%q is not a month and day", t)
 			}
 
@@ -3865,6 +3909,7 @@ func refParseFrequency(ft models.TransactionScheduleFrequencyType, raw json.RawM
 		n, err := strconv.Atoi(tokens[0])
 
 		if err != nil || n < 1 || n > 3660 {
+			errfile.Expected("parsing the every_n_days interval", err)
 			return "", nil, Invalid("the interval is a whole number of days, 1-3660", "%q is not an interval in days", tokens[0])
 		}
 
@@ -3967,6 +4012,7 @@ func refScheduleFiresAt(t *models.TransactionTemplate, txUnix int64) bool {
 		n, err := strconv.ParseInt(p, 10, 64)
 
 		if err != nil {
+			errfile.Warn("parsing a scheduled template's stored frequency", err, errfile.F("template_id", t.TemplateId))
 			return false // the cron skips a template whose frequency does not parse
 		}
 
@@ -4412,6 +4458,7 @@ func refApplyTemplateBody(spec *refTemplateSpec, body *refTemplateBody, lk *refL
 			tzLoc, err := time.LoadLocation(strings.TrimSpace(*body.Timezone))
 
 			if err != nil {
+				errfile.Expected("loading the submitted timezone", err)
 				return nil, Invalid("timezone is an IANA name like America/Los_Angeles", "unknown timezone %q", *body.Timezone)
 			}
 
@@ -5291,6 +5338,12 @@ func refInvRestoreTemplate(mc *Ctx, payload, check json.RawMessage) error {
 	t, err := services.TransactionTemplates.GetTemplateByTemplateId(mc.Web, mc.Uid, id)
 
 	if err != nil || t == nil {
+		if isAnswer(err) {
+			errfile.Expected("loading the template to restore", err)
+		} else {
+			errfile.Caught("loading the template to restore", err, errfile.F("template_id", want.Id))
+		}
+
 		return Conflict("the template was deleted since; nothing to restore", "template %s no longer exists", want.Id)
 	}
 

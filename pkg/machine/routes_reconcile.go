@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mayswind/ezbookkeeping/pkg/api"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
 	"github.com/mayswind/ezbookkeeping/pkg/services"
 )
@@ -650,6 +651,7 @@ func txnExecReconciledTime(mc *Ctx, payload json.RawMessage, check json.RawMessa
 	accountId, err := strconv.ParseInt(p.AccountId, 10, 64)
 
 	if err != nil {
+		errfile.Caught("parsing the account id stored in a reconciled-time journal entry", err)
 		return Conflict("the journal entry is damaged; it cannot be undone", "bad account id %q in journal", p.AccountId)
 	}
 

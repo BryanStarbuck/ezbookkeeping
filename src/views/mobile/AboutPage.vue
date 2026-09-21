@@ -166,6 +166,9 @@ import { useAboutPageBase } from '@/views/base/AboutPageBase.ts';
 
 import { isWebAuthnCompletelySupported } from '@/lib/webauthn.ts';
 import { getStringifiedServerSetting } from '@/lib/server_settings.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/AboutPage.vue');
 
 const { tt, getCurrentLanguageTag, getAllLanguageOptions } = useI18n();
 const { showAlert, showToast, openExternalUrl } = useI18nUIComponents();
@@ -233,7 +236,8 @@ function showDiagnosisInformation(): void {
 
     promises.push(isWebAuthnCompletelySupported().then(() => {
         supportsWebAuthn = true;
-    }).catch(() => {
+    }).catch(error => {
+        errors.expected('probing for WebAuthn support', error);
         supportsWebAuthn = false;
     }));
 
@@ -243,13 +247,15 @@ function showDiagnosisInformation(): void {
 
         promises.push(navigator.permissions.query({ name: 'clipboard-read' as PermissionName }).then(result => {
             hasClipboardPermission = result.state === 'granted';
-        }).catch(() => {
+        }).catch(error => {
+            errors.expected('querying the clipboard permission', error);
             hasClipboardPermission = false;
         }));
 
         promises.push(navigator.permissions.query({ name: 'geolocation' as PermissionName }).then(result => {
             hasGeolocationPermission = result.state === 'granted';
-        }).catch(() => {
+        }).catch(error => {
+            errors.expected('querying the geolocation permission', error);
             hasGeolocationPermission = false;
         }));
     }

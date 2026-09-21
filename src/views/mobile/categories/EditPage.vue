@@ -166,6 +166,9 @@ import { TransactionCategory } from '@/models/transaction_category.ts';
 
 import { getCategoryIconType } from '@/lib/icon.ts';
 import { generateRandomUUID } from '@/lib/misc.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/categories/EditPage.vue');
 
 const props = defineProps<{
     f7route: Router.Route;
@@ -216,6 +219,7 @@ function init(): void {
             category.value.fillFrom(response);
             loading.value = false;
         }).catch(error => {
+            errors.caught('loading the category', error);
             if (error.processed) {
                 loading.value = false;
             } else {
@@ -275,6 +279,7 @@ function save(): void {
 
         router.back();
     }).catch(error => {
+        errors.caught('saving the category', error);
         submitting.value = false;
         hideLoading();
 

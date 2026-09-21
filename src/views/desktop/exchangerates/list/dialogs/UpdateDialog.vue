@@ -81,6 +81,9 @@ import {
 import {
     mdiSwapVertical
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/exchangerates/list/dialogs/UpdateDialog.vue');
 
 interface UserCustomExchangeRateUpdateResponse {
     message: string;
@@ -138,6 +141,7 @@ function confirm(): void {
         resolveFunc?.({ message: 'You have updated exchange rate' });
         showState.value = false;
     }).catch(error => {
+        errors.caught('updating the custom exchange rate', error);
         submitting.value = false;
 
         if (!error.processed) {

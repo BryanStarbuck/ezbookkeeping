@@ -811,6 +811,9 @@ import {
     mdiTextBoxOutline,
     mdiTextBoxEditOutline
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/transactions/ListPage.vue');
 
 interface TransactionListProps {
     initPageType?: string;
@@ -1306,6 +1309,7 @@ function reload(force: boolean, init: boolean): void {
             snackbar.value?.showMessage('Data has been updated');
         }
     }).catch(error => {
+        errors.caught('loading the transaction list', error);
         loading.value = false;
         currentPageTransactions.value = [];
         totalCount.value = 1;
@@ -1656,6 +1660,7 @@ function add(template?: TransactionTemplate, autoRecognizeClipboardText?: string
 
         reload(false, false);
     }).catch(error => {
+        errors.expected('opening the edit dialog', error);
         if (error) {
             snackbar.value?.showError(error);
         }
@@ -1700,6 +1705,7 @@ function addByRecognizingImage(): void {
 
             reload(false, false);
         }).catch(error => {
+            errors.expected('opening the edit dialog', error);
             if (error) {
                 snackbar.value?.showError(error);
             }
@@ -1711,6 +1717,7 @@ function importTransaction(): void {
     importDialog.value?.open().then(() => {
         reload(false, false);
     }).catch(error => {
+        errors.expected('opening the import dialog', error);
         if (error) {
             snackbar.value?.showError(error);
         }
@@ -1741,6 +1748,7 @@ function exportTransactions(fileExtension: string): void {
         startDownloadFile(exportFileName, data);
         exportingData.value = false;
     }).catch(error => {
+        errors.caught('exporting the user data', error);
         exportingData.value = false;
 
         if (!error.processed) {
@@ -1760,6 +1768,7 @@ function show(transaction: Transaction): void {
 
         reload(false, false);
     }).catch(error => {
+        errors.expected('opening the edit dialog', error);
         if (error) {
             snackbar.value?.showError(error);
         }

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 )
 
 // UserFeatureRestrictions represents all the restrictions of user features
@@ -59,6 +61,7 @@ func ParseUserFeatureRestrictions(featureRestrictions string) UserFeatureRestric
 		value, err := strconv.ParseInt(typeValues[i], 10, 64)
 
 		if err != nil {
+			errfile.Expected("parsing a user feature restriction type value", err)
 			continue
 		}
 

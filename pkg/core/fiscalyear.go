@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 )
 
@@ -63,6 +64,7 @@ func (f FiscalYearStart) String() string {
 	month, day, err := f.GetMonthDay()
 
 	if err != nil {
+		errfile.Expected("formatting the fiscal year start", err)
 		return "Invalid"
 	}
 

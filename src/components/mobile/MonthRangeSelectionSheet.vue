@@ -39,6 +39,9 @@ import { useEnvironmentsStore } from '@/stores/environment.ts';
 import { type TextualYearMonth } from '@/core/datetime.ts';
 
 import { getYear0BasedMonthObjectFromString } from '@/lib/datetime.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/components/mobile/MonthRangeSelectionSheet.vue');
 
 const props = defineProps<CommonMonthRangeSelectionProps>();
 const emit = defineEmits<{
@@ -64,6 +67,7 @@ function confirm(): void {
 
         emit('dateRange:change', finalMonthRange.minYearMonth, finalMonthRange.maxYearMonth);
     } catch (ex: unknown) {
+        errors.expected('validating the chosen month range', ex);
         if (ex instanceof Error) {
             showToast(ex.message);
         }

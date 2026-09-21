@@ -1,0 +1,140 @@
+{
+  "tool": "ezb_scan_statements",
+  "args": {},
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_scan_statements",
+    "data": {
+      "scan": {
+        "accounts": [
+          {
+            "account": "Savings_x5520",
+            "account_key": "acme_llc/Meridian/5520",
+            "duplicate_scans": [],
+            "entity": "acme_llc",
+            "first": "2025-09",
+            "institution": "Meridian",
+            "last": "2025-09",
+            "last4": "5520",
+            "missing_months": [],
+            "path": "bank/acme_llc/Meridian/Savings_x5520",
+            "statements": 1,
+            "undated": [],
+            "unusable": [],
+            "warnings": [],
+            "years": [
+              {
+                "months": [
+                  {
+                    "month": "2025-09",
+                    "statements": 1
+                  }
+                ],
+                "statements": 1,
+                "year": "2025"
+              }
+            ]
+          },
+          {
+            "account": "Checking_x4021",
+            "account_key": "household/Northbank/4021",
+            "duplicate_scans": [],
+            "entity": "household",
+            "first": "2025-09",
+            "institution": "Northbank",
+            "last": "2025-10",
+            "last4": "4021",
+            "missing_months": [],
+            "path": "bank/household/Northbank/Checking_x4021",
+            "statements": 3,
+            "undated": [
+              "bank/household/Northbank/Checking_x4021/Checking_x4021_ALL"
+            ],
+            "unusable": [],
+            "warnings": [],
+            "years": [
+              {
+                "months": [
+                  {
+                    "month": "2025-09",
+                    "statements": 1
+                  },
+                  {
+                    "month": "2025-10",
+                    "statements": 1
+                  }
+                ],
+                "statements": 2,
+                "year": "2025"
+              }
+            ]
+          },
+          {
+            "account": "Card_x7734",
+            "account_key": "household/Northbank/7734",
+            "duplicate_scans": [],
+            "entity": "household",
+            "first": "2025-10",
+            "institution": "Northbank",
+            "last": "2025-10",
+            "last4": "7734",
+            "missing_months": [],
+            "path": "bank/household/Northbank/Card_x7734",
+            "statements": 1,
+            "undated": [],
+            "unusable": [],
+            "warnings": [],
+            "years": [
+              {
+                "months": [
+                  {
+                    "month": "2025-10",
+                    "statements": 1
+                  }
+                ],
+                "statements": 1,
+                "year": "2025"
+              }
+            ]
+          }
+        ],
+        "layout": "manifest",
+        "manifest_path": "import/accounts.csv",
+        "mode": "prepared",
+        "root": "{ROOT}",
+        "totals": {
+          "accounts": 3,
+          "duplicate_scans": 0,
+          "files": 6,
+          "importable": 5,
+          "missing_months": 0,
+          "statements": 5,
+          "unusable": 0
+        },
+        "unattributed": [],
+        "unclassified": []
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 3,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "description",
+        "comment",
+        "label",
+        "name",
+        "entity",
+        "institution"
+      ],
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

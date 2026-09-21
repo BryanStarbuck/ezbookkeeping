@@ -113,6 +113,9 @@ import { TransactionCategory } from '@/models/transaction_category.ts';
 import { isEquals } from '@/lib/common.ts';
 import { getCategoryIconType } from '@/lib/icon.ts';
 import { generateRandomUUID } from '@/lib/misc.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/categories/list/dialogs/EditDialog.vue');
 
 interface TransactionCategoryEditResponse {
     message: string;
@@ -173,6 +176,7 @@ function open(options: { id?: string; parentId?: string; type?: CategoryType; cu
             initCategory.value = TransactionCategory.of(response);
             loading.value = false;
         }).catch(error => {
+            errors.caught('loading the category to edit', error);
             loading.value = false;
             showState.value = false;
 
@@ -248,6 +252,7 @@ function save(): void {
         resolveFunc?.({ message });
         showState.value = false;
     }).catch(error => {
+        errors.caught('saving the category', error);
         submitting.value = false;
 
         if (!error.processed) {

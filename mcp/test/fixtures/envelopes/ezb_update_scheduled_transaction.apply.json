@@ -1,0 +1,74 @@
+{
+  "tool": "ezb_update_scheduled_transaction",
+  "args": {
+    "template_id": "3844013761132232704",
+    "frequency": "disabled",
+    "dry_run": false,
+    "confirm_token": "cf_fe0196b15e041eccd32bb600126c5f4a"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_update_scheduled_transaction",
+    "data": {
+      "changes": {
+        "update": 1
+      },
+      "dry_run": false,
+      "fingerprint": "sha256:3153cb3a71bd5eb4",
+      "journal_id": 15,
+      "result": {
+        "template": {
+          "categoryId": "3844013758582095880",
+          "categoryName": "Other",
+          "comment": "RENT",
+          "displayOrder": 1,
+          "hidden": false,
+          "hideAmount": false,
+          "id": "3844013761132232704",
+          "kind": "scheduled",
+          "name": "Rent",
+          "schedule": {
+            "describe": "paused",
+            "end": null,
+            "ended": false,
+            "frequency": "disabled",
+            "frequencyCode": 0,
+            "frequencyValue": "",
+            "nextOccurrence": null,
+            "paused": true,
+            "scheduledAtUtcMinutes": 0,
+            "start": "2026-10-01",
+            "utcOffset": 0
+          },
+          "sourceAccountId": "3844013758313660416",
+          "sourceAccountName": "Northbank Checking",
+          "sourceAmount": 240000,
+          "sourceCurrency": "USD",
+          "tagIds": [],
+          "tagNames": [],
+          "type": "expense",
+          "typeCode": 3
+        },
+        "updated": 1
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 3,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name"
+      ],
+      "dryRun": false,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

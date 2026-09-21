@@ -20,6 +20,7 @@ import (
 
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/app"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/client"
+	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/errfile"
 	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/render"
 )
 
@@ -573,6 +574,7 @@ func exRunMove(c *app.Ctx, kind wrKind) error {
 	n, err := c.Int("to-index", -1)
 
 	if err != nil || n < 0 {
+		errfile.Expected("parsing the --to-index flag", err)
 		return app.Usage("--to-index is a whole number, 0 or more", "")
 	}
 
@@ -935,6 +937,7 @@ func exBatchFile(raw json.RawMessage) (map[string]any, error) {
 	}
 
 	if err := json.Unmarshal(raw, &obj); err != nil || obj.Operations == nil {
+		errfile.Expected("parsing the typed batch operations", err)
 		return nil, fmt.Errorf(`expected [{"op":"POST /transactions","args":{…}}, …] or {"operations":[…]}`)
 	}
 
@@ -1162,6 +1165,7 @@ func exRunRows(c *app.Ctx) error {
 			n, err := c.Int(f, 0)
 
 			if err != nil || n < 0 {
+				errfile.Expected("parsing a paging flag", err)
 				return app.Usage("--"+f+" is a whole number", "")
 			}
 
@@ -1219,6 +1223,7 @@ func exRunRuns(c *app.Ctx) error {
 		n, err := c.Int("limit", 50)
 
 		if err != nil || n <= 0 {
+			errfile.Expected("parsing the --limit flag", err)
 			return app.Usage("--limit is a positive whole number", "")
 		}
 

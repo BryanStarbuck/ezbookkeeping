@@ -66,6 +66,9 @@ import { useAccountsStore } from '@/stores/account.ts';
 import { useTransactionsStore } from '@/stores/transaction.ts';
 
 import { Account } from '@/models/account.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/accounts/list/dialogs/MoveAllTransactionsDialog.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -100,6 +103,7 @@ function init(): void {
     }).then(() => {
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading the account list', error);
         loading.value = false;
 
         if (!error.processed) {
@@ -137,6 +141,7 @@ function confirm(): void {
         resolveFunc?.();
         showState.value = false;
     }).catch(error => {
+        errors.caught('moving all transactions between accounts', error);
         moving.value = false;
 
         if (!error.processed) {

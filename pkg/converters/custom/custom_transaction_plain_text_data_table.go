@@ -6,6 +6,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/converters/datatable"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -142,6 +143,7 @@ func (t *customPlainTextDataRowIterator) parseTransaction(ctx core.Context, user
 		dateTime, err := time.Parse(t.transactionDataTable.timeFormat, rowData[datatable.TRANSACTION_DATA_TABLE_TRANSACTION_TIME])
 
 		if err != nil {
+			errfile.Expected("parsing the transaction time of the imported row", err)
 			return nil, false, errs.ErrTransactionTimeInvalid
 		}
 
@@ -171,6 +173,7 @@ func (t *customPlainTextDataRowIterator) parseTransaction(ctx core.Context, user
 			timezone, err := time.LoadLocation(timezoneName)
 
 			if err != nil {
+				errfile.Expected("loading the timezone of the imported row", err)
 				return nil, false, errs.ErrTransactionTimeZoneInvalid
 			}
 
@@ -250,6 +253,7 @@ func (t *customPlainTextDataRowIterator) parseAmount(ctx core.Context, amountVal
 	amount, err := utils.ParseAmount(amountValue)
 
 	if err != nil {
+		errfile.Expected("parsing the amount of the imported row", err)
 		return "", errs.ErrAmountInvalid
 	}
 

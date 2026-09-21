@@ -1,0 +1,77 @@
+{
+  "tool": "ezb_add_scheduled_transaction",
+  "args": {
+    "name": "Rent",
+    "type": "expense",
+    "account_name": "Northbank Checking",
+    "amount": 240000,
+    "category_name": "Other",
+    "frequency": "monthly",
+    "frequency_value": [
+      1
+    ],
+    "start": "2026-10-01",
+    "comment": "RENT"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_add_scheduled_transaction",
+    "data": {
+      "changes": {
+        "create": 1
+      },
+      "confirm_token": "cf_d24d90fdabe7864e11e1b1a5678d7ac7",
+      "dry_run": true,
+      "expires_at": "2026-09-21T16:43:16Z",
+      "fingerprint": "sha256:e90075ae930c61d6",
+      "preview": {
+        "account": {
+          "currency": "USD",
+          "id": "3844013758313660416",
+          "name": "Northbank Checking"
+        },
+        "action": "create",
+        "amount": 240000,
+        "category": {
+          "id": "3844013758582095880",
+          "name": "Other"
+        },
+        "comment": "RENT",
+        "currency": "USD",
+        "hideAmount": false,
+        "kind": "scheduled",
+        "name": "Rent",
+        "schedule": {
+          "createdAt": "00:00 in the schedule's timezone",
+          "describe": "monthly on day 1",
+          "end": "",
+          "frequency": "monthly",
+          "frequencyValue": "1",
+          "start": "2026-10-01",
+          "utcOffset": 0
+        },
+        "tagIds": [],
+        "tagNames": null,
+        "type": "expense"
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name"
+      ],
+      "dryRun": true,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

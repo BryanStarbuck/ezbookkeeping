@@ -542,6 +542,9 @@ import {
     mdiExport,
     mdiDotsVertical
 } from '@mdi/js';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/statistics/TransactionPage.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 type TrendsChartType = InstanceType<typeof TrendsChart>;
@@ -847,6 +850,7 @@ function init(initProps: TransactionStatisticsProps): void {
         loading.value = false;
         initing.value = false;
     }).catch(error => {
+        errors.caught('loading the statistics page', error);
         loading.value = false;
         initing.value = false;
 
@@ -913,6 +917,7 @@ function reload(force: boolean): Promise<unknown> | null {
                 snackbar.value?.showMessage('Data has been updated');
             }
         }).catch(error => {
+            errors.caught('reloading the statistics', error);
             loading.value = false;
 
             if (!error.processed) {

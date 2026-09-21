@@ -1,0 +1,199 @@
+{
+  "tool": "ezb_list_import_fallout",
+  "args": {
+    "fallback_category_ids": [
+      "3844013758582095880",
+      "3844013758582095876"
+    ],
+    "start": "2020-01-01",
+    "end": "2026-12-31"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_list_import_fallout",
+    "data": {
+      "count": 6,
+      "importedRows": 6,
+      "months": [
+        "2025-09",
+        "2025-10"
+      ],
+      "provenance": {
+        "absentPeriodsAreOmitted": true,
+        "accountIds": [
+          "3844013760461144064",
+          "3844013758313660416",
+          "3844013760461144066",
+          "3844013758313660418",
+          "3844013760461144067",
+          "3844013758313660417",
+          "3844013760461144065"
+        ],
+        "accountsExplicit": false,
+        "amountUnit": "integer hundredths of the currency named beside each figure",
+        "convertedFiguresRounding": null,
+        "filters": {
+          "balanceModifications": "excluded",
+          "categoryIds": [],
+          "excludeCategoryIds": [],
+          "fallbackCategoriesFrom": "argument",
+          "fallbackCategoryIds": [
+            "3844013758582095880",
+            "3844013758582095876"
+          ],
+          "includeHiddenAccounts": true,
+          "includeTransfers": false,
+          "limit": 200,
+          "runId": "",
+          "tagFilter": "",
+          "useTransactionTimezone": false
+        },
+        "hiddenAccountsExcluded": [],
+        "notes": [
+          "rows are listed while they are still in a fallback category: re-categorising a row removes it from this report"
+        ],
+        "range": {
+          "end": "2026-12-31",
+          "endUnix": 1798761599,
+          "start": "2020-01-01",
+          "startUnix": 1577836800,
+          "timezone": "UTC"
+        },
+        "rates": [],
+        "rowCount": 10,
+        "signConvention": "signed: money in is positive, money out is negative",
+        "timezone": "UTC",
+        "upstream": [
+          "GET /api/v1/accounts/list.json",
+          "GET /api/v1/transaction/categories/list.json",
+          "GET /api/v1/transactions/list/all.json",
+          "machine_import_record"
+        ]
+      },
+      "rows": [
+        {
+          "accountId": "3844013760461144066",
+          "accountKey": "household/Northbank/4021",
+          "amount": -12000,
+          "categoryId": "3844013758582095880",
+          "comment": "Utility Example",
+          "currency": "USD",
+          "date": "2025-10-15",
+          "runId": "run_20260921T163316Z_aadc801b",
+          "sourceFile": "bank/household/Northbank/Checking_x4021/Checking_x4021_ALL.ofx",
+          "transactionId": "3844013760595361799"
+        },
+        {
+          "accountId": "3844013760461144066",
+          "accountKey": "household/Northbank/4021",
+          "amount": -4217,
+          "categoryId": "3844013758582095880",
+          "comment": "Grocer Mart",
+          "currency": "USD",
+          "date": "2025-10-02",
+          "runId": "run_20260921T163316Z_aadc801b",
+          "sourceFile": "bank/household/Northbank/Checking_x4021/Checking_x4021_ALL.ofx",
+          "transactionId": "3844013760595361798"
+        },
+        {
+          "accountId": "3844013760461144066",
+          "accountKey": "household/Northbank/4021",
+          "amount": -30000,
+          "categoryId": "3844013758582095880",
+          "comment": "Card Payment Northbank",
+          "currency": "USD",
+          "date": "2025-09-20",
+          "runId": "run_20260921T163316Z_aadc801b",
+          "sourceFile": "bank/household/Northbank/Checking_x4021/Checking_x4021_ALL.ofx",
+          "transactionId": "3844013760595361797"
+        },
+        {
+          "accountId": "3844013760461144066",
+          "accountKey": "household/Northbank/4021",
+          "amount": 250000,
+          "categoryId": "3844013758582095876",
+          "comment": "Payroll Example Corp",
+          "currency": "USD",
+          "date": "2025-09-05",
+          "runId": "run_20260921T163316Z_aadc801b",
+          "sourceFile": "bank/household/Northbank/Checking_x4021/Checking_x4021_ALL.ofx",
+          "transactionId": "3844013760595361796"
+        },
+        {
+          "accountId": "3844013760461144066",
+          "accountKey": "household/Northbank/4021",
+          "amount": -500,
+          "categoryId": "3844013758582095880",
+          "comment": "Corner Coffee",
+          "currency": "USD",
+          "date": "2025-09-03",
+          "runId": "run_20260921T163316Z_aadc801b",
+          "sourceFile": "bank/household/Northbank/Checking_x4021/Checking_x4021_ALL.ofx",
+          "transactionId": "3844013760595361795"
+        },
+        {
+          "accountId": "3844013760461144066",
+          "accountKey": "household/Northbank/4021",
+          "amount": -500,
+          "categoryId": "3844013758582095880",
+          "comment": "Corner Coffee",
+          "currency": "USD",
+          "date": "2025-09-03",
+          "runId": "run_20260921T163316Z_aadc801b",
+          "sourceFile": "bank/household/Northbank/Checking_x4021/Checking_x4021_ALL.ofx",
+          "transactionId": "3844013760595361794"
+        }
+      ],
+      "runId": "",
+      "series": [
+        {
+          "count": 6,
+          "currency": "USD",
+          "id": "3844013760461144066",
+          "key": "3844013760461144066",
+          "kind": "account",
+          "label": "Household · Northbank Checking ••4021",
+          "points": [
+            {
+              "amount": 219000,
+              "period": "2025-09"
+            },
+            {
+              "amount": -16217,
+              "period": "2025-10"
+            }
+          ],
+          "total": 202783
+        }
+      ],
+      "totals": [
+        {
+          "amount": 202783,
+          "currency": "USD"
+        }
+      ],
+      "unconverted": []
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "label",
+        "name",
+        "comment",
+        "variants",
+        "text"
+      ],
+      "composed": true,
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

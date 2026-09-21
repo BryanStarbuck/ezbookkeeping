@@ -1,0 +1,51 @@
+{
+  "tool": "ezb_remove_transaction_tags",
+  "args": {
+    "ids": [
+      "3844013758447878147"
+    ],
+    "tag_ids": [
+      "3844013758716313600"
+    ],
+    "dry_run": false,
+    "confirm_token": "cf_ea69ac9eb19973663e92ff9f5467b063"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_remove_transaction_tags",
+    "data": {
+      "changes": {
+        "unchanged": 0,
+        "update": 1
+      },
+      "dry_run": false,
+      "fingerprint": "sha256:cf0d46f97ce7a821",
+      "journal_id": 8,
+      "result": {
+        "ids": [
+          "3844013758447878147"
+        ],
+        "updated": 1
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name"
+      ],
+      "composed": true,
+      "dryRun": false,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

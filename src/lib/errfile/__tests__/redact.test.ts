@@ -66,7 +66,7 @@ describe('redact (§12, M10)', () => {
 
     it('rewrites a statements-root path and leaves other paths alone (§12.7)', () => {
         setStatementsRoot('/home/operator/private/bank_statements/');
-        expect(rewriteStatementsPaths('open /home/operator/private/bank_statements/2026/chase/2026-03.ofx: no such file')).toBe('open <statements>/…/2026-03.ofx: no such file');
+        expect(rewriteStatementsPaths('open /home/operator/private/bank_statements/2026/northbank/2026-03.ofx: no such file')).toBe('open <statements>/…/2026-03.ofx: no such file');
         expect(rewriteStatementsPaths('open /home/operator/other/file.txt: no such file')).toBe('open /home/operator/other/file.txt: no such file');
         expect(rewriteStatementsPaths('listing /home/operator/private/bank_statements')).toBe('listing <statements>');
         setStatementsRoot('');

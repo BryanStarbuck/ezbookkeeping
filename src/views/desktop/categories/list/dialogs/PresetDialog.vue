@@ -67,6 +67,9 @@ import { categorizedArrayToPlainArray } from '@/lib/common.ts';
 import { getCategoryIconType } from '@/lib/icon.ts';
 import { localizedPresetCategoriesToTransactionCategoryCreateWithSubCategories } from '@/lib/category.ts';
 import { focusParentWhenClicked } from '@/lib/ui/desktop.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/categories/list/dialogs/PresetDialog.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -125,6 +128,7 @@ function save(): void {
             message: 'You have added preset categories'
         });
     }).catch(error => {
+        errors.caught('adding the preset categories', error);
         submitting.value = false;
 
         if (!error.processed) {

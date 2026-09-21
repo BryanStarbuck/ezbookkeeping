@@ -217,6 +217,9 @@ import {
 } from '@/lib/server_settings.ts';
 import { getDesktopVersionPath } from '@/lib/version.ts';
 import { useI18nUIComponents, showLoading, hideLoading, isModalShowing } from '@/lib/ui/mobile.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/LoginPage.vue');
 
 const props = defineProps<{
     f7router: Router.Router;
@@ -311,6 +314,7 @@ function login(): void {
         doAfterLogin(authResponse);
         router.refreshPage();
     }).catch(error => {
+        errors.caught('logging in', error);
         loggingInByPassword.value = false;
         hideLoading();
 
@@ -371,6 +375,7 @@ function verify(): void {
         show2faSheet.value = false;
         router.refreshPage();
     }).catch(error => {
+        errors.caught('verifying the two-factor passcode', error);
         verifying.value = false;
         hideLoading();
 
@@ -398,6 +403,7 @@ function requestResetPassword(): void {
         showToast('Password reset email has been sent');
         showForgetPasswordSheet.value = false;
     }).catch(error => {
+        errors.caught('requesting a password reset', error);
         requestingForgetPassword.value = false;
         hideLoading();
 
@@ -426,6 +432,7 @@ function requestResendVerifyEmail(): void {
         showToast('Validation email has been sent');
         showVerifyEmailSheet.value = false;
     }).catch(error => {
+        errors.caught('resending the verification email', error);
         requestingResendVerifyEmail.value = false;
         hideLoading();
 

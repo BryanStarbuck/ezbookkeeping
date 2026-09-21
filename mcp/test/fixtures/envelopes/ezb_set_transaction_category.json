@@ -1,0 +1,34 @@
+{
+  "tool": "ezb_set_transaction_category",
+  "args": {
+    "filter": {
+      "keyword": "ACME HARDWARE",
+      "type": "expense"
+    },
+    "category_name": "Home Repair",
+    "max_changes": 1
+  },
+  "envelope": {
+    "ok": false,
+    "tool": "ezb_set_transaction_category",
+    "error": {
+      "code": "too_many_changes",
+      "message": "2 changes would be made; the ceiling is 1.",
+      "hint": "raise max_changes deliberately, or narrow the selection",
+      "details": {
+        "changes": {
+          "unchanged": 0,
+          "update": 2
+        },
+        "max_changes": 1,
+        "would_change": 2
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16.735Z",
+      "tookMs": 2
+    }
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "tool": "ezb_list_missing_statements",
+  "args": {},
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_list_missing_statements",
+    "data": {
+      "accounts": [
+        {
+          "account": "Savings_x5520",
+          "account_key": "acme_llc/Meridian/5520",
+          "entity": "acme_llc",
+          "first": "2025-09",
+          "institution": "Meridian",
+          "last": "2025-09",
+          "manifest_first": "2025-09",
+          "manifest_last": "2025-09",
+          "missing": [],
+          "path": "bank/acme_llc/Meridian/Savings_x5520",
+          "present": [
+            "2025-09"
+          ],
+          "source": "statements"
+        },
+        {
+          "account": "Checking_x4021",
+          "account_key": "household/Northbank/4021",
+          "entity": "household",
+          "first": "2025-09",
+          "institution": "Northbank",
+          "last": "2025-10",
+          "manifest_first": "2025-09",
+          "manifest_last": "2025-10",
+          "missing": [],
+          "path": "bank/household/Northbank/Checking_x4021",
+          "present": [
+            "2025-09",
+            "2025-10"
+          ],
+          "source": "statements"
+        },
+        {
+          "account": "Card_x7734",
+          "account_key": "household/Northbank/7734",
+          "entity": "household",
+          "first": "2025-10",
+          "institution": "Northbank",
+          "last": "2025-10",
+          "manifest_first": "2025-10",
+          "manifest_last": "2025-10",
+          "missing": [],
+          "path": "bank/household/Northbank/Card_x7734",
+          "present": [
+            "2025-10"
+          ],
+          "source": "statements"
+        }
+      ],
+      "root": "{ROOT}",
+      "totals": {
+        "accounts": 3,
+        "missing_months": 0
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "description",
+        "comment",
+        "label",
+        "name",
+        "entity",
+        "institution"
+      ],
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

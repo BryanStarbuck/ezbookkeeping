@@ -10,8 +10,6 @@ import { DATA_CAP, RECORD_CAP, capMiddle, stripControlChars } from './describe.j
 
 export type ErrorLevel = 'WARN' | 'ERROR' | 'FATAL' | 'EXPECTED';
 
-export const LEVELS: readonly ErrorLevel[] = ['WARN', 'ERROR', 'FATAL', 'EXPECTED'];
-
 /** A redacted data block: allowlisted primitives only (§12). */
 export type RedactedData = Record<string, string | number | boolean | null>;
 

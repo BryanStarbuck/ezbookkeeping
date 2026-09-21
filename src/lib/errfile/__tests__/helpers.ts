@@ -11,7 +11,6 @@ export function memorySink(app = 'test', verbose = false): MemorySink {
     const records: ErrorRecord[] = [];
     return {
         app,
-        echo: false,
         verbose,
         records,
         write(record) {

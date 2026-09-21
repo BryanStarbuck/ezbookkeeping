@@ -575,6 +575,9 @@ import {
 } from '@/lib/server_settings.ts';
 import { compressJpgImageByQuality } from '@/lib/ui/common.ts';
 import logger from '@/lib/logger.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/transactions/EditPage.vue');
 
 const props = defineProps<{
     f7route: Router.Route;
@@ -1135,6 +1138,7 @@ function save(afterAction: AfterSaveAction): void {
                     router.back();
                 }
             }).catch(error => {
+                errors.caught('saving the transaction', error);
                 submitting.value = false;
                 hideLoading();
 
@@ -1151,6 +1155,7 @@ function save(afterAction: AfterSaveAction): void {
 
                             showToast('Your editable transaction range has been set to All');
                         }).catch(error => {
+                            errors.caught('updating the transaction edit scope', error);
                             submitting.value = false;
                             hideLoading();
 
@@ -1193,6 +1198,7 @@ function save(afterAction: AfterSaveAction): void {
 
             router.back();
         }).catch(error => {
+            errors.caught('saving the template content', error);
             submitting.value = false;
             hideLoading();
 
@@ -1243,6 +1249,7 @@ function recognizeText(text: string): void {
         closeAllDialog();
         recognizing.value = false;
     }).catch(error => {
+        errors.caught('recognizing the transaction text', error);
         closeAllDialog();
         recognizing.value = false;
 
@@ -1386,6 +1393,7 @@ function uploadPicture(file: File): void {
         uploadingPicture.value = false;
         submitting.value = false;
     }).catch(error => {
+        errors.caught('compressing the transaction picture', error);
         uploadingPicture.value = false;
         submitting.value = false;
 
@@ -1413,6 +1421,7 @@ function viewOrRemovePicture(pictureInfo: TransactionPictureInfoBasicResponse): 
             removingPictureId.value = '';
             submitting.value = false;
         }).catch(error => {
+            errors.caught('removing the unused transaction picture', error);
             if (error.error && error.error.errorCode === KnownErrorCode.TransactionPictureNotFound) {
                 transaction.value.removePicture(pictureInfo);
             } else if (!error.processed) {

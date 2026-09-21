@@ -5,6 +5,7 @@ import (
 
 	"github.com/mayswind/ezbookkeeping/pkg/converters/datatable"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -138,6 +139,7 @@ func (t *qifTransactionDataRowIterator) parseTransaction(ctx core.Context, user 
 	amount, err := utils.ParseAmount(strings.ReplaceAll(qifTransaction.Amount, ",", "")) // trim thousands separator
 
 	if err != nil {
+		errfile.Expected("parsing the amount of a qif transaction", err)
 		return nil, errs.ErrAmountInvalid
 	}
 

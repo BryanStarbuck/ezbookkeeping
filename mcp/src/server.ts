@@ -107,7 +107,7 @@ export class McpServerHost {
       },
     );
 
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => this.handleListTools());
+    this.server.setRequestHandler(ListToolsRequestSchema, () => Promise.resolve(this.handleListTools()));
     this.server.setRequestHandler(CallToolRequestSchema, async request => this.handleCallTool(request.params.name, request.params.arguments ?? {}));
   }
 
@@ -194,7 +194,9 @@ export class McpServerHost {
     const next = this.#writeChain.then(fn, fn);
     this.#writeChain = next.then(
       () => undefined,
-      () => undefined,
+      (err: unknown) => {
+        errors.expected('settling the write chain', err); // the write's own catch already answered the model
+      },
     );
     return next;
   }

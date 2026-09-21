@@ -138,6 +138,9 @@ import { DESKTOP_OVERVIEW_WIDGET_DEFINITIONS } from '@/consts/overview_layout.ts
 
 import { isDefined, isArray, isString, isObjectEmpty, arrayItemToObjectField } from '@/lib/common.ts';
 import { cloneWidget } from '@/lib/overview_layout.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/overview/dialogs/WidgetSettingsDialog.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 
@@ -356,6 +359,7 @@ function open(value: DesktopOverviewWidgetLayout): Promise<DesktopOverviewWidget
         Promise.all(promises).then(() => {
             loading.value = false;
         }).catch(error => {
+            errors.caught('loading the widget settings', error);
             loading.value = false;
 
             if (!error.processed) {

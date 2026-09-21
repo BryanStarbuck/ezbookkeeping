@@ -257,8 +257,7 @@ export function installBrowserErrorFile(opts: BrowserErrorFileOptions): void {
 
     const sink: ErrorSink = {
         app,
-        echo: false, // §5.3: upstream's logger.ts already prints to the console
-        verbose: false,
+        verbose: false, // §5.3: no console echo either — upstream's logger.ts already prints there
         write(record) {
             if (!withinBudget()) {
                 return;

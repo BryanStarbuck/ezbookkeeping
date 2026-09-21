@@ -1,0 +1,53 @@
+{
+  "tool": "ezb_apply_reconcile",
+  "args": {
+    "account_name": "Meridian Savings",
+    "target_balance": 1100500,
+    "as_of": "2026-09-21",
+    "mark_reconciled": false,
+    "create_adjustment": true,
+    "adjustment_category_name": "Paycheck",
+    "dry_run": false,
+    "confirm_token": "cf_960a615f565aaf94b5fbd8cca1131f3f"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_apply_reconcile",
+    "data": {
+      "changes": {
+        "create": 1,
+        "update": 0
+      },
+      "dry_run": false,
+      "fingerprint": "sha256:6d98fb0e13415d16",
+      "journal_id": 17,
+      "result": {
+        "adjustmentId": "3844013760595361793",
+        "appBalance": 1100000,
+        "currency": "USD",
+        "difference": 500,
+        "reconciledAt": null,
+        "targetBalance": 1100500
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 4,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name"
+      ],
+      "composed": true,
+      "dryRun": false,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

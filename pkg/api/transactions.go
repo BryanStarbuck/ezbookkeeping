@@ -18,6 +18,7 @@ import (
 	"github.com/mayswind/ezbookkeeping/pkg/converters/datatable"
 	"github.com/mayswind/ezbookkeeping/pkg/core"
 	"github.com/mayswind/ezbookkeeping/pkg/duplicatechecker"
+	"github.com/mayswind/ezbookkeeping/pkg/errfile"
 	"github.com/mayswind/ezbookkeeping/pkg/errs"
 	"github.com/mayswind/ezbookkeeping/pkg/log"
 	"github.com/mayswind/ezbookkeeping/pkg/models"
@@ -769,6 +770,7 @@ func (a *TransactionsApi) TransactionAmountsHandler(c *core.WebContext) (any, *e
 		excludeAccountIds, err = utils.StringArrayToInt64Array(strings.Split(transactionAmountsReq.ExcludeAccountIds, ","))
 
 		if err != nil {
+			errfile.Expected("parsing the excluded account ids of the request", err)
 			return nil, errs.ErrAccountIdInvalid
 		}
 	}
@@ -777,6 +779,7 @@ func (a *TransactionsApi) TransactionAmountsHandler(c *core.WebContext) (any, *e
 		excludeCategoryIds, err = utils.StringArrayToInt64Array(strings.Split(transactionAmountsReq.ExcludeCategoryIds, ","))
 
 		if err != nil {
+			errfile.Expected("parsing the excluded category ids of the request", err)
 			return nil, errs.ErrTransactionCategoryIdInvalid
 		}
 	}
@@ -899,6 +902,7 @@ func (a *TransactionsApi) TransactionDailyAmountsHandler(c *core.WebContext) (an
 		excludeAccountIds, err = utils.StringArrayToInt64Array(strings.Split(transactionAmountsReq.ExcludeAccountIds, ","))
 
 		if err != nil {
+			errfile.Expected("parsing the excluded account ids of the request", err)
 			return nil, errs.ErrAccountIdInvalid
 		}
 	}
@@ -907,6 +911,7 @@ func (a *TransactionsApi) TransactionDailyAmountsHandler(c *core.WebContext) (an
 		excludeCategoryIds, err = utils.StringArrayToInt64Array(strings.Split(transactionAmountsReq.ExcludeCategoryIds, ","))
 
 		if err != nil {
+			errfile.Expected("parsing the excluded category ids of the request", err)
 			return nil, errs.ErrTransactionCategoryIdInvalid
 		}
 	}
@@ -1362,6 +1367,7 @@ func (a *TransactionsApi) TransactionModifyHandler(c *core.WebContext) (any, *er
 	newTransactionType, err := transactionModifyReq.Type.ToTransactionDbType()
 
 	if err != nil {
+		errfile.Expected("parsing the new transaction type of the request", err)
 		return nil, errs.ErrTransactionTypeInvalid
 	}
 

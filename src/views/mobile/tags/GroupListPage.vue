@@ -52,6 +52,9 @@ import { useI18nUIComponents, showLoading, hideLoading } from '@/lib/ui/mobile.t
 import { useTransactionTagsStore } from '@/stores/transactionTag.ts';
 
 import { TransactionTagGroup } from '@/models/transaction_tag_group.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/tags/GroupListPage.vue');
 
 const props = defineProps<{
     f7router: Router.Router;
@@ -89,6 +92,7 @@ function init(): void {
     }).then(() => {
         loading.value = false;
     }).catch(error => {
+        errors.caught('loading all tag groups', error);
         if (error.processed) {
             loading.value = false;
         } else {
@@ -112,6 +116,7 @@ function saveSortResult(): void {
 
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('updating the tag group display orders', error);
         displayOrderSaving.value = false;
         hideLoading();
 
@@ -137,6 +142,7 @@ function cancelSort(): void {
 
         displayOrderModified.value = false;
     }).catch(error => {
+        errors.caught('loading all tag groups', error);
         displayOrderSaving.value = false;
         hideLoading();
 
@@ -166,6 +172,7 @@ function onSort(event: { el: { id: string }, from: number, to: number }): void {
     }).then(() => {
         displayOrderModified.value = true;
     }).catch(error => {
+        errors.caught('changing the tag group display order', error);
         showToast(error.message || error);
     });
 }
@@ -173,6 +180,7 @@ function onSort(event: { el: { id: string }, from: number, to: number }): void {
 function onPageAfterIn(): void {
     if (transactionTagsStore.transactionTagGroupListStateInvalid && !loading.value) {
         transactionTagsStore.loadAllTagGroups({}).catch(error => {
+            errors.caught('reloading the tag groups', error);
             if (!error.processed) {
                 showToast(error.message || error);
             }

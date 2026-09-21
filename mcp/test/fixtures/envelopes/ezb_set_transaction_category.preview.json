@@ -1,0 +1,95 @@
+{
+  "tool": "ezb_set_transaction_category",
+  "args": {
+    "filter": {
+      "keyword": "ACME HARDWARE"
+    },
+    "category_name": "Home Repair"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_set_transaction_category",
+    "data": {
+      "changes": {
+        "unchanged": 0,
+        "update": 2
+      },
+      "confirm_token": "cf_cff063d01b09b5d7f316f888de04ea97",
+      "dry_run": true,
+      "expires_at": "2026-09-21T16:43:16Z",
+      "fingerprint": "sha256:0136c89684b0e4ab",
+      "preview": {
+        "categoryId": "3844013758582095879",
+        "categoryName": "Home > Home Repair",
+        "filter": {
+          "keyword": "ACME HARDWARE"
+        },
+        "rows": [
+          {
+            "categoryId": "3844013758582095880",
+            "categoryName": "Home > Other",
+            "changes": [
+              {
+                "field": "categoryId",
+                "from": "3844013758582095880",
+                "fromName": "Home > Other",
+                "to": "3844013758582095879",
+                "toName": "Home > Home Repair"
+              }
+            ],
+            "comment": "ACME HARDWARE",
+            "date": "2026-08-14",
+            "id": "3844013758447878154",
+            "sourceAccountId": "3844013758313660416",
+            "sourceAccountName": "Northbank Checking",
+            "sourceAmount": 7600,
+            "sourceCurrency": "USD",
+            "typeName": "expense"
+          },
+          {
+            "categoryId": "3844013758582095880",
+            "categoryName": "Home > Other",
+            "changes": [
+              {
+                "field": "categoryId",
+                "from": "3844013758582095880",
+                "fromName": "Home > Other",
+                "to": "3844013758582095879",
+                "toName": "Home > Home Repair"
+              }
+            ],
+            "comment": "ACME HARDWARE",
+            "date": "2026-07-15",
+            "id": "3844013758447878149",
+            "sourceAccountId": "3844013758313660416",
+            "sourceAccountName": "Northbank Checking",
+            "sourceAmount": 18900,
+            "sourceCurrency": "USD",
+            "typeName": "expense"
+          }
+        ],
+        "selected": 2,
+        "selectedBy": "filter"
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 2,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name"
+      ],
+      "composed": true,
+      "dryRun": true,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}

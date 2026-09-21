@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/BryanStarbuck/ezbookkeeping/cli/internal/errfile"
 )
 
 const rotateBytes = 8 << 20
@@ -23,6 +25,7 @@ func StateDir() string {
 	home, err := os.UserHomeDir()
 
 	if err != nil {
+		errfile.Expected("finding the home directory for the cli state dir", err)
 		return filepath.Join(os.TempDir(), "_ezbookkeeping")
 	}
 
@@ -30,11 +33,12 @@ func StateDir() string {
 }
 
 func write(file, level, format string, args ...any) {
-	defer func() { _ = recover() }()
+	defer errfile.RecoverNet("writing the cli log line")()
 
 	dir := StateDir()
 
 	if err := os.MkdirAll(dir, 0o700); err != nil {
+		errfile.Caught("creating the cli state directory", err)
 		return
 	}
 
@@ -44,6 +48,7 @@ func write(file, level, format string, args ...any) {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 
 	if err != nil {
+		errfile.Caught("opening the cli log file", err, errfile.F("file", file))
 		return
 	}
 
@@ -58,6 +63,7 @@ func rotate(path string) {
 	info, err := os.Stat(path)
 
 	if err != nil || info.Size() < rotateBytes {
+		errfile.Expected("checking the cli log file size before rotating", err)
 		return
 	}
 

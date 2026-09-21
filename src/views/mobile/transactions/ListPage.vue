@@ -712,6 +712,9 @@ import {
     transactionTypeToCategoryType
 } from '@/lib/category.ts';
 import { allTransactionPictures } from '@/lib/transaction.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/transactions/ListPage.vue');
 
 const props = defineProps<{
     f7route: Router.Route;
@@ -1057,6 +1060,7 @@ function reload(done?: () => void): void {
         loading.value = false;
         setTransactionMonthListHeights(true);
     }).catch(error => {
+        errors.caught('loading the transaction list', error);
         if (error.processed || done) {
             loading.value = false;
         }
@@ -1096,6 +1100,7 @@ function loadMore(autoExpand: boolean): void {
         loadingMore.value = false;
         setTransactionMonthListHeights(false);
     }).catch(error => {
+        errors.caught('loading more transactions', error);
         loadingMore.value = false;
 
         if (!error.processed) {
@@ -1494,6 +1499,7 @@ function remove(transaction: Transaction | null, confirm: boolean): void {
     }).then(() => {
         hideLoading();
     }).catch(error => {
+        errors.caught('deleting the transaction', error);
         hideLoading();
 
         if (!error.processed) {

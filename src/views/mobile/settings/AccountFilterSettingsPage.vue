@@ -160,6 +160,9 @@ import {
     isAccountOrSubAccountsAllChecked,
     isAccountOrSubAccountsHasButNotAllChecked
 } from '@/lib/account.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/settings/AccountFilterSettingsPage.vue');
 
 interface CollapseState {
     opened: boolean;
@@ -229,6 +232,7 @@ function init(): void {
             loadingError.value = 'Parameter Invalid';
         }
     }).catch(error => {
+        errors.caught('loading all accounts', error);
         if (error.processed) {
             loading.value = false;
         } else {

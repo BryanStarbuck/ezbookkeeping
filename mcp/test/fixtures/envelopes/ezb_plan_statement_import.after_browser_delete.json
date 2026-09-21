@@ -1,0 +1,297 @@
+{
+  "tool": "ezb_plan_statement_import",
+  "args": {
+    "fallback_category_ids": {
+      "expense": "3844013758582095880",
+      "income": "3844013758582095876"
+    }
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_plan_statement_import",
+    "data": {
+      "apply": "POST /machine/v1/ingest/apply with {\"confirm_token\": …, \"dry_run\": false, \"max_changes\": N}",
+      "changes": {
+        "create": 0,
+        "link": 0
+      },
+      "confirm_token": "cf_bc09e0d6ceb6ee2e1e19f693a2b32c7e",
+      "expires_at": "2026-09-21T16:43:17Z",
+      "fingerprint": "sha256:10a3aa2a9a086d5c",
+      "plan": {
+        "accounts": [
+          {
+            "accepted_matches": 0,
+            "accepted_transfers": 0,
+            "account_id": "3844013760461144066",
+            "account_key": "household/Northbank/4021",
+            "account_name": "Household · Northbank Checking ••4021",
+            "already_present": 5,
+            "already_present_deleted": 1,
+            "blocked": false,
+            "blocked_reasons": [],
+            "blocked_rows": 0,
+            "converter": "ofx",
+            "currency": "USD",
+            "currency_source": "manifest",
+            "entity": "household",
+            "files": 3,
+            "first": "2025-09-03",
+            "institution": "Northbank",
+            "kind": "checking",
+            "label": "Checking_x4021",
+            "last": "2025-10-15",
+            "last4": "4021",
+            "new": 0,
+            "path": "bank/household/Northbank/Checking_x4021",
+            "possible_matches": 0,
+            "reimport_deleted": 0,
+            "rows": {
+              "after_dedupe": 6,
+              "blocked_by_conflict": 0,
+              "collapsed": 0,
+              "out_of_range": 0,
+              "parsed": 12,
+              "skipped": 0,
+              "superseded": 6,
+              "with_bank_ids": 6,
+              "with_minted_ids": 0
+            },
+            "statements": {
+              "primary": 1,
+              "superseded": 2
+            },
+            "to_fallback": 0,
+            "transfer_candidates": 0,
+            "unmapped": 0,
+            "warnings": []
+          },
+          {
+            "accepted_matches": 0,
+            "accepted_transfers": 0,
+            "account_id": "3844013760461144067",
+            "account_key": "household/Northbank/7734",
+            "account_name": "Household · Northbank Card ••7734",
+            "already_present": 0,
+            "already_present_deleted": 0,
+            "blocked": true,
+            "blocked_reasons": [
+              "QIF files need a date order: set qif_date_order (ymd, mdy or dmy) in the manifest or the call; the plane never guesses it"
+            ],
+            "blocked_rows": 0,
+            "currency": "USD",
+            "currency_source": "manifest",
+            "entity": "household",
+            "files": 0,
+            "institution": "Northbank",
+            "kind": "card",
+            "label": "Card_x7734",
+            "last4": "7734",
+            "new": 0,
+            "path": "bank/household/Northbank/Card_x7734",
+            "possible_matches": 0,
+            "reimport_deleted": 0,
+            "rows": {
+              "after_dedupe": 0,
+              "blocked_by_conflict": 0,
+              "collapsed": 0,
+              "out_of_range": 0,
+              "parsed": 0,
+              "skipped": 0,
+              "superseded": 0,
+              "with_bank_ids": 0,
+              "with_minted_ids": 0
+            },
+            "statements": {},
+            "to_fallback": 0,
+            "transfer_candidates": 0,
+            "unmapped": 0,
+            "warnings": [
+              "1 statement(s) did not reconcile in the archive"
+            ]
+          },
+          {
+            "accepted_matches": 0,
+            "accepted_transfers": 0,
+            "account_id": "3844013760461144065",
+            "account_key": "acme_llc/Meridian/5520",
+            "account_name": "Acme LLC · Meridian Savings ••5520",
+            "already_present": 0,
+            "already_present_deleted": 0,
+            "blocked": true,
+            "blocked_reasons": [
+              "1 row(s) are in EUR but the account is in USD; rows are never converted on import — map a EUR account"
+            ],
+            "blocked_rows": 1,
+            "converter": "ezbookkeeping_csv",
+            "currency": "USD",
+            "currency_source": "map",
+            "entity": "acme_llc",
+            "files": 1,
+            "first": "2025-09-10",
+            "institution": "Meridian",
+            "kind": "savings",
+            "label": "Savings_x5520",
+            "last": "2025-09-10",
+            "last4": "5520",
+            "new": 0,
+            "path": "bank/acme_llc/Meridian/Savings_x5520",
+            "possible_matches": 0,
+            "reimport_deleted": 0,
+            "rows": {
+              "after_dedupe": 1,
+              "blocked_by_conflict": 0,
+              "collapsed": 0,
+              "out_of_range": 0,
+              "parsed": 1,
+              "skipped": 0,
+              "superseded": 0,
+              "with_bank_ids": 0,
+              "with_minted_ids": 1
+            },
+            "statements": {
+              "primary": 1
+            },
+            "to_fallback": 1,
+            "transfer_candidates": 0,
+            "unmapped": 1,
+            "warnings": [
+              "currency not stated; defaulted to the bound user's default currency USD"
+            ]
+          }
+        ],
+        "already_present_deleted": [
+          {
+            "account_key": "household/Northbank/4021",
+            "amount": -12000,
+            "currency": "USD",
+            "date": "2025-10-15",
+            "description": "Utility Example",
+            "import_id": "household/Northbank/4021|FITID:NB202510150001",
+            "transaction_id": "3844013760595361805",
+            "will_reimport": false
+          }
+        ],
+        "category_map": {},
+        "collapsed": [],
+        "conflicts": [],
+        "fallback_category_ids": {
+          "expense": "3844013758582095880",
+          "income": "3844013758582095876"
+        },
+        "kind": "statements",
+        "manifest_path": "import/accounts.csv",
+        "mode": "prepared",
+        "possible_matches": [],
+        "range": {},
+        "root": "{ROOT}",
+        "skipped": [],
+        "staging": ".ezbk-staging",
+        "statements": [
+          {
+            "account_key": "household/Northbank/4021",
+            "file": "bank/household/Northbank/Checking_x4021/2025/09/20250930-statement-4021.ofx",
+            "first": "2025-09-03",
+            "last": "2025-09-20",
+            "rows": 4,
+            "rows_used": 0,
+            "rule": "more_rows",
+            "verdict": "superseded",
+            "winner": "bank/household/Northbank/Checking_x4021/Checking_x4021_ALL.ofx"
+          },
+          {
+            "account_key": "household/Northbank/4021",
+            "file": "bank/household/Northbank/Checking_x4021/2025/10/20251031-statement-4021.ofx",
+            "first": "2025-10-02",
+            "last": "2025-10-15",
+            "rows": 2,
+            "rows_used": 0,
+            "rule": "more_rows",
+            "verdict": "superseded",
+            "winner": "bank/household/Northbank/Checking_x4021/Checking_x4021_ALL.ofx"
+          },
+          {
+            "account_key": "household/Northbank/4021",
+            "file": "bank/household/Northbank/Checking_x4021/Checking_x4021_ALL.ofx",
+            "first": "2025-09-03",
+            "last": "2025-10-15",
+            "rows": 6,
+            "rows_used": 6,
+            "verdict": "primary"
+          },
+          {
+            "account_key": "acme_llc/Meridian/5520",
+            "file": "bank/acme_llc/Meridian/Savings_x5520/2025/09/20250930-statement-5520.csv",
+            "first": "2025-09-10",
+            "last": "2025-09-10",
+            "rows": 1,
+            "rows_used": 1,
+            "verdict": "primary"
+          }
+        ],
+        "totals": {
+          "accepted_matches": 0,
+          "accepted_transfers": 0,
+          "accounts": 3,
+          "after_dedupe": 7,
+          "already_present": 5,
+          "already_present_deleted": 1,
+          "blocked_accounts": 2,
+          "blocked_by_conflict": 0,
+          "blocked_rows": 1,
+          "changes": 0,
+          "collapsed": 0,
+          "conflicts": 0,
+          "creates": 0,
+          "links": 0,
+          "new": 0,
+          "out_of_range": 0,
+          "parsed": 13,
+          "possible_matches": 0,
+          "reimport_deleted": 0,
+          "skipped": 0,
+          "superseded_rows": 6,
+          "to_fallback": 1,
+          "transfer_candidates": 0,
+          "unmapped": 1
+        },
+        "transfer_candidates": [],
+        "unmapped": [
+          {
+            "accounts": [
+              "acme_llc/Meridian/5520"
+            ],
+            "fallback_category_id": "3844013758582095876",
+            "name": "Interest",
+            "reason": "no income category has this name",
+            "rows": 1,
+            "type": "income"
+          }
+        ],
+        "warnings": []
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:17Z",
+      "tookMs": 4,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "description",
+        "comment",
+        "name",
+        "account_name",
+        "text",
+        "current_name"
+      ],
+      "composed": true,
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

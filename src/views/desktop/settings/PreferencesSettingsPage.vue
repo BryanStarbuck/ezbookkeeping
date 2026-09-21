@@ -436,6 +436,9 @@ import { DEFAULT_PAGE_COUNTS } from '@/consts/page.ts';
 
 import { isDefaultDesktopOverviewLayout, parseDesktopOverviewLayout } from '@/lib/overview_layout.ts';
 import { getSystemTheme } from '@/lib/ui/common.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/desktop/settings/PreferencesSettingsPage.vue');
 
 type SnackBarType = InstanceType<typeof SnackBar>;
 type ChartColorSchemeDialogType = InstanceType<typeof ChartColorSchemeDialog>;
@@ -515,7 +518,8 @@ const currentTheme = computed<string>({
 const desktopOverviewPageLayoutDisplayContent = computed(() => {
     try {
         return tt(isDefaultDesktopOverviewLayout(parseDesktopOverviewLayout(settingsStore.appSettings.desktopOverviewPageLayout)) ? 'Default' : 'Custom');
-    } catch {
+    } catch (e) {
+        errors.expected('parsing the saved overview page layout', e);
         return tt('Custom');
     }
 });
@@ -559,6 +563,7 @@ function init(): void {
     }).then(() => {
         loadingAccounts.value = false;
     }).catch(error => {
+        errors.caught('loading all accounts', error);
         loadingAccounts.value = false;
 
         if (!error.processed) {
@@ -571,6 +576,7 @@ function init(): void {
     }).then(() => {
         loadingTransactionCategories.value = false;
     }).catch(error => {
+        errors.caught('loading all categories', error);
         loadingTransactionCategories.value = false;
 
         if (!error.processed) {

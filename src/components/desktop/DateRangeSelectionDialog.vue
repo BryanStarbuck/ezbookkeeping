@@ -41,6 +41,9 @@ import { useI18n } from '@/locales/helpers.ts';
 import { type CommonDateRangeSelectionProps, useDateRangeSelectionBase } from '@/components/base/DateRangeSelectionBase.ts';
 
 import { ThemeType } from '@/core/theme.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/components/desktop/DateRangeSelectionDialog.vue');
 
 interface DesktopDateRangeSelectionProps extends CommonDateRangeSelectionProps {
     persistent?: boolean;
@@ -81,6 +84,7 @@ function confirm(): void {
 
         emit('dateRange:change', finalDateRange.minUnixTime, finalDateRange.maxUnixTime);
     } catch (ex: unknown) {
+        errors.expected('validating the chosen date range', ex);
         if (ex instanceof Error) {
             emit('error', ex.message);
         }

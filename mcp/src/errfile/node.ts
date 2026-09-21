@@ -158,7 +158,6 @@ export function installNodeErrorFile(opts: NodeErrorFileOptions): NodeErrorFile 
 
     const sink: ErrorSink = {
         app: opts.app,
-        echo: false, // the echo below goes to stderr explicitly; core's console echo stays off
         verbose: readEnv('EZBK_ERROR_FILE_VERBOSE') === '1',
         write: record => {
             const line = formatRecord(record);

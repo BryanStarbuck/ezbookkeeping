@@ -1,0 +1,93 @@
+{
+  "tool": "ezb_list_transactions",
+  "args": {
+    "account_names": [
+      "Household · Northbank Checking ••4021"
+    ],
+    "limit": 1
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_list_transactions",
+    "data": {
+      "count": 1,
+      "filter": {
+        "accountIds": [
+          "3844013760461144066"
+        ]
+      },
+      "nextCursor": "1759431600001",
+      "order": "-time",
+      "transactions": [
+        {
+          "category": {
+            "color": "000000",
+            "comment": "",
+            "displayOrder": 2,
+            "hidden": false,
+            "icon": "1",
+            "iconType": 0,
+            "id": "3844013758582095880",
+            "name": "Other",
+            "parentId": "3844013758582095874",
+            "type": 2
+          },
+          "categoryId": "3844013758582095880",
+          "comment": "Utility Example",
+          "date": "2025-10-15",
+          "editable": true,
+          "hideAmount": false,
+          "id": "3844013760595361805",
+          "sourceAccount": {
+            "balance": 202783,
+            "category": 2,
+            "color": "000000",
+            "comment": "",
+            "currency": "USD",
+            "displayOrder": 2,
+            "hidden": false,
+            "icon": "100",
+            "iconType": 0,
+            "id": "3844013760461144066",
+            "isAsset": true,
+            "name": "Household · Northbank Checking ••4021",
+            "parentId": "0",
+            "type": 1
+          },
+          "sourceAccountId": "3844013760461144066",
+          "sourceAmount": 12000,
+          "sourceCurrency": "USD",
+          "tagIds": [],
+          "time": 1760554800,
+          "timeSequenceId": "1760554800001",
+          "type": 3,
+          "typeName": "expense",
+          "utcOffset": -420
+        }
+      ]
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:16Z",
+      "tookMs": 1,
+      "truncated": true,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "limitApplied": 1,
+      "untrusted": [
+        "comment",
+        "name",
+        "sourceAccount.name",
+        "destinationAccount.name",
+        "category.name",
+        "tags.name"
+      ],
+      "composed": true,
+      "tier": "read",
+      "commit": ""
+    }
+  }
+}

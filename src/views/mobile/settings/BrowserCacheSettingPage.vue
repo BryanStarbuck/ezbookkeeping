@@ -130,6 +130,9 @@ import { useAppBrowserCacheSettingPageBase } from '@/views/base/settings/AppBrow
 import { findNameByValue } from '@/lib/common.ts';
 import { isMapProviderUseExternalSDK } from '@/lib/map/index.ts';
 import { getMapProvider, isMapDataFetchProxyEnabled } from '@/lib/server_settings.ts';
+import { errorFileFor } from '@/lib/errfile/index.ts';
+
+const errors = errorFileFor('src/views/mobile/settings/BrowserCacheSettingPage.vue');
 
 const { tt, formatVolumeToLocalizedNumerals } = useI18n();
 const { showConfirm } = useI18nUIComponents();
@@ -158,7 +161,8 @@ const showMoreActionSheet = ref<boolean>(false);
 function reloadCacheStatistics(done?: () => void): void {
     loadCacheStatistics(false).then(() => {
         done?.();
-    }).catch(() => {
+    }).catch(error => {
+        errors.caught('loading the browser cache statistics', error);
         done?.();
     });
 }

@@ -1,0 +1,42 @@
+{
+  "tool": "ezb_add_tag",
+  "args": {
+    "name": "Trip"
+  },
+  "envelope": {
+    "ok": true,
+    "tool": "ezb_add_tag",
+    "data": {
+      "changes": {
+        "create": 1
+      },
+      "confirm_token": "cf_8fc4f73b263204af7858e115a6265af1",
+      "dry_run": true,
+      "expires_at": "2026-09-21T16:43:15Z",
+      "fingerprint": "sha256:a108401c9d93046b",
+      "preview": {
+        "action": "create",
+        "groupId": "0",
+        "name": "Trip"
+      }
+    },
+    "meta": {
+      "app": "ezbookkeeping",
+      "target": "local",
+      "asOf": "2026-09-21T16:33:15Z",
+      "tookMs": 1,
+      "truncated": false,
+      "user": "operator",
+      "defaultCurrency": "USD",
+      "serverVersion": "",
+      "timezone": "UTC",
+      "untrusted": [
+        "comment",
+        "name"
+      ],
+      "dryRun": true,
+      "tier": "write",
+      "commit": ""
+    }
+  }
+}
