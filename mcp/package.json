@@ -1,0 +1,31 @@
+{
+  "name": "ezbookkeeping-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The ezbookkeeping MCP server (tools prefixed ezb_). Ours, never published. See pm/mcp.mdx.",
+  "type": "module",
+  "bin": {
+    "ezbookkeeping-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "node scripts/build-instructions.ts && tsc -p tsconfig.json && node scripts/stamp.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest --run",
+    "lint": "eslint .",
+    "probe": "node scripts/probe.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.2",
+    "eslint": "10.11.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.0",
+    "vitest": "5.0.1"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

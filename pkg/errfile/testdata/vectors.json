@@ -1,0 +1,788 @@
+{
+ "_comment": "Cross-language behaviour vectors for pkg/errfile (Go) and src/lib/errfile (TS). Synthetic data only. See pm/error_err.mdx section 15.4. Both test suites read this file; a change here is a spec change.",
+ "line_format": "[<ts>] [<LEVEL>] [<app>] [<where>] <doing> — <Type>: <message>( (<k>=<v> ...))?( {<k>=<v> ...})?( | cause: <Type>: <message>( (<k>=<v>))?)*  then stack lines each '    at <frame>'",
+ "paths": [
+  {
+   "name": "default",
+   "env": {
+    "HOME": "/home/operator"
+   },
+   "test": false,
+   "expect": "/home/operator/T/ezbookkeeping/error.err"
+  },
+  {
+   "name": "override wins",
+   "env": {
+    "HOME": "/home/operator",
+    "EZBK_ERROR_FILE": "/var/tmp/ezbk/error.err"
+   },
+   "test": false,
+   "expect": "/var/tmp/ezbk/error.err"
+  },
+  {
+   "name": "override wins even in tests",
+   "env": {
+    "HOME": "/home/operator",
+    "EZBK_ERROR_FILE": "/var/tmp/ezbk/error.err"
+   },
+   "test": true,
+   "expect": "/var/tmp/ezbk/error.err"
+  },
+  {
+   "name": "tests never write the real file",
+   "env": {
+    "HOME": "/home/operator",
+    "TMPDIR": "/tmp"
+   },
+   "test": true,
+   "uid": 501,
+   "expect": "/tmp/ezbookkeeping_test_501/error.err"
+  },
+  {
+   "name": "no home directory",
+   "env": {
+    "TMPDIR": "/tmp"
+   },
+   "test": false,
+   "uid": 501,
+   "expect": "/tmp/ezbookkeeping_501/error.err"
+  }
+ ],
+ "format": [
+  {
+   "name": "plain error with data",
+   "record": {
+    "ts": "2026-09-21T16:04:11.902Z",
+    "level": "ERROR",
+    "app": "server",
+    "where": "pkg/machine/routes_ingest.go:214",
+    "doing": "handling POST /machine/v1/statements/apply",
+    "error": {
+     "type": "*fs.PathError",
+     "message": "open <statements>/plan.json: permission denied",
+     "codes": [
+      [
+       "op",
+       "open"
+      ],
+      [
+       "errno",
+       "EACCES"
+      ]
+     ],
+     "cause": [
+      {
+       "type": "syscall.Errno",
+       "message": "permission denied",
+       "codes": []
+      }
+     ]
+    },
+    "data": [
+     [
+      "route",
+      "statements.apply"
+     ]
+    ],
+    "stack": [
+     "(*ingestApply).writePlan (pkg/machine/ingest_apply.go:412)",
+     "applyStatements (pkg/machine/routes_ingest.go:207)"
+    ]
+   },
+   "expect": "[2026-09-21T16:04:11.902Z] [ERROR] [server] [pkg/machine/routes_ingest.go:214] handling POST /machine/v1/statements/apply — *fs.PathError: open <statements>/plan.json: permission denied (op=open errno=EACCES) {route=statements.apply} | cause: syscall.Errno: permission denied\n    at (*ingestApply).writePlan (pkg/machine/ingest_apply.go:412)\n    at applyStatements (pkg/machine/routes_ingest.go:207)"
+  },
+  {
+   "name": "no data no stack no cause",
+   "record": {
+    "ts": "2026-09-21T16:04:11.902Z",
+    "level": "WARN",
+    "app": "ezbk",
+    "where": "cli/internal/client/client.go:88",
+    "doing": "probing the server",
+    "error": {
+     "type": "*net.OpError",
+     "message": "dial tcp 127.0.0.1:8080: connect: connection refused",
+     "codes": [
+      [
+       "errno",
+       "ECONNREFUSED"
+      ]
+     ],
+     "cause": []
+    },
+    "data": [],
+    "stack": []
+   },
+   "expect": "[2026-09-21T16:04:11.902Z] [WARN] [ezbk] [cli/internal/client/client.go:88] probing the server — *net.OpError: dial tcp 127.0.0.1:8080: connect: connection refused (errno=ECONNREFUSED)"
+  },
+  {
+   "name": "typescript style names and a two-deep cause chain",
+   "record": {
+    "ts": "2026-09-21T16:05:00.000Z",
+    "level": "ERROR",
+    "app": "web",
+    "where": "src/stores/transaction.ts",
+    "doing": "failed to load transaction list",
+    "error": {
+     "type": "AxiosError",
+     "message": "Request failed with status code 500",
+     "codes": [
+      [
+       "code",
+       "ERR_BAD_RESPONSE"
+      ]
+     ],
+     "cause": [
+      {
+       "type": "Error",
+       "message": "socket hang up",
+       "codes": []
+      },
+      {
+       "type": "Error",
+       "message": "ECONNRESET",
+       "codes": [
+        [
+         "code",
+         "ECONNRESET"
+        ]
+       ]
+      }
+     ]
+    },
+    "data": [
+     [
+      "edition",
+      "desktop"
+     ],
+     [
+      "via",
+      "server"
+     ]
+    ],
+    "stack": [
+     "loadTransactions (src/stores/transaction.ts:412:19)"
+    ]
+   },
+   "expect": "[2026-09-21T16:05:00.000Z] [ERROR] [web] [src/stores/transaction.ts] failed to load transaction list — AxiosError: Request failed with status code 500 (code=ERR_BAD_RESPONSE) {edition=desktop via=server} | cause: Error: socket hang up | cause: Error: ECONNRESET (code=ECONNRESET)\n    at loadTransactions (src/stores/transaction.ts:412:19)"
+  },
+  {
+   "name": "control characters cannot forge a header",
+   "record": {
+    "ts": "2026-09-21T16:06:00.000Z",
+    "level": "ERROR",
+    "app": "mcp",
+    "where": "mcp/src/server.ts",
+    "doing": "running ezb_net_worth",
+    "error": {
+     "type": "Error",
+     "message": "bad\n[FATAL] [server] forged\u0000line x",
+     "codes": [],
+     "cause": []
+    },
+    "data": [
+     [
+      "tool",
+      "ezb_net\u001fworth"
+     ]
+    ],
+    "stack": []
+   },
+   "expect": "[2026-09-21T16:06:00.000Z] [ERROR] [mcp] [mcp/src/server.ts] running ezb_net_worth — Error: bad [FATAL] [server] forged line x {tool=ezb_net worth}"
+  },
+  {
+   "name": "fatal level",
+   "record": {
+    "ts": "2026-09-21T16:07:00.000Z",
+    "level": "FATAL",
+    "app": "app-cli",
+    "where": "ezbookkeeping.go:58",
+    "doing": "running ezbookkeeping",
+    "error": {
+     "type": "*errors.errorString",
+     "message": "cannot open database",
+     "codes": [],
+     "cause": []
+    },
+    "data": [
+     [
+      "command",
+      "database"
+     ]
+    ],
+    "stack": []
+   },
+   "expect": "[2026-09-21T16:07:00.000Z] [FATAL] [app-cli] [ezbookkeeping.go:58] running ezbookkeeping — *errors.errorString: cannot open database {command=database}"
+  },
+  {
+   "name": "expected level only under verbose",
+   "record": {
+    "ts": "2026-09-21T16:08:00.000Z",
+    "level": "EXPECTED",
+    "app": "sw",
+    "where": "src/sw.ts",
+    "doing": "probing the cache",
+    "error": {
+     "type": "DOMException",
+     "message": "QuotaExceededError",
+     "codes": [],
+     "cause": []
+    },
+    "data": [],
+    "stack": []
+   },
+   "expect": "[2026-09-21T16:08:00.000Z] [EXPECTED] [sw] [src/sw.ts] probing the cache — DOMException: QuotaExceededError"
+  },
+  {
+   "name": "folded summary line",
+   "record": {
+    "ts": "2026-09-21T16:05:11.902Z",
+    "level": "ERROR",
+    "app": "web",
+    "where": "src/stores/transaction.ts",
+    "doing": "failed to load transaction list",
+    "fold": {
+     "count": 37,
+     "windowSeconds": 60,
+     "firstAt": "16:04:11"
+    },
+    "error": {
+     "type": "AxiosError",
+     "message": "Network Error",
+     "codes": [],
+     "cause": []
+    },
+    "data": [],
+    "stack": []
+   },
+   "expect": "[2026-09-21T16:05:11.902Z] [ERROR] [web] [src/stores/transaction.ts] failed to load transaction list — ×37 more in the previous 60s (first at 16:04:11): AxiosError: Network Error"
+  },
+  {
+   "name": "message cap cuts in the middle",
+   "record": {
+    "ts": "2026-09-21T16:09:00.000Z",
+    "level": "ERROR",
+    "app": "server",
+    "where": "pkg/x.go:1",
+    "doing": "d",
+    "error": {
+     "type": "Error",
+     "message": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxMIDDLEyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+     "codes": [],
+     "cause": []
+    },
+    "data": [],
+    "stack": []
+   },
+   "expect": "[2026-09-21T16:09:00.000Z] [ERROR] [server] [pkg/x.go:1] d — Error: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx …(416 chars cut)… yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+  },
+  {
+   "name": "stack keeps at most 12 frames",
+   "record": {
+    "ts": "2026-09-21T16:10:00.000Z",
+    "level": "ERROR",
+    "app": "server",
+    "where": "pkg/x.go:1",
+    "doing": "d",
+    "error": {
+     "type": "Error",
+     "message": "m",
+     "codes": [],
+     "cause": []
+    },
+    "data": [],
+    "stack": [
+     "f1 (pkg/x.go:1)",
+     "f2 (pkg/x.go:2)",
+     "f3 (pkg/x.go:3)",
+     "f4 (pkg/x.go:4)",
+     "f5 (pkg/x.go:5)",
+     "f6 (pkg/x.go:6)",
+     "f7 (pkg/x.go:7)",
+     "f8 (pkg/x.go:8)",
+     "f9 (pkg/x.go:9)",
+     "f10 (pkg/x.go:10)",
+     "f11 (pkg/x.go:11)",
+     "f12 (pkg/x.go:12)",
+     "f13 (pkg/x.go:13)",
+     "f14 (pkg/x.go:14)",
+     "f15 (pkg/x.go:15)"
+    ]
+   },
+   "expect": "[2026-09-21T16:10:00.000Z] [ERROR] [server] [pkg/x.go:1] d — Error: m\n    at f1 (pkg/x.go:1)\n    at f2 (pkg/x.go:2)\n    at f3 (pkg/x.go:3)\n    at f4 (pkg/x.go:4)\n    at f5 (pkg/x.go:5)\n    at f6 (pkg/x.go:6)\n    at f7 (pkg/x.go:7)\n    at f8 (pkg/x.go:8)\n    at f9 (pkg/x.go:9)\n    at f10 (pkg/x.go:10)\n    at f11 (pkg/x.go:11)\n    at f12 (pkg/x.go:12)"
+  },
+  {
+   "name": "cause chain stops at 5",
+   "record": {
+    "ts": "2026-09-21T16:11:00.000Z",
+    "level": "ERROR",
+    "app": "server",
+    "where": "pkg/x.go:1",
+    "doing": "d",
+    "error": {
+     "type": "Error",
+     "message": "top",
+     "codes": [],
+     "cause": [
+      {
+       "type": "Error",
+       "message": "c1",
+       "codes": []
+      },
+      {
+       "type": "Error",
+       "message": "c2",
+       "codes": []
+      },
+      {
+       "type": "Error",
+       "message": "c3",
+       "codes": []
+      },
+      {
+       "type": "Error",
+       "message": "c4",
+       "codes": []
+      },
+      {
+       "type": "Error",
+       "message": "c5",
+       "codes": []
+      },
+      {
+       "type": "Error",
+       "message": "c6",
+       "codes": []
+      },
+      {
+       "type": "Error",
+       "message": "c7",
+       "codes": []
+      }
+     ]
+    },
+    "data": [],
+    "stack": []
+   },
+   "expect": "[2026-09-21T16:11:00.000Z] [ERROR] [server] [pkg/x.go:1] d — Error: top | cause: Error: c1 | cause: Error: c2 | cause: Error: c3 | cause: Error: c4 | cause: Error: c5"
+  }
+ ],
+ "caps": {
+  "message": 2000,
+  "message_head": 1000,
+  "message_tail": 990,
+  "message_cut_marker": " …(N chars cut)… ",
+  "data": 1000,
+  "record": 8000,
+  "cause_depth": 5,
+  "join_members": 3,
+  "stack_frames": 12,
+  "fold_key_message": 300
+ },
+ "control_chars": [
+  {
+   "input": "a\nb",
+   "expect": "a b"
+  },
+  {
+   "input": "a\r\nb",
+   "expect": "a  b"
+  },
+  {
+   "input": "tab\there",
+   "expect": "tab here"
+  },
+  {
+   "input": "nul\u0000byte",
+   "expect": "nul byte"
+  },
+  {
+   "input": "delchar",
+   "expect": "del char"
+  },
+  {
+   "input": "ls ps end",
+   "expect": "ls ps end"
+  },
+  {
+   "input": "plain text stays",
+   "expect": "plain text stays"
+  }
+ ],
+ "redact": [
+  {
+   "name": "secret keys are redacted, case-insensitive",
+   "data": {
+    "password": "hunter2",
+    "Password": "x",
+    "api_key": "abc",
+    "X-Ezbk-Api-Key": "abc",
+    "token": "t",
+    "secret": "s",
+    "auth": "a",
+    "authorization": "b",
+    "cookie": "c",
+    "session": "d",
+    "signature": "e",
+    "credential": "f",
+    "bearer": "g",
+    "totp": "h",
+    "otp": "i",
+    "passcode": "j",
+    "sessionId": "k",
+    "userToken": "l"
+   },
+   "expect": {
+    "password": "[redacted]",
+    "Password": "[redacted]",
+    "api_key": "[redacted]",
+    "X-Ezbk-Api-Key": "[redacted]",
+    "token": "[redacted]",
+    "secret": "[redacted]",
+    "auth": "[redacted]",
+    "authorization": "[redacted]",
+    "cookie": "[redacted]",
+    "session": "[redacted]",
+    "signature": "[redacted]",
+    "credential": "[redacted]",
+    "bearer": "[redacted]",
+    "totp": "[redacted]",
+    "otp": "[redacted]",
+    "passcode": "[redacted]",
+    "sessionId": "[redacted]",
+    "userToken": "[redacted]"
+   }
+  },
+  {
+   "name": "ledger fields are refused",
+   "data": {
+    "amount": 12345,
+    "balance": -5,
+    "payee": "Northbank",
+    "comment": "lunch",
+    "note": "x",
+    "notes": "x",
+    "memo": "x",
+    "account_name": "Checking",
+    "accountName": "Checking",
+    "category_name": "Food",
+    "tag_name": "t",
+    "description": "d",
+    "statement": "s",
+    "iban": "GB00",
+    "card": "4021",
+    "number": "4021",
+    "imported_payee": "p"
+   },
+   "expect": {
+    "amount": "[ledger-field refused]",
+    "balance": "[ledger-field refused]",
+    "payee": "[ledger-field refused]",
+    "comment": "[ledger-field refused]",
+    "note": "[ledger-field refused]",
+    "notes": "[ledger-field refused]",
+    "memo": "[ledger-field refused]",
+    "account_name": "[ledger-field refused]",
+    "accountName": "[ledger-field refused]",
+    "category_name": "[ledger-field refused]",
+    "tag_name": "[ledger-field refused]",
+    "description": "[ledger-field refused]",
+    "statement": "[ledger-field refused]",
+    "iban": "[ledger-field refused]",
+    "card": "[ledger-field refused]",
+    "number": "[ledger-field refused]",
+    "imported_payee": "[ledger-field refused]"
+   }
+  },
+  {
+   "name": "allowed keys pass through",
+   "data": {
+    "account_id": "8790153498210304",
+    "transaction_id": 42,
+    "uid": 7,
+    "count": 3,
+    "ok": true,
+    "route": "accounts.list",
+    "verb": "accounts list",
+    "file": "2026-03.ofx",
+    "currency": "USD",
+    "code": "not_found",
+    "request_id": "abc123",
+    "edition": "desktop",
+    "hook": "mounted",
+    "tool": "ezb_whoami",
+    "command": "server run"
+   },
+   "expect": {
+    "account_id": "8790153498210304",
+    "transaction_id": 42,
+    "uid": 7,
+    "count": 3,
+    "ok": true,
+    "route": "accounts.list",
+    "verb": "accounts list",
+    "file": "2026-03.ofx",
+    "currency": "USD",
+    "code": "not_found",
+    "request_id": "abc123",
+    "edition": "desktop",
+    "hook": "mounted",
+    "tool": "ezb_whoami",
+    "command": "server run"
+   }
+  },
+  {
+   "name": "non-primitive values are stringified as their type",
+   "data": {
+    "obj": {
+     "a": 1
+    },
+    "arr": [
+     1,
+     2
+    ],
+    "nil": null
+   },
+   "expect": {
+    "obj": "[object]",
+    "arr": "[array]",
+    "nil": null
+   }
+  }
+ ],
+ "redact_urls": [
+  {
+   "input": "https://oauth.example.com/callback?code=abc123&state=xyz&next=/home",
+   "expect": "https://oauth.example.com/callback?code=[redacted]&state=[redacted]&next=/home"
+  },
+  {
+   "input": "https://rates.example.com/latest?api_key=k123&base=USD",
+   "expect": "https://rates.example.com/latest?api_key=[redacted]&base=USD"
+  },
+  {
+   "input": "http://127.0.0.1:8080/machine/v1/ping?token=t&key=k&sig=s&signature=g&password=p&secret=q&passcode=c",
+   "expect": "http://127.0.0.1:8080/machine/v1/ping?token=[redacted]&key=[redacted]&sig=[redacted]&signature=[redacted]&password=[redacted]&secret=[redacted]&passcode=[redacted]"
+  },
+  {
+   "input": "request failed: GET https://a.example/x?token=abc (status 500)",
+   "expect": "request failed: GET https://a.example/x?token=[redacted] (status 500)"
+  },
+  {
+   "input": "no url here",
+   "expect": "no url here"
+  }
+ ],
+ "statements_root": [
+  {
+   "root": "/home/operator/private/bank_statements",
+   "input": "open /home/operator/private/bank_statements/2026/chase/2026-03.ofx: no such file",
+   "expect": "open <statements>/…/2026-03.ofx: no such file"
+  },
+  {
+   "root": "/home/operator/private/bank_statements",
+   "input": "open /home/operator/other/file.txt: no such file",
+   "expect": "open /home/operator/other/file.txt: no such file"
+  },
+  {
+   "root": "",
+   "input": "open /home/operator/private/bank_statements/x.ofx",
+   "expect": "open /home/operator/private/bank_statements/x.ofx"
+  }
+ ],
+ "fold_keys": [
+  {
+   "message": "id 123 failed",
+   "expect": "id # failed"
+  },
+  {
+   "message": "open /Users/operator/T/ezbookkeeping/x.json: permission denied",
+   "expect": "open <path>: permission denied"
+  },
+  {
+   "message": "token 4f2a9c1b8e7d6a5b rejected",
+   "expect": "token <hex> rejected"
+  },
+  {
+   "message": "job 8f14e45f-ceea-4e3d-8e6b-2f1a9c0b7d61 timed out after 30s",
+   "expect": "job <uuid> timed out after #s"
+  },
+  {
+   "message": "C:\\Users\\op\\data\\x.db locked",
+   "expect": "C:\\Users\\op\\data\\x.db locked"
+  },
+  {
+   "message": "dial tcp 127.0.0.1:8080: connect: connection refused",
+   "expect": "dial tcp #.#.#.#:#: connect: connection refused"
+  },
+  {
+   "message": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "expect": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "message": "",
+   "expect": ""
+  },
+  {
+   "message": "account 8790153498210304 not found",
+   "expect": "account <hex> not found"
+  },
+  {
+   "message": "open <statements>/…/2026-03.ofx: no such file",
+   "expect": "open <statements>/…/#-#.ofx: no such file"
+  }
+ ],
+ "fold_key_parts": [
+  "app",
+  "where_file",
+  "doing",
+  "error_type",
+  "normalised_message"
+ ],
+ "fold_windows": {
+  "default_seconds": 60,
+  "transient_network_seconds": 600,
+  "max_keys": 1000
+ },
+ "transient_network_markers": [
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ETIMEDOUT",
+  "ECONNRESET",
+  "ERR_NETWORK",
+  "ECONNABORTED",
+  "Network Error",
+  "network unreachable"
+ ],
+ "answer_shapes_ts": [
+  {
+   "value": {
+    "message": "Unable to add account"
+   },
+   "answer": true
+  },
+  {
+   "value": {
+    "error": {
+     "errorCode": 201001,
+     "errorMessage": "account name already exists"
+    }
+   },
+   "answer": true
+  },
+  {
+   "value": {
+    "processed": true
+   },
+   "answer": true
+  },
+  {
+   "value": {
+    "canceled": true
+   },
+   "answer": true
+  },
+  {
+   "value": {
+    "isUpToDate": true
+   },
+   "answer": true
+  },
+  {
+   "value": {
+    "errorCode": 201001,
+    "errorMessage": "x"
+   },
+   "answer": true
+  },
+  {
+   "value": {
+    "message": "x",
+    "response": {
+     "status": 400
+    }
+   },
+   "answer": true
+  },
+  {
+   "value": {
+    "message": "x",
+    "foo": 1
+   },
+   "answer": false
+  },
+  {
+   "value": "a string thrown",
+   "answer": false
+  },
+  {
+   "value": 42,
+   "answer": false
+  },
+  {
+   "value": null,
+   "answer": false
+  },
+  {
+   "value": {},
+   "answer": false
+  },
+  {
+   "value": {
+    "stack": "Error: x\n at y",
+    "message": "x"
+   },
+   "answer": false
+  }
+ ],
+ "benign_browser_messages": [
+  "ResizeObserver loop completed with undelivered notifications",
+  "ResizeObserver loop limit exceeded"
+ ],
+ "warn_not_error_browser_messages": [
+  "Failed to fetch dynamically imported module",
+  "Importing a module script failed",
+  "error loading dynamically imported module"
+ ],
+ "normalise": {
+  "_comment": "Applied in this order to the message before it becomes part of the fold key; then cut to fold_key_message chars. Same regex syntax in Go (RE2) and JS.",
+  "steps": [
+   {
+    "name": "uuid",
+    "regex": "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+    "replace": "<uuid>"
+   },
+   {
+    "name": "path",
+    "regex": "(?:/[A-Za-z0-9_.\\-]+){2,}",
+    "replace": "<path>"
+   },
+   {
+    "name": "hex",
+    "regex": "\\b[0-9a-fA-F]{8,}\\b",
+    "replace": "<hex>"
+   },
+   {
+    "name": "digits",
+    "regex": "[0-9]+",
+    "replace": "#"
+   }
+  ]
+ },
+ "control_chars_regex": "[\\x00-\\x1f\\x7f\\u2028\\u2029]",
+ "secret_key_regex": "(?i)pass(word)?|secret|token|auth|cookie|session|key|signature|credential|bearer|totp|otp|passcode",
+ "ledger_key_regex": "(?i)amount|balance|payee|comment|notes?|memo|account_?name|category_?name|tag_?name|description|statement|iban|card|number",
+ "url_query_redact_params": [
+  "token",
+  "code",
+  "state",
+  "key",
+  "password",
+  "secret",
+  "signature",
+  "sig",
+  "passcode",
+  "api_key"
+ ],
+ "_order_note": "redact(): a key is tested against ledger_key_regex FIRST (dropped -> '[ledger-field refused]'), then secret_key_regex ('[redacted]'); then string values are passed through the URL query redaction and the statements-root rewrite; non-primitive values become '[object]' / '[array]'."
+}

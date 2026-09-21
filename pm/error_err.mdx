@@ -1,0 +1,1963 @@
+---
+title: ezBookkeeping — the error file (`error.err`) and the error-routing contract
+description: >
+  Every runtime in this repo — the Vue app in the browser (desktop and mobile editions), its service
+  worker, the Go server with its upstream API, cron jobs and our machine plane, the Go binary's own
+  admin subcommands, our `ezbk` CLI and our `ezbookkeeping` MCP server — writes every fault it sees
+  to ONE append-only, rotating, operator-local file: `~/T/ezbookkeeping/error.err`. The work is done
+  by ONE library per language with ONE behaviour: `pkg/errfile` in Go (stdlib only; the CLI carries a
+  byte-identical vendored copy) and `src/lib/errfile` in TypeScript (zero dependencies; the MCP
+  carries a drift-checked copy plus a node sink). A call site costs one short line and nothing else:
+  the library owns formatting, cause-chain walking, secret redaction, private-data refusal,
+  per-error de-duplication, burst folding, buffered async writes, crash-safe flushing, rotation,
+  and — for the browser, which has no filesystem — batched, rate-limited delivery to a loopback-only
+  ingest route the Go server mounts. Coverage is not a convention: a Go analyzer
+  (`errfile/catch-must-report`) and an ESLint rule (`errfile/catch-must-report`) fail the build on
+  any error site that neither reports, hands the error on, nor explicitly marks the failure as
+  expected; and a coverage script proves, file by file, that 100% of source files are either
+  compliant or have no local error sites and are covered by the global nets. The happy path pays
+  nothing: no work runs until an error actually happens, and when one does, no synchronous
+  filesystem call is made on the request path.
+---
+
+# ezBookkeeping — the error file (`error.err`)
+
+`~/BGit/Bryan_git/ezbookkeeping/pkg/errfile/` (Go) · `~/BGit/Bryan_git/ezbookkeeping/src/lib/errfile/`
+(TypeScript) · output **`~/T/ezbookkeeping/error.err`** · stdlib only / zero runtime dependencies
+
+---
+
+## Table of Contents
+
+- [Introduction](#introduction)
+  - [Why this spec exists](#why-this-spec-exists)
+  - [Where this spec fits](#where-this-spec-fits)
+  - [What the operator gets from it](#what-the-operator-gets-from-it)
+  - [How it works — the idea](#how-it-works--the-idea)
+  - [How it works — the machinery](#how-it-works--the-machinery)
+  - [What this spec covers](#what-this-spec-covers)
+- [Goal](#goal)
+- [Overview](#overview)
+- [1. What we learned from the sister apps](#1-what-we-learned-from-the-sister-apps)
+- [2. The rules (R1–R15)](#2-the-rules-r1r15)
+- [3. The file](#3-the-file)
+- [4. The Go library — `pkg/errfile`](#4-the-go-library--pkgerrfile)
+- [5. The TypeScript library — `src/lib/errfile`](#5-the-typescript-library--srcliberrfile)
+- [6. The call-site API](#6-the-call-site-api)
+- [7. The code patterns — Go (G1–G8) and TypeScript (T1–T8)](#7-the-code-patterns--go-g1g8-and-typescript-t1t8)
+- [8. The global nets — where the library is wired in once](#8-the-global-nets--where-the-library-is-wired-in-once)
+- [9. Browser and worker delivery — the ingest route](#9-browser-and-worker-delivery--the-ingest-route)
+- [10. Performance design](#10-performance-design)
+- [11. Noise control — keeping the file worth reading](#11-noise-control--keeping-the-file-worth-reading)
+- [12. Privacy, redaction and open-source safety](#12-privacy-redaction-and-open-source-safety)
+- [13. Enforcement — the analyzer, the lint rule and the coverage script](#13-enforcement--the-analyzer-the-lint-rule-and-the-coverage-script)
+- [14. Measurements of success](#14-measurements-of-success)
+- [15. Testing](#15-testing)
+- [16. Rollout — three builders, then twelve](#16-rollout--three-builders-then-twelve)
+- [17. Upstream-merge cost, and how we keep it small](#17-upstream-merge-cost-and-how-we-keep-it-small)
+- [18. Use cases](#18-use-cases)
+- [19. Acceptance criteria](#19-acceptance-criteria)
+- [20. Invariants recap](#20-invariants-recap)
+- [21. Related specs](#21-related-specs)
+
+---
+
+## Introduction
+
+### Why this spec exists
+
+Before this spec, a fault in this repo went to one of about six places, depending on which process
+had the fault:
+
+- the browser console, when a store's `.catch` called `logger.error` (`src/lib/logger.ts` is a
+  thin wrapper over `console.*`; 222 call sites);
+- a snackbar or toast, when a view's `.catch` called `showError` — and nowhere else, because the
+  view never logged it (311 such sites under `src/views/`);
+- `log/ezbookkeeping.log`, when upstream Go code called `log.Errorf` / `log.Warnf` (about 1,480
+  sites), but only if `[log] enable_file_log` was on, and interleaved with every INFO line;
+- nowhere at all:
+  - the machine plane's `toFail()` turns an unexpected error into `internal` and drops the
+    original error and its position;
+  - the machine plane's `wrap()` recovers a panic into `log.Errorf` and a generic 500, with the
+    stack gone;
+  - `if err != nil { return nil, errs.ErrOperationFailed }` blocks that never log the `err` they
+    replaced;
+  - `defer func() { _ = recover() }()` in the CLI and in the ingest plane;
+  - `go func()` goroutines in `pkg/api` whose panic would take the whole server down with no
+    record;
+  - there is no `window.onerror`, no `unhandledrejection` listener and no Vue
+    `app.config.errorHandler` anywhere in the front end;
+- `cli.err`, but only for `ezbk`;
+- `mcp.err`, but only for the MCP server (which, at the time of writing, is not yet built).
+
+So the honest answer to _"what went wrong yesterday at 4 pm?"_ was _"it depends which process, and
+maybe we'll never know."_ An application that keeps the operator's books cannot be allowed to fail
+silently.
+
+### Where this spec fits
+
+The product has three front doors, and each one already has a spec:
+
+- the browser at `http://localhost:8080/`;
+- the MCP server ([mcp.mdx](./mcp.mdx));
+- the `ezbk` CLI ([cli.mdx](./cli.mdx)).
+
+All three sit on the machine plane ([apis.mdx](./apis.mdx)). This spec is not a front door. It is
+the floor under all of them: the single fault trail that every process writes to.
+
+`cli.info`/`cli.err` and `mcp.info`/`mcp.err` keep their jobs, which are a per-tool usage trail and
+audit ([cli.mdx](./cli.mdx) §16, [mcp.mdx](./mcp.mdx) §16). `log/ezbookkeeping.log` keeps its job,
+which is upstream's full request-tagged application log. They all also start writing every fault to
+`error.err`, so an operator never has to know which tool failed before knowing where to look.
+
+### What the operator gets from it
+
+- **One file to open.** `tail -f ~/T/ezbookkeeping/error.err` shows faults from every process,
+  interleaved in time order, each tagged with the app and the source file it came from.
+- **A line that answers the question on its own.** Each line has four parts:
+  - **what** it was doing: _"importing the OFX file"_;
+  - **where**: `pkg/machine/ingest_apply.go:412`;
+  - **what broke**: `*fs.PathError: open …: permission denied (errno=EACCES)`, with its cause
+    chain;
+  - **where in the code**: a stack trimmed to our own frames.
+- **A file that stays readable.** Five hundred identical failures become one line plus a count. A
+  retry loop cannot flood the file, and a closed laptop lid does not fill it with "network
+  unreachable".
+- **A trail that survives a crash.** The fault that kills a process is on disk before the process
+  exits.
+
+### How it works — the idea
+
+**Catching an error is the call site's job. Handling it is the library's job.**
+
+A call site writes one line, for example:
+
+```go
+errfile.Caught("reconciling the account", err)
+```
+
+```ts
+errors.caught('reconciling the account', err);
+```
+
+Everything that makes a fault record useful is done once, centrally, and off the hot path:
+
+- formatting;
+- walking the cause chain (`errors.Unwrap` in Go, `Error.cause` in TypeScript);
+- remembering it has already seen this exact error;
+- folding a burst of identical errors into one line;
+- redacting secrets;
+- refusing ledger data;
+- buffering, flushing and rotating the file;
+- carrying the record out of a browser that has no filesystem.
+
+That split is what lets us require that 100% of files report their faults without making 100% of
+files harder to read.
+
+### How it works — the machinery
+
+1. **Go: package-level functions, no per-file object.** A Go source file imports `pkg/errfile` and
+   calls `errfile.Caught(doing, err)`. The library reads `runtime.Caller` — on the error path
+   only — so `where` is the exact repo-relative `file.go:line` with nothing declared at the top of
+   the file. (A package-level `var` per file would collide across the files of one Go package, and
+   Go gives us the caller for free.)
+2. **TypeScript: one small object per module.** Each module that has error sites creates it once
+   at the top with `const errors = errorFileFor('<repo-relative path>')`.
+3. **One call at each site.** Each error site calls one function: `Caught`, `Warn`, `Expected`,
+   `Fatal` or `Recovered` in Go; `caught`, `warn`, `expected`, `rethrow` or `fatal` in
+   TypeScript, or one of the wrappers `tryOr`, `tryOrAsync`, `reportRejection`, `guard`.
+4. **Records are built only when there is an error.** The library turns the error into a plain
+   record, de-duplicates and folds it, then gives it to a **sink**.
+5. **Each process installs one sink at boot:**
+   - The **Go sink** is used by the server binary (every subcommand) and by `ezbk`. It buffers
+     lines, appends them to `error.err` asynchronously every 5 ms, flushes synchronously on exit
+     and on a fatal error, and rotates the file at 5 MiB.
+   - The **node sink** is used by the MCP server. Same behaviour, in TypeScript.
+   - The **browser sink** is used by the Vue app and the service worker. It batches records and
+     POSTs them to the loopback-only route `/error-report`, using `sendBeacon` when the page is
+     hidden.
+6. **The Go server mounts the ingest handler.** `POST /error-report` is mounted by
+   `machine.Mount` (already one of the two lines this fork adds to `cmd/webserver.go`); it writes
+   to the same Go sink. The Vite dev server proxies the same path to the Go server.
+7. **Global nets catch whatever no local site caught:**
+   - a logrus hook on upstream's loggers, so every existing `log.Errorf` / `log.Warnf` is a report
+     with zero call-site edits;
+   - a hook in `src/lib/logger.ts`, so every existing `logger.error` / `logger.warn` is a report
+     with zero call-site edits;
+   - the gin recovery middleware, the machine plane's panic recovery and `internal` branch, the
+     cron runner, and a goroutine wrapper;
+   - `window` / `self` handlers and Vue's `app.config.errorHandler`;
+   - the MCP tool-dispatch `internal` branch and process handlers;
+   - `main()` of both Go binaries.
+8. **Enforcement.** A Go analyzer and an ESLint rule forbid an unreported error site. A coverage
+   script proves the 100%.
+
+### What this spec covers
+
+- The file and its line format.
+- The two libraries and their APIs.
+- The code patterns for Go and for TypeScript, with before and after code.
+- The global nets and the exact file where each one is wired in.
+- Browser delivery.
+- Performance.
+- Noise control.
+- Privacy.
+- Enforcement.
+- Success metrics.
+- Tests.
+- The rollout plan: three builder agents, then twelve partitioned agents.
+- The upstream-merge cost.
+
+It does **not** cover usage and audit logging (`cli.info`, `mcp.info`, `machine.audit`,
+`log/ezbookkeeping.log`), which stay where [cli.mdx](./cli.mdx) §16, [mcp.mdx](./mcp.mdx) §16 and
+[apis.mdx](./apis.mdx) §9 put them.
+
+---
+
+## Goal
+
+> **Every fault that happens in any source file of this repo, in any runtime, is written to
+> `~/T/ezbookkeeping/error.err`, exactly once, and the line alone says what was being done, where,
+> and what broke. The code that makes this true is one import and one short call per error site,
+> and it costs nothing until an error actually happens.**
+
+| Half             | The rule                                                                                                                                                                                                                                  |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Completeness** | 100% of source files are compliant: every `if err != nil` that does not hand the error on, every `recover()`, every discarded error result, every `go` statement, every `catch`, `.catch()`, rejection handler and process-level fault reaches the library. The analyzer, the lint rule and the coverage script prove it, not review. |
+| **Readability**  | A call site is one line. No call site formats, stringifies, redacts, rate-limits, de-duplicates, or touches the filesystem.                                                                                                                |
+| **Performance**  | Zero cost on the happy path. On the error path, no synchronous filesystem work on a request, render or handler path. The only synchronous write is the final flush on exit or on a fatal error.                                            |
+| **Signal**       | A burst is one line plus a count. Expected absences are not errors. Gate refusals and validation answers are not errors. The file stays small enough to read with `tail`.                                                                    |
+| **Safety**       | No secrets and no ledger data (amounts, balances, account names, comments, payees, statement text) are ever written. The file lives outside the repo at mode `0600`.                                                                        |
+
+---
+
+## Overview
+
+```
+                                        ┌────────────────────────────────────────────────┐
+  BROWSER TAB  (Vue, desktop + mobile)  │  src/lib/errfile  (TypeScript, zero deps)      │
+  ─ errorFileFor(...).caught()  ────┐   │                                                │
+  ─ window 'error' / 'unhandled…'   │   │  core.ts      errorFileFor · tryOr · guard     │
+  ─ app.config.errorHandler        ├──▶│               reportRejection · describe       │
+  ─ src/lib/logger.ts hook          │   │               WeakSet dedupe · burst folding   │
+                                    │   │               redact · refuse ledger fields    │
+  SERVICE WORKER  (src/sw.ts)       │   │               answer shapes (R7)               │
+  ─ self 'error' / 'unhandled…' ────┘   │  sink = browser  → batch → POST /error-report  │
+                                        │  sink = none yet → bounded pre-install queue   │
+                                        └───────────────┬────────────────────────────────┘
+                                                        │ fetch / sendBeacon (loopback only)
+                                                        ▼
+  GO SERVER  (ezbookkeeping server run, and every other subcommand)
+  ┌───────────────────────────────────────────────────────────────────────────────────┐
+  │  pkg/errfile  (Go, stdlib only)                       pkg/errfile/server           │
+  │   Caught · Warn · Expected · Fatal · Recovered · Go    ingest.go  POST /error-report│
+  │   runtime.Caller → where · Unwrap chain · stack trim   loghook.go logrus hook       │
+  │   TTL dedupe · burst folder · redact · refuse ledger    (mounted by machine.Mount /  │
+  │   RollingFileWriter: 5 ms async append, 256 KiB cap,    installed by initializer)   │
+  │   sync flush on exit / Fatal / signals, 5 MiB × 5, 0600                             │
+  └───────────────────────────────────────────┬───────────────────────────────────────┘
+                                              ▼
+  ezbk  (cli/internal/errfile — byte-identical      ~/T/ezbookkeeping/error.err
+        vendored copy, drift-checked)          ◀──  mcp  (mcp/src/errfile — node sink,
+                                                     drift-checked copy of the shared files)
+
+  ENFORCEMENT: scripts/errfilecheck (go/analysis) + scripts/eslint/catch-must-report.mjs
+               + scripts/error-file-coverage.mjs  →  ~/T/ezbookkeeping/error_file_coverage.json
+```
+
+---
+
+## 1. What we learned from the sister apps
+
+We read the specs and the code of four sister apps, in read-only mode. Three of them converged on
+the same core: rotation at 5 MiB × 5, `stripControlChars`, and a browser → server bridge. The
+fourth, our own sister fork, turned that core into a single library with proof of coverage. Each
+one is strong at something different, and each has a gap we close here.
+
+### 1.1 Actual Budget (sister fork) — `~/BGit/Bryan_git/actual_budget_bryan/`
+
+**Spec:** `pm/error_err.mdx`. **Library:** `packages/error-file/src/` (TypeScript, zero deps,
+~3,300 lines with tests). **This spec was grown from that one**, and where the two apps are alike
+the designs are kept alike on purpose: the same line format, the same rules, the same call-site
+API in TypeScript, the same ingest guards, the same enforcement shape.
+
+**What we take, unchanged:**
+
+- the `errorFileFor(where).caught(doing, err)` shape and the wrappers `tryOr`, `tryOrAsync`,
+  `reportRejection`, `guard`;
+- per-`Error`-object de-duplication with a `WeakSet`;
+- the burst folder with a normalised key (digits → `#`, hex → `<hex>`, paths → `<path>`);
+- the `RollingFileWriter` port: 5 ms unref'd timer, `appendFile`, 256 KiB sync cap, 5 MiB × 5;
+- the bounded pre-install queue;
+- the loopback-only, write-only, always-`204` ingest route;
+- a lint rule that makes an unreported catch a build failure, and a coverage script;
+- "a gate refusal is an answer, not a fault";
+- the vendored-copy-with-drift-test mechanism for code that lives outside the main build.
+
+**What is different here, and why:**
+
+- **Two languages.** The server and the CLI are Go. The TypeScript library serves the browser and
+  the MCP; the Go library serves the server binary and `ezbk`. They share behaviour, tested
+  against one vector file (§15.4), not source.
+- **Go has no `catch`.** §2 R1-Go defines the Go error site precisely, and §13.1 is a
+  `go/analysis` analyzer instead of an ESLint rule.
+- **Go gives the caller for free.** `where` comes from `runtime.Caller`, so there is no per-file
+  constant to declare and none to lint.
+- **Upstream already logs, centrally.** Upstream ezBookkeeping routes every `log.Errorf` through
+  one logrus instance in `pkg/log`, and every `logger.error` in the browser through
+  `src/lib/logger.ts`. Both are hooked once (§8 N4, N6). About 1,700 existing sites become reports
+  with **zero** edits, and the retrofit touches only the sites that are silent today. The sister
+  fork replaced its `logger.warn` calls; we keep ours, because they carry a request id into
+  upstream's own log file that operators and upstream's issue tracker rely on.
+- **The `.vue` view idiom.** Upstream's views reject with plain answer objects
+  (`{ message }`, `{ error: ErrorResponse }`, `{ processed: true }`, `{ canceled: true }`,
+  `{ isUpToDate: true }`). The library recognises those shapes (§11.4) so that the 311 view sites
+  can all say `errors.caught(...)` uniformly and the file only ever gets the real faults.
+
+**Gap closed:** the sister's spec is TypeScript-only. This one has to be true in Go as well.
+
+### 1.2 Internal Web App — `~/BGit/all/app/`
+
+**Spec:** `~/BGit/all/app/pm/local_storage.mdx` §6–§8. **Library:** `@internal-app/logging` at
+`~/BGit/all/app/code/packages/logging/src/` (`rolling-file-writer.ts`, `log-channel.ts`,
+`nest-logger.ts`).
+
+**What we take:** the async buffered writer exactly (its header comment records why: the old
+synchronous writer spent 2,771 ms in synchronous fs time across 4 writes and raised 330 "event loop
+blocked" warnings a day); the browser bridge with per-IP rate limiting and flood folding; the
+benign-error downgrade.
+
+**Gap:** no lint rule and no coverage check, so nothing proves every error site reports.
+
+### 1.3 We The Citizens — `~/BGit/act3/we_citizens/`
+
+**Spec:** `~/BGit/act3/we_citizens/pm/errors.mdx` (rules R1–R13). **Library:**
+`code/packages/backend/src/shared/errors.ts` with `burst-coalescer.ts`, and
+`code/packages/frontend/src/lib/logger.ts`.
+
+**What we take:** the best call-site ergonomics (`loggerFor(ctx).caught(doing, err)`, about 1,356
+sites); the three wrappers; `describeError` with causes placed before the stack so a length cap
+cannot cut them off; the burst coalescer whose fold key is the message and never the stack; the
+`sendBeacon` delivery; "gate refusal is an answer, not a fault".
+
+**Gap:** the backend and frontend copies can drift apart, and nothing lints for a bare `catch`.
+
+### 1.4 Large File Bridge — `~/BGit/Bryan_git/LargeFileBridge/`
+
+**Spec:** `~/BGit/Bryan_git/LargeFileBridge/pm/debugging.mdx`. **Library:** one file,
+`code/packages/backend/src/shared/logging.ts`, Node built-ins only, because _"the one thing that
+must never fail carries no supply-chain surface"_.
+
+**What we take:** the normalised collapse key (paths → `<path>`, hex → `<hex>`, digits → `#`);
+"offline is not a fault"; the structured `where` and `doing` fields; zero dependencies; tests that
+read the bytes actually written to disk.
+
+**Gap:** the spec requires `logError()` at every error site. In the code there are 4 `logError`
+calls against about 660 plain `log.error` calls. **A rule that nothing checks does not get
+followed.** This is the single most important lesson for this spec, and it is why §13 exists.
+
+### 1.5 What is ours
+
+Six things are new here and exist in none of the sister apps:
+
+1. **A Go error-site definition and analyzer** (§2 R1-Go, §13.1). Go has no `catch`; the analyzer
+   knows what the equivalent is, with type information, and it runs as a `go vet` tool.
+2. **`where` from `runtime.Caller`.** Exact `file.go:line`, nothing declared per file.
+3. **Nets over upstream's two central loggers** (§8 N4, N6), so the existing 1,700 log calls
+   report with no edits and no double lines.
+4. **Answer shapes** (§11.4): the library knows upstream's rejection conventions, so a view can
+   report everything it catches and the file gets only faults.
+5. **A goroutine net** (`errfile.Go`, §6.1): a panic in a background goroutine is written and the
+   goroutine ends, instead of killing the server with no record.
+6. **Cross-language behaviour vectors** (§15.4): one JSON file of inputs and expected outputs that
+   the Go and TypeScript libraries both run, so "one behaviour" is a test, not a promise.
+
+---
+
+## 2. The rules (R1–R15)
+
+**R1 — Every error site reports.**
+
+- _TypeScript._ Every `catch` clause, `.catch()` callback, promise rejection handler
+  (`.then(_, fn)`), `onError` callback and `'error'` / `'unhandledrejection'` event listener in a
+  source file must do one of these:
+  - call the library: `caught`, `warn`, `expected`, `rethrow` or `fatal`, or one of the wrappers
+    `tryOr`, `tryOrAsync`, `reportRejection` or `guard`;
+  - rethrow;
+  - pass the error on to a call that reports it (`logger.error` / `logger.warn` count, because
+    `src/lib/logger.ts` is a net, §8 N4).
+  - An empty catch is a lint error. A catch that only calls `console.*` is a lint error.
+- _Go (R1-Go)._ Go has no `catch`; these are the Go error sites:
+  1. **An error-nil test block.** The block taken when an `error`-typed expression is non-nil:
+     `if err != nil { … }`, `if x, err := f(); err != nil { … }`, the `else` of `if err == nil`,
+     `case err != nil:` in a `switch`, and compound conditions such as
+     `if err != nil && !errors.Is(err, fs.ErrNotExist)`. The block passes when it **hands the
+     error on** — the error identifier appears anywhere in the block: in a `return`, as a call
+     argument (`fmt.Errorf("…: %w", err)`, `errs.Or(err, …)`, `printError(stderr, err)`,
+     `err.Error()`), on the right of an assignment (`lastErr = err`), appended to a slice or sent
+     on a channel — or when it **reports**: a call to `errfile.*`, to `log.Errorf` / `log.Warnf` /
+     `log.ErrorfWithExtra` / `log.BootErrorf` / `log.BootWarnf` / `log.CliErrorf` / `log.CliWarnf`
+     (net-covered, §8 N6), or `panic(…)`. A block that does none of these — it returns a
+     different sentinel, `continue`s, `break`s, or falls through — is a violation: the original
+     error is gone.
+  2. **A `recover()` call.** Its value must reach `errfile.Recovered`, `panic` (re-panic), a
+     `log.*` error/warn call, or a call that takes it as an argument. `_ = recover()` and
+     `recover()` as a bare statement are violations.
+  3. **A discarded error result.** A call whose result includes an `error` used as a bare
+     expression statement (`os.Remove(path)`) is a violation. `_ = os.Remove(path)` is **not**: the
+     blank identifier is Go's spelling of "I decided this failure does not matter" (R6-Go), and
+     `defer f.Close()` is the idiom for a close whose error cannot be acted on.
+  4. **A `go` statement.** Its function must be `errfile.Go(doing, fn)` or a function literal
+     whose first statement is `defer errfile.RecoverNet(doing)()`; otherwise it is a violation,
+     because a panic there ends the process with no record.
+  5. **`log.Fatal*` / `os.Exit` after a failure** in `main` must be preceded by `errfile.Fatal`
+     (§7 G8).
+
+**R2 — One line per site.**
+
+- A call site never formats a message, calls `JSON.stringify` on an error, reads `err.stack`,
+  redacts, rate-limits or touches the filesystem. The library does all of it.
+- The first argument is a gerund phrase saying what was being done, for example
+  `"loading the account list"`. It is not a sentence about the failure: the error already says what
+  failed.
+
+**R3 — The library does no work until an error happens.**
+
+- `errorFileFor(where)` only stores a string. Go's `errfile.Caught` is a plain function call that
+  runs only inside the taken branch.
+- No closure, formatting, timer, `runtime.Caller` or allocation happens per call on the happy path.
+
+**R4 — An error is written once.**
+
+- _TypeScript._ The first call that reports a given `Error` object marks it in a `WeakSet`. Later
+  reports of the same object are dropped, whether from `rethrow` chains, global nets or a hook after
+  a local `caught`. Primitive throwables cannot be marked, so the burst folder (R10) handles them.
+- _Go._ Errors have no identity that is safe to mark forever: `errs.ErrOperationFailed` is one
+  shared sentinel that thousands of unrelated failures return. So the Go library marks the
+  **dynamic value** of a comparable error in a bounded map (1,024 entries) with a **5-second TTL**,
+  and `IsReported(err)` walks the `Unwrap` chain, so an error reported at the site that knew what
+  it was doing, then wrapped with `%w` twice and finally seen by the recovery middleware, is one
+  line. Two failures of the same sentinel minutes apart are two lines (and the folder makes a
+  burst one line).
+
+**R5 — Rethrow keeps the context.**
+
+- `errors.rethrow(doing, err)` writes the record and then throws **the same object**, never a
+  wrapper. This keeps `instanceof` checks and `err.response` / `err.processed` intact.
+- In Go, `errfile.Caught(doing, err); return err` is the rethrow. The value returned is the same
+  value received. A site that wraps (`fmt.Errorf("…: %w", err)`) is still one line, because
+  `IsReported` unwraps.
+
+**R6 — Expected is not an error.**
+
+- Some failures are part of normal operation, for example:
+  - a `JSON.parse` fallback;
+  - `fs.ErrNotExist` on an optional file;
+  - a feature probe (`navigator.credentials` absent);
+  - a user-cancelled dialog or a cancelled request (`{ canceled: true }`);
+  - an `AbortError` from a cancelled fetch;
+  - a 401 that means "log in again" (`{ processed: true }`);
+  - a parse failure of user-typed input that the caller turns into a validation answer.
+- These call `errors.expected(doing, err)` / `errfile.Expected(doing, err)`. It records nothing to
+  `error.err` unless `EZBK_ERROR_FILE_VERBOSE=1` is set.
+- The call is still required, so a reader sees that the author **decided** the failure was
+  expected. It was not overlooked.
+- _R6-Go._ `_ = call()` is the accepted spelling of "expected" for a discarded error result. An
+  error-nil block that swallows still needs the explicit `errfile.Expected` line.
+
+**R7 — A gate refusal is an answer, not a fault.**
+
+- Some failures are correct behaviour, for example:
+  - the machine plane refusing a bad key, a non-loopback peer, a cross-site `Origin`, or a call to
+    the write tier while it is off;
+  - an `*errs.Error` with a 4xx `HttpStatusCode` (upstream's validation and "not found" answers);
+  - a `Fail` whose code is anything but `internal` / `upstream_error`;
+  - a browser rejection with an answer shape (§11.4).
+- These are **not** written as ERROR. They use `expected`, or `warn` when they are unusual, such as
+  a refused machine key or a rebinding `Host`. The library recognises the shapes it can (§11.4)
+  so that a central net never has to guess.
+
+**R8 — The browser never touches the disk; it delivers.**
+
+- Browser and service-worker records go through the sink to `POST /error-report`.
+- The ingest route is loopback-only and never reflects anything back.
+
+**R9 — Faults survive the crash that caused them.**
+
+- `Fatal` / `fatal`, the Go `main()` net, the gin recovery middleware and the node
+  `uncaughtException` handler flush synchronously before the process exits.
+- A browser sends queued records with `sendBeacon` on `pagehide`.
+
+**R10 — A burst is one line.**
+
+- Identical faults fold inside a 60 s window. Identical means the same `app`, `where` (file only,
+  not line — a loop reports from one line anyway), `doing`, error type and normalised message.
+- The first occurrence is written through immediately. The rest are counted, and one summary line
+  is written when the window closes or at exit.
+
+**R11 — The file never takes the app down.**
+
+- Every path in the library is total. A write failure falls back to `stderr`, then to silence.
+- The library never panics or throws into its caller, never recurses into itself, never logs
+  through `pkg/log` or `src/lib/logger.ts` (both are nets that would call it back), and never
+  reports its own delivery failures to `/error-report`.
+- In the MCP, nothing the library does ever reaches **stdout** — that is the JSON-RPC channel.
+
+**R12 — No secrets and no ledger data** (§12). The library enforces this. Call sites are not trusted
+to get it right.
+
+**R13 — Tests never write the real file.**
+
+- Under `go test` (`testing.Testing()` is true), `VITEST` or `NODE_ENV=test`, the default path
+  moves to `$TMPDIR/ezbookkeeping_test_<uid>/error.err`.
+- Tests that assert on the file read that temp path.
+
+**R14 — `where` is the repo-relative source path.**
+
+- _TypeScript._ `errorFileFor('src/stores/account.ts')` — the path from the repo root, as a
+  literal string, so it survives bundling, and a reader can paste it into their editor. The lint
+  rule checks that it matches the file it appears in (§13.2). For `mcp/`, the path starts with
+  `mcp/`.
+- _Go._ `pkg/services/accounts.go:212` or `cli/internal/commands/reads.go:88`, derived from
+  `runtime.Caller` with the module path or the absolute repo prefix stripped. Nothing to declare,
+  nothing to lint.
+
+**R15 — One behaviour in two languages.**
+
+- The Go and TypeScript libraries produce the same line for the same input. §15.4's vector file is
+  run by both test suites: format, redaction, ledger refusal, fold-key normalisation and caps.
+- Where a language forces a difference (R4, R14), this spec says so, and the vector file has a
+  per-language section.
+
+---
+
+## 3. The file
+
+### 3.1 Path
+
+| What              | Value                                                              |
+| ----------------- | ------------------------------------------------------------------ |
+| Default path      | `~/T/ezbookkeeping/error.err`                                      |
+| Override          | `EZBK_ERROR_FILE=/abs/path/error.err` (full path)                  |
+| Test path (R13)   | `$TMPDIR/ezbookkeeping_test_<uid>/error.err`                       |
+| No home directory | `$TMPDIR/ezbookkeeping_<uid>/error.err` (mode 0700 dir)            |
+| Mode              | file `0600`, directory `0700`, created lazily on the first write   |
+| Rotated copies    | `error.err.1` … `error.err.5` (oldest dropped)                     |
+| Coverage report   | `~/T/ezbookkeeping/error_file_coverage.json` (§13.3)               |
+
+The directory `~/T/ezbookkeeping/` holds the error trail and the coverage report. The existing
+state directory, `~/T/_ezbookkeeping/`, keeps `cli.info`, `cli.err`, `mcp.*`, `server.log`,
+`server.pid` and `machine.audit` unchanged ([cli.mdx](./cli.mdx) §16). Upstream's own log stays at
+`log/ezbookkeeping.log` (git-ignored). If the operator wants one directory for everything,
+`EZBK_ERROR_FILE` moves the file, and nothing else has to change.
+
+Every process that can write the file — the server, `ezbk`, the MCP — resolves the path with the
+same rules, in the same order, and the vector file (§15.4) has a case for each row of the table.
+
+### 3.2 The line
+
+```
+[2026-09-21T16:04:11.902Z] [ERROR] [server] [pkg/machine/routes_ingest.go:214] handling POST /machine/v1/statements/apply — *fs.PathError: open …/.ezbk-staging/plan.json: permission denied (op=open errno=EACCES) {route=statements.apply} | cause: syscall.Errno: permission denied
+    at (*ingestApply).writePlan (pkg/machine/ingest_apply.go:412)
+    at applyStatements (pkg/machine/routes_ingest.go:207)
+```
+
+The header line has these fields, in order:
+
+| Field       | Content                                                                                                                     |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Timestamp   | ISO-8601 UTC, to the millisecond.                                                                                           |
+| Level       | `WARN`, `ERROR` or `FATAL`. `EXPECTED` appears only under `EZBK_ERROR_FILE_VERBOSE=1`.                                      |
+| App         | The runtime (§3.3).                                                                                                         |
+| Where       | The repo-relative source path (R14). Go adds `:line`.                                                                       |
+| Doing       | The gerund phrase.                                                                                                          |
+| Separator   | `—`                                                                                                                         |
+| Error       | `Type: message`. Go: the dynamic type (`*errs.Error`, `*fs.PathError`, `*net.OpError`); TS: `err.name`. A `code`, `errno`, `op`, `syscall`, `HttpStatusCode` or `errorCode` is appended as `(code=…)`. |
+| Data        | An optional `{key=value …}` block of allowlisted, redacted primitives (§12).                                                 |
+| Cause chain | Walks `errors.Unwrap` / `err.cause` up to 5 deep, as `\| cause: …`. A Go `errors.Join` shows its first 3 members.           |
+
+**Stack lines** follow, indented four spaces. The stack is trimmed as follows:
+
+- Go: captured with `runtime.Callers` at the report site (error path only); frames from the
+  runtime, from `pkg/errfile` itself, from logrus and from gin's own dispatch are dropped;
+  `Recovered` captures the panicking goroutine's frames, so the panic site is the first frame;
+- TypeScript: `node_modules` frames and the library's own frames are dropped;
+- at most 12 frames are kept;
+- absolute paths are shortened to be repo-relative.
+
+**Folded summary line:**
+
+```
+[2026-09-21T16:05:11.902Z] [ERROR] [web] [src/stores/transaction.ts] failed to load transaction list — ×37 more in the previous 60s (first at 16:04:11): AxiosError: Network Error
+```
+
+**Control-character guard.** Every field goes through `stripControlChars`: `\x00-\x1f`, `\x7f`,
+` ` and ` ` become a space. A field cannot forge a second header line.
+
+**Length caps:**
+
+- The message is capped at 2,000 characters, cut in the middle so the start and the end both
+  survive.
+- The data block is capped at 1,000 characters.
+- The whole record is capped at 8,000 characters.
+
+### 3.3 `app` values
+
+| `app`     | Runtime                                                                                                     | Sink                     |
+| --------- | ----------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `web`     | the Vue app in a browser tab; `data.edition=desktop\|mobile` says which entry point                         | browser                  |
+| `sw`      | the service worker (`src/sw.ts`)                                                                            | browser (`self`)         |
+| `server`  | `ezbookkeeping server run`: upstream API, cron, mail, exchange rates, upstream MCP, and our machine plane   | Go                       |
+| `app-cli` | the same binary's other subcommands (`database`, `user`, `cron`, `security`, `utility`); `data.command=…`  | Go                       |
+| `ezbk`    | our CLI, `cli/`                                                                                             | Go (vendored)            |
+| `mcp`     | our MCP server, `mcp/`                                                                                      | node (copied shared core)|
+
+When a browser record arrives through `/error-report`, the ingest handler adds `via=server` to the
+data block (or `via=vite` when the request carried Vite's proxy header), so a reader can tell a
+dev-server delivery from a production one.
+
+---
+
+## 4. The Go library — `pkg/errfile`
+
+### 4.1 Placement
+
+`pkg/errfile/` is a new directory upstream has never heard of, beside `pkg/machine/`. It is
+imported by upstream packages at the retrofitted sites, by `pkg/machine`, and by `cmd/`. Because
+`pkg/machine` imports `pkg/services` and `pkg/api`, the library must import **none** of them: it
+depends on the standard library only, so it can sit below everything. That is also what makes the
+whole directory vendorable into the CLI's module.
+
+```
+pkg/errfile/
+  doc.go              package comment: the API table and the eight Go patterns in brief
+  errfile.go          Caught, Warn, Expected, Fatal, Recovered, Go, RecoverNet, F, Describe, IsReported, Flush
+  options.go          Install(Options) — path resolution, the writer, exit/signal flush, App/Command
+  record.go           the Record type, level, the report path (dedupe → fold → build → sink)
+  describe.go         describeError: type name, Unwrap walk, code fields, stack capture + trim, stripControlChars, caps
+  redact.go           secret keys, ledger-field refusal, URL query redaction
+  fold.go             the burst folder (normalised key, 60 s window, summaries, 1,000-key cap)
+  format.go           Record → line(s)
+  dedupe.go           the reported-set: comparable dynamic value, 5 s TTL, 1,024 entries, Unwrap walk
+  writer.go           RollingFileWriter: buffer, 5 ms async drain, 256 KiB sync cap, 5 MiB × 5, 0600
+  sink.go             the Sink interface, the pre-install queue (200 records), setSink
+  path.go             DefaultPath(): ~/T/ezbookkeeping/error.err, EZBK_ERROR_FILE, test and no-home fallbacks
+  *_test.go           beside each file; vectors_test.go runs §15.4
+  testdata/           (nothing private, ever)
+  server/             NOT vendored — the two files that need a dependency
+    ingest.go         gin handler for POST /error-report (§9)
+    loghook.go        logrus hook: WARN/ERROR/FATAL/PANIC entries from pkg/log → records (§8 N6)
+    *_test.go
+```
+
+`cli/internal/errfile/` is a **byte-identical copy** of `pkg/errfile/*.go` (non-test and test
+files alike), each file prefixed with one header line:
+`// GENERATED from pkg/errfile — run scripts/sync-errfile.sh`. `pkg/errfile/vendor_drift_test.go`
+fails if any file differs after the header, in either direction, and `scripts/sync-errfile.sh`
+regenerates both this copy and the MCP's (§5.3). The root justfile `build` runs the sync first.
+
+### 4.2 Core behaviour — `record.go`, `dedupe.go`, `sink.go`
+
+- **Sink slot.** A package-level `atomic.Pointer[Sink]`, set by `Install`. Until a sink is
+  installed, records go to a **bounded pre-install queue** holding at most 200 records; overflow is
+  counted. `Install` drains that queue. The queue exists because a package can fault in `init()`
+  or before `initializeSystem()` has read the configuration.
+- **The report path runs only when there is an error:**
+  1. `IsReported(err)` (walks `Unwrap`) → if true, return.
+  2. Mark the dynamic value in the TTL map, for comparable values only.
+  3. Compute the fold key and ask the burst folder. If the error is folded, return.
+  4. `runtime.Caller(skip)` → `where`; `runtime.Callers` → stack.
+  5. Build the record: `{ts, level, app, where, doing, error: describeError(err), data: redact(fields)}`.
+  6. `sink.Write(record)`.
+- **Totality.** The whole path is wrapped in one `defer recover()` that falls back to `stderr`
+  once. A **re-entrancy flag** (per goroutine is impossible in Go, so per process with an atomic
+  counter and a hard cap) turns any panic thrown while reporting into a silent drop, so the library
+  can never loop.
+- **Level mapping from the logrus hook:** `WARN`→`WARN`, `ERROR`→`ERROR`, `FATAL`/`PANIC`→`FATAL`.
+
+### 4.3 The writer — `writer.go` and `options.go`
+
+`errfile.Install(errfile.Options{App: "server", Command: "server run"})` does the following:
+
+- It resolves the path (§3.1), creates the `RollingFileWriter`, sets the sink and drains the
+  pre-install queue.
+- It registers a synchronous flush for `SIGINT`, `SIGTERM` and `SIGHUP` via `signal.Notify` **on a
+  channel the host does not own**, without calling `os.Exit` and without replacing the host's own
+  handlers (upstream's server has none; `ezbk` has its own Ctrl-C handling for the spinner).
+- It returns a `func()` that flushes, for hosts that want to call it on their own exit path.
+- It is idempotent: a second call with the same options is a no-op; a second call with a different
+  `App` is a programming error and is reported once as a `WARN` to the file itself.
+
+`RollingFileWriter` is a port of `~/BGit/all/app/code/packages/logging/src/rolling-file-writer.ts`
+to Go, with one change: files are opened with mode `0600`. Its behaviour:
+
+- `Write(line)` appends to an in-memory buffer under a mutex and adds to a byte counter. **It does
+  no filesystem work.**
+- A single `time.AfterFunc(5 ms)` schedules `drain()`, which does one `os.WriteFile`-style append
+  (`O_APPEND|O_CREATE|O_WRONLY`) for the joined batch, on its own goroutine.
+- `pendingBytes ≥ 256 KiB` forces a synchronous drain, to bound memory during a storm.
+- `Flush()` is a synchronous barrier used by `Fatal`, the signal handler and the `main()` nets.
+- The file size is cached after one `Stat` at first use. When `size + bytes > 5 MiB`, the writer
+  rolls, but never while an async append is in flight.
+- A write failure falls back to `os.Stderr`, and the next write retries `MkdirAll`.
+- **Several processes may append to the same file.** The server, `ezbk` and the MCP can all be
+  running. Appends of less than one pipe buffer are atomic with `O_APPEND` on macOS and Linux, and
+  one batch is one write call. So lines never interleave mid-line.
+- **Rotation is done by one process only.** Each process checks the real on-disk size (`Stat`)
+  before it rolls. A process that finds the file already rolled resets its cache and does not roll
+  again.
+
+### 4.4 `Recovered` and `Go` — the panic nets
+
+- `errfile.Recovered(doing, rec, fields...)` is called with the value of `recover()`. It turns the
+  value into an error (`error` as is; anything else as `panic: %v`), captures the goroutine's
+  stack **from inside the deferred function** so the panic site is the first kept frame, and
+  writes an `ERROR`. It never re-panics; the caller decides that.
+- `errfile.Go(doing, fn)` runs `fn` on a new goroutine under a recover net that calls `Recovered`
+  and then lets the goroutine end. It is the one-line replacement for `go func() { … }()`.
+- `defer errfile.RecoverNet(doing)()` is the same net for a goroutine whose body is a named
+  method (`go w.removeOldFiles()`) or that must stay a plain `go` for another reason. The
+  returned function recovers, reports, and does not re-panic.
+
+### 4.5 `server/` — the two files that need a dependency
+
+- `server/ingest.go` — `Handler() gin.HandlerFunc` for `POST /error-report`, mounted by
+  `machine.Mount` (§9).
+- `server/loghook.go` — `InstallLogHook()` calls `log.AddHook(hook)` (the one exported function
+  this fork adds to `pkg/log/logger.go`, §8 N6). The hook's `Levels()` are `Warn`, `Error`,
+  `Fatal`, `Panic`. `Fire(entry)` builds a record whose `doing` is the entry message (upstream's
+  `[file.Func] … because …` text), whose `where` is found by walking `runtime.Callers` past the
+  logrus and `pkg/log` frames, whose `data` carries `request_id` when the entry has one, and whose
+  `error` is `logged: <message>` — there is no error value in a logrus entry, so the message stands
+  in. Hooks run synchronously under logrus's mutex, so the hook does exactly what `Write` does: a
+  buffer append.
+
+---
+
+## 5. The TypeScript library — `src/lib/errfile`
+
+### 5.1 Placement
+
+`src/lib/errfile/` is a new directory inside the Vue app's `src/lib/`, so it is part of the normal
+Vite build with no `package.json` change. It **must have zero runtime dependencies** and **must
+never import Vue, axios, or anything else from `src/`** except its own files. Every ordinary source
+file imports `@/lib/errfile` (the `index.ts` entry). `mcp/` gets a copy (§5.3).
+
+```
+src/lib/errfile/
+  index.ts              UNIVERSAL: errorFileFor, tryOr, tryOrAsync, reportRejection, guard,
+                        describeError, isReported, setErrorSink, flushErrorFile
+  core.ts               record building, WeakSet dedupe, answer shapes (§11.4), pre-install queue
+  describe.ts           describeError, cause walk, stack trim, stripControlChars, caps
+  redact.ts             secret + ledger-field refusal, URL query redaction
+  fold.ts               createBurstFolder (normalised key, window, summaries, key cap)
+  format.ts             record → line(s)
+  browser.ts            BROWSER ONLY: installBrowserErrorFile, batched beacon sink, window/self handlers, Vue errorHandler
+  __tests__/*.test.ts   vitest, following upstream's src/lib/__tests__ convention
+  __tests__/vectors.test.ts   runs §15.4
+
+mcp/src/errfile/
+  index.ts core.ts describe.ts redact.ts fold.ts format.ts   GENERATED copies (drift-checked)
+  node.ts               NODE ONLY: installNodeErrorFile, process handlers, stderr echo
+  rolling-file-writer.ts
+  *.test.ts
+```
+
+`index.ts` is **isomorphic**. It is the only entry point that ordinary source files import. Hosts
+import `./browser` or `./node` exactly once, at boot (§8).
+
+### 5.2 Core behaviour — `core.ts`
+
+- **Sink slot.** A module-level `let sink: ErrorSink | null`, set by `setErrorSink`. Until a sink is
+  installed, records go to a **bounded pre-install queue** holding at most 200 records; overflow is
+  counted. `installBrowserErrorFile` and `installNodeErrorFile` drain that queue on install.
+- **The report path runs only when there is an error:**
+  1. `isAnswer(err)` (§11.4) → treat as `expected`.
+  2. `isReported(err)` → if true, return.
+  3. Mark `err` in a `WeakSet`, for objects only.
+  4. Compute the fold key and ask the burst folder. If the error is folded, return.
+  5. Build the record: `{ts, level, app, where, doing, error: describeError(err), data: redact(data)}`.
+  6. `sink.write(record)`.
+- **Totality.** The whole path is wrapped in one `try/catch` that falls back to `console.error`
+  once. A **re-entrancy flag** turns any error thrown while reporting into a silent drop, so the
+  library can never loop.
+
+### 5.3 The browser sink — `browser.ts`
+
+`installBrowserErrorFile({ app, edition?, vueApp?, endpoint = '/error-report', handleGlobalErrors = true })`
+works in both a window and a worker (`self`):
+
+- **Queue.** Records go onto a queue. It flushes when it holds 20 records or after 2 s, whichever
+  comes first, with one timer.
+- **Flush.** A flush is one `fetch(endpoint, { method: 'POST', keepalive: true, body })`. The body
+  is `{ app, events: Record[] }`. The endpoint is resolved against the app's base path
+  (`getBasePath()` semantics, so `/desktop/` and `/mobile/` both reach `/error-report`).
+- **Page hidden.** On `pagehide` or `visibilitychange=hidden`, the queue is sent with
+  `navigator.sendBeacon`, in the window only.
+- **Budget.** At most 30 records a minute. The rest are counted and sent as one summary record.
+- **Delivery failure** is silent, with at most one `console.warn` per session. The error is never
+  reported back into the queue (R11).
+- **Global handlers.** When `handleGlobalErrors` is true, it installs listeners for `error` and
+  `unhandledrejection` on `window` or `self`, and, when `vueApp` is given, sets
+  `vueApp.config.errorHandler` to a function that calls `caught('rendering <component name>', err,
+  { hook: info })` — the component name and the Vue lifecycle hook string are allowed data. It
+  ignores the benign ResizeObserver loop message and Vite HMR noise (§11.3).
+- **Console echo is off in the browser.** Upstream's `logger.ts` already prints to the console
+  (§8 N4); the library must not print a second copy.
+
+### 5.4 The node sink — `mcp/src/errfile/node.ts`
+
+`installNodeErrorFile({ app: 'mcp', file?, handleProcessErrors = true, exitOnUncaught = true })`
+does the following:
+
+- It resolves the path (§3.1), creates the `RollingFileWriter`, sets the sink and drains the
+  pre-install queue.
+- When `handleProcessErrors` is true, it installs these handlers, idempotently:
+  - `uncaughtException` → `fatal`, then a synchronous flush, then `exit(1)` if `exitOnUncaught`.
+  - `unhandledRejection` → `caught('an unhandled promise rejection', reason)`.
+  - `beforeExit` and `exit` → a synchronous flush.
+  - SIGINT and SIGTERM → a synchronous flush. The host's own signal handlers are not replaced.
+- It returns `{ flush, file }`.
+- **Every echo goes to stderr.** There is no code path in this file that can write to stdout.
+
+`RollingFileWriter` is the same port as §4.3, in TypeScript: `write` is an array push; an unref'd
+5 ms timer drains with async `fs.appendFile`; 256 KiB forces a synchronous drain; `flush()` is the
+synchronous barrier; 5 MiB × 5 rotation with the multi-process rules of §4.3; `0600`.
+
+### 5.5 The vendored copy in `mcp/`
+
+`mcp/` has its own `package.json`, `tsconfig.json` and lockfile and is not a workspace of the root
+([mcp.mdx](./mcp.mdx) §4). It cannot import `src/lib/errfile` across that boundary, and it must not:
+the MCP imports nothing from the Vue tree. So `scripts/sync-errfile.sh` copies the six shared files
+into `mcp/src/errfile/`, each with the header `// GENERATED from src/lib/errfile — run
+scripts/sync-errfile.sh`, and `mcp/src/errfile/vendor-drift.test.ts` fails if any copy differs from
+the source after the header. "Copy" never means "drift".
+
+---
+
+## 6. The call-site API
+
+### 6.1 Go
+
+```go
+import "github.com/mayswind/ezbookkeeping/pkg/errfile"   // in cli/: ".../cli/internal/errfile"
+
+func Caught(doing string, err error, fields ...Field)     // ERROR  → error.err
+func Warn(doing string, err error, fields ...Field)       // WARN   → error.err
+func Expected(doing string, err error)                    // nothing (VERBOSE: EXPECTED)
+func Fatal(doing string, err error, fields ...Field)      // FATAL + synchronous flush; never exits
+func Recovered(doing string, rec any, fields ...Field)    // ERROR with the panic stack; never re-panics
+func Go(doing string, fn func())                          // go fn() under a recover net
+func RecoverNet(doing string) func()                      // defer errfile.RecoverNet("…")()
+
+func F(key string, value any) Field                       // allowlisted primitives only (§12)
+func Describe(err error) string                           // for code that must show a message
+func IsReported(err error) bool
+func Flush()                                              // synchronous barrier
+
+type Options struct { App, Command, File string; HandleSignals bool }
+func Install(o Options) (flush func())
+```
+
+**Rules of use:**
+
+- **Nothing is declared per file.** Import the package; call it in the branch. `where` is derived.
+- **Write `doing` as a gerund phrase with no trailing period:** `"loading the account list"`, not
+  `"Failed to load accounts."`. It must be a string literal or a `const` (the analyzer checks).
+  - Dynamic parts go in fields, not in `doing`, so the fold key stays stable:
+    `errfile.Caught("syncing the account", err, errfile.F("account_id", id))`.
+  - `account_id` is an opaque id, so it is allowed. An account **name** is ledger data and is
+    refused (§12).
+  - The one permitted dynamic form is a route or verb name:
+    `errfile.Caught("handling "+r.Method+" "+r.Path, err)` — the analyzer allows concatenations
+    whose non-literal parts are `.Method`, `.Path`, `.Name`, `r.Route`, or `verb.Name`.
+- **`Expected` takes no fields.** Nothing is written, so nothing is needed.
+- **`Fatal` does not exit.** The host prints its own message and chooses its own exit code; the
+  library only guarantees the record is on disk first.
+- **`Go` allocates one goroutine, exactly like `go`.** Never wrap a hot inner loop body in a
+  `defer errfile.RecoverNet` — put the net at the goroutine's top, once.
+
+### 6.2 TypeScript
+
+Everything an ordinary source file needs is exported from `@/lib/errfile` (in `mcp/`, from
+`./errfile/index.js`).
+
+```ts
+export function errorFileFor(where: string): ErrorFile;
+
+export type ErrorFile = {
+  caught(doing: string, err: unknown, data?: ErrorData): void; // ERROR  → error.err (answer shapes → nothing)
+  warn(doing: string, err?: unknown, data?: ErrorData): void; // WARN   → error.err
+  expected(doing: string, err: unknown): void; // nothing (VERBOSE: EXPECTED)
+  rethrow(doing: string, err: unknown, data?: ErrorData): never; // ERROR, then throw err (same object)
+  fatal(doing: string, err: unknown, data?: ErrorData): void; // FATAL + synchronous flush (node)
+};
+
+export function tryOr<T>(errors: ErrorFile, doing: string, fn: () => T, fallback: T): T;
+export function tryOrAsync<T>(errors: ErrorFile, doing: string, fn: () => Promise<T>, fallback: T): Promise<T>;
+export function reportRejection(errors: ErrorFile, doing: string, p: Promise<unknown>): void;
+export function guard<A extends unknown[]>(errors: ErrorFile, doing: string, fn: (...a: A) => unknown): (...a: A) => void;
+
+export type ErrorData = Record<string, string | number | boolean | null | undefined>;
+export function describeError(err: unknown): string; // for code that must show a message
+export function isReported(err: unknown): boolean;
+```
+
+**Rules of use:**
+
+- **One per module.** Create the object once, at module scope, directly after the imports:
+  `const errors = errorFileFor('src/stores/account.ts');`
+  - The name is always `errors`. The lint rule keys on it (§13.2).
+  - In a `.vue` file with `<script setup>`, the constant goes at the top of that block, after the
+    imports. `setup()` runs once per component instance, so this allocates one two-field object
+    per mount; that is the accepted cost, and it is the only per-instance cost the library has.
+- **Write `doing` as a gerund phrase with no trailing period:** `'loading the account list'`, not
+  `'Failed to load accounts.'`
+  - Dynamic parts go in `data`, not in `doing`, so the fold key stays stable:
+    `errors.caught('saving the account', err, { accountId })`.
+- **`guard` is for callbacks** that nobody awaits: timers, event listeners, `@change` handlers
+  that call async code, `worker.onmessage`, `FileReader.onload`. It returns a function that runs
+  `fn` and reports both a synchronous throw and a returned rejected promise. It allocates once, at
+  registration — never call it inside a render function or a hot loop.
+- **`caught` on an answer shape writes nothing** (§11.4). That is what lets a view report every
+  rejection it sees without judging it.
+
+---
+
+## 7. The code patterns — Go (G1–G8) and TypeScript (T1–T8)
+
+Every pattern shows the code **before** and **after**. The `after` code adds one import at the top
+of the file (Go: `"github.com/mayswind/ezbookkeeping/pkg/errfile"`; TS:
+`import { errorFileFor, … } from '@/lib/errfile';` plus the module constant
+`const errors = errorFileFor('<repo-relative path>');`). Neither is repeated below.
+
+### G1 — the error-nil block that returns a different error (the commonest silent site)
+
+The original error is replaced by a sentinel and nobody wrote it down.
+
+```go
+// before — pkg/services/accounts.go
+if err != nil {
+    return nil, errs.ErrOperationFailed
+}
+
+// after
+if err != nil {
+    errfile.Caught("counting the user's accounts", err)
+    return nil, errs.ErrOperationFailed
+}
+```
+
+When the block **already** logs through `pkg/log`, it is net-covered (§8 N6) and is left exactly as
+it is. Do not add a second call: that would be two lines for one fault.
+
+```go
+// unchanged — this site already reports through the hook
+if err != nil {
+    log.Errorf(c, "[accounts.GetAccountsByAccountIds] failed to get accounts, because %s", err.Error())
+    return nil, errs.ErrOperationFailed
+}
+```
+
+### G2 — the block that hands the error on (no change)
+
+```go
+// unchanged — the error is carried, and the frame that finally handles it reports it
+if err != nil {
+    return nil, err
+}
+if err != nil {
+    return fmt.Errorf("reading the manifest: %w", err)
+}
+if err != nil {
+    lastErr = err
+    continue
+}
+```
+
+A bare hand-off needs no call. Use `Caught` before the return only when **this** frame knows
+something the outer frame won't: what was being done here, with which id.
+
+### G3 — the expected failure (probe, fallback, optional file, user input)
+
+```go
+// before — pkg/machine/ingest_root.go
+if err != nil {
+    return defaultRoot
+}
+
+// after
+if err != nil {
+    errfile.Expected("reading the optional statements root from the credentials file", err)
+    return defaultRoot
+}
+```
+
+Sometimes the expected case can be told apart from a real fault in code. When it can, split the
+two:
+
+```go
+if err != nil {
+    if errors.Is(err, fs.ErrNotExist) {
+        errfile.Expected("reading the optional sidecar", err)
+    } else {
+        errfile.Caught("reading the sidecar", err)
+    }
+    return nil, nil
+}
+```
+
+Upstream's parse-and-answer idiom is the same pattern: an `*errs.Error` built from user input is an
+answer (R7), and the site says so.
+
+```go
+// before — pkg/api/transactions.go
+if err != nil {
+    return nil, errs.NewIncompleteOrIncorrectSubmissionError(err)
+}
+// after — the err is handed on inside the call, so this already passes R1-Go; no change
+```
+
+### G4 — the discarded result
+
+```go
+// before — a bare call whose error nobody looks at
+os.Remove(tmpPath)
+// after — either decide it is expected …
+_ = os.Remove(tmpPath)
+// … or report it
+if err := os.Remove(tmpPath); err != nil {
+    errfile.Warn("removing the temporary import file", err)
+}
+```
+
+`defer f.Close()` stays as it is.
+
+### G5 — `recover()`
+
+```go
+// before — cli/internal/app/main.go
+defer func() {
+    if r := recover(); r != nil {
+        logger.Error("panic: %v", r)
+        printError(stderr, …, "the stack is in ~/T/_ezbookkeeping/cli.err")
+        code = exitcode.Failed
+    }
+}()
+
+// after
+defer func() {
+    if r := recover(); r != nil {
+        errfile.Recovered("running ezbk", r, errfile.F("verb", verbName))
+        errfile.Flush()
+        printError(stderr, …, "the stack is in ~/T/ezbookkeeping/error.err")
+        code = exitcode.Failed
+    }
+}()
+```
+
+`logger.Error` in `cli/internal/logger` keeps writing `cli.err` for the usage trail; the error
+record and the stack now go to `error.err`, and the hint points there.
+
+```go
+// before — pkg/machine/audit.go
+defer func() { _ = recover() }() // logging can never break a write
+// after
+defer errfile.RecoverNet("writing the machine audit line")()
+```
+
+### G6 — goroutines
+
+```go
+// before — pkg/api/users.go
+go func() {
+    err := a.users.SendVerifyEmail(c, user, …)
+    if err != nil {
+        log.Warnf(c, "[users.UserRegisterHandler] cannot send verify email …, because %s", err.Error())
+    }
+}()
+
+// after
+errfile.Go("sending the verification email", func() {
+    err := a.users.SendVerifyEmail(c, user, …)
+    if err != nil {
+        log.Warnf(c, "[users.UserRegisterHandler] cannot send verify email …, because %s", err.Error())
+    }
+})
+```
+
+```go
+// before — pkg/log/rotate_file_writer.go
+go w.removeOldFiles()
+// after
+errfile.Go("removing rotated log files", w.removeOldFiles)
+```
+
+A panic in the goroutine is now one `ERROR` line with the panic stack, and the goroutine ends. The
+server keeps serving. Before, the process died with the stack on stderr and nothing on disk.
+
+### G7 — the server boundary: recovery middleware, machine-plane wrap, cron
+
+These are central catch points. Wiring them once covers every route and every job behind them.
+
+```go
+// pkg/middlewares/recovery.go — before
+if err := recover(); err != nil {
+    stack := stack(3)
+    log.ErrorfWithExtra(c, string(stack), "System Error! because %s", err)
+    utils.PrintJsonErrorResult(c, errs.ErrSystemError)
+}
+// after
+if err := recover(); err != nil {
+    stack := stack(3)
+    errfile.Recovered("handling "+c.Request.Method+" "+c.FullPath(), err, errfile.F("request_id", c.GetContextId()))
+    log.ErrorfWithExtra(c, string(stack), "System Error! because %s", err)
+    utils.PrintJsonErrorResult(c, errs.ErrSystemError)
+}
+```
+
+The two lines do not double-report: `log.ErrorfWithExtra` goes through the hook (N6), but the hook
+runs after `Recovered` marked the record, and the hook's record for a `System Error!` message is
+folded into it by key (`where` + `doing` differ, so the second is kept only as its own line under
+`EZBK_ERROR_FILE_VERBOSE=1`; the hook downgrades any entry whose message starts with
+`System Error!` to `EXPECTED`, because the recovery net has already written the real record).
+
+The machine plane's `wrap()` in `pkg/machine/mount.go` and `toFail()` in `envelope.go` report only
+what is a real fault:
+
+```go
+} else if f := toFail(err); f != nil {
+    if f.Code == CodeInternal || f.Code == CodeUpstreamError {
+        errfile.Caught("handling "+r.Method+" "+r.Path, err, errfile.F("request_id", web.GetContextId()))
+    } else {
+        errfile.Expected("handling "+r.Method+" "+r.Path, err)   // a gate refusal is an answer (R7)
+    }
+    writeFail(c, f, mc, "")
+}
+```
+
+Every hint in `pkg/machine` that says `read log/ezbookkeeping.log` changes to
+`read ~/T/ezbookkeeping/error.err`. The `Fail` for `internal` gains no new field: the record has the
+request id, and the audit line has the route.
+
+The cron runner in `pkg/cron/cron_job.go` `doRun()` already logs a failed job through `log.Errorf`
+(N6). It gains one net for a **panicking** job: `defer errfile.RecoverNet("running the cron job "+j.Name)()`
+as the first statement.
+
+### G8 — `main()` and the process level
+
+```go
+// ezbookkeeping.go — before
+err := cmd.Run(context.Background(), os.Args)
+if err != nil {
+    log.Fatalf("Failed to run ezBookkeeping with %s: %v", os.Args, err)
+}
+// after
+err := cmd.Run(context.Background(), os.Args)
+if err != nil {
+    errfile.Fatal("running ezbookkeeping", err, errfile.F("command", commandName(os.Args)))
+    log.Fatalf("Failed to run ezBookkeeping with %s: %v", os.Args, err)
+}
+```
+
+The `Install` call itself lives in `cmd/initializer.go` `initializeSystem()` (§8 N5), the one
+function every subcommand runs first; it passes `App: "server"` for `server run` and
+`App: "app-cli"` otherwise. Faults before that point wait in the pre-install queue and are flushed
+by `Fatal`.
+
+`cli/cmd/ezbk/main.go` calls `errfile.Install(errfile.Options{App: "ezbk"})` before `app.Main`, and
+`app.Main`'s deferred recover is G5.
+
+### T1 — the plain `catch` that handles and continues
+
+```ts
+// before — src/lib/settings.ts
+try {
+    return JSON.parse(localStorage.getItem(key));
+} catch (ex) {
+    logger.error('failed to parse settings', ex);
+    return defaultValue;
+}
+
+// after — unchanged: logger.error is a net (N4). Nothing to add.
+```
+
+```ts
+// before — src/views/desktop/accounts/ListPage.vue
+}).catch(error => {
+    loading.value = false;
+    if (!error.processed) {
+        snackbar.value?.showError(error);
+    }
+});
+
+// after
+}).catch(error => {
+    errors.caught('loading the account list', error);
+    loading.value = false;
+    if (!error.processed) {
+        snackbar.value?.showError(error);
+    }
+});
+```
+
+The store that produced `error` already reported the raw failure through `logger.error` (N4) and
+rejected an answer shape, so this line writes nothing for it (§11.4). If a `TypeError` inside the
+view's own `.then` lands here instead, it is written, with the component's path, which is exactly
+the case that was invisible before.
+
+### T2 — catch that cleans up and rethrows
+
+```ts
+// before — src/lib/file.ts
+} catch (e) {
+    reader.abort();
+    throw e;
+}
+// after
+} catch (e) {
+    reader.abort();
+    errors.rethrow('reading the chosen file', e);
+}
+```
+
+A plain `throw e` with no cleanup does not need changing. The lint rule accepts a bare rethrow,
+because the frame that finally handles the error reports it.
+
+### T3 — the expected failure
+
+```ts
+// before — src/lib/webauthn.ts
+try {
+    supported = !!window.PublicKeyCredential;
+} catch {
+    supported = false;
+}
+// after
+try {
+    supported = !!window.PublicKeyCredential;
+} catch (e) {
+    errors.expected('probing for WebAuthn support', e);
+    supported = false;
+}
+```
+
+### T4 — the value-with-fallback expression (`tryOr`)
+
+```ts
+// before
+let parsed;
+try {
+    parsed = JSON.parse(raw);
+} catch (e) {
+    parsed = null;
+}
+// after
+const parsed = tryOr(errors, 'parsing the saved filter', () => JSON.parse(raw), null);
+```
+
+### T5 — fire-and-forget promise (`reportRejection`)
+
+```ts
+// before — src/views/desktop/MainPageLayout.vue
+void userStore.refreshUserInfo();
+// after
+reportRejection(errors, 'refreshing the user profile', userStore.refreshUserInfo());
+```
+
+A `.catch()` that **recovers** keeps its shape and reports inside:
+
+```ts
+const rates = await exchangeRatesStore.load().catch(e => {
+    errors.caught('loading exchange rates', e);
+    return null;
+});
+```
+
+### T6 — callbacks nobody awaits (`guard`)
+
+```ts
+// before — src/components/desktop/DataImportDialog.vue
+reader.onload = async e => { await importFile(e.target.result); };
+setTimeout(() => refreshList(), 5000);
+// after
+reader.onload = guard(errors, 'importing the chosen file', async e => { await importFile(e.target.result); });
+setTimeout(guard(errors, 'refreshing the list', () => refreshList()), 5000);
+```
+
+### T7 — the MCP dispatch boundary
+
+```ts
+// mcp/src/server.ts — the one catch around every tool
+} catch (err) {
+    const failure = toToolFailure(err);
+    if (failure.code === 'internal') errors.caught(`running ${def.name}`, err, { tool: def.name });
+    else errors.expected(`running ${def.name}`, err);   // a gate refusal or a plane answer (R7)
+    return failure.asContent();
+}
+```
+
+Nothing here touches stdout. The `internal` hint in the tool result points at
+`~/T/ezbookkeeping/error.err`.
+
+### T8 — entry points and top-level `main().catch`
+
+```ts
+// mcp/src/index.ts — before
+Main.run().catch(err => {
+    process.stderr.write(`ezbookkeeping mcp: ${String(err)}\n`);
+    process.exit(1);
+});
+// after
+Main.run().catch(err => {
+    errors.fatal('starting the ezbookkeeping MCP server', err);
+    process.stderr.write(`ezbookkeeping mcp: ${describeError(err)}\n`);
+    process.exit(1);
+});
+```
+
+### 7.17 Things that are NOT error sites (do not wrap)
+
+- **A Go `if err != nil { return …, err }`**, wrapped or not. The frame that handles it reports.
+- **A `try/finally` with no `catch`.** The error propagates.
+- **A plain `throw new Error(...)`** or `return nil, errs.ErrX` **outside** an error-nil block.
+  Producing an error is not swallowing one.
+- **Code whose only failure mode is a thrown error or panic that propagates.** The nets cover it.
+- **`defer f.Close()`**, `_ = call()`.
+- **Test files, fixtures, testdata, generated files** (§13.4).
+- **The two libraries themselves.** They must never report into themselves (R11).
+
+---
+
+## 8. The global nets — where the library is wired in once
+
+Every entry below is a single, small edit at a central point. Together they guarantee that a fault
+reaches the file even in a file with no local error site at all. That is how a file with **no
+error sites** is still covered. The **Delta** column is the count of upstream-file lines touched,
+because §17 promises to keep that number small.
+
+| #   | Runtime   | File (repo-relative)                                  | Edit                                                                                                                                                                                                                      | Delta |
+| --- | --------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| N1  | web       | `src/desktop-main.ts`                                 | `installBrowserErrorFile({ app: 'web', edition: 'desktop', vueApp: app })` right after `createApp`, before `app.mount`                                                                                                     | 2     |
+| N2  | web       | `src/mobile-main.ts`                                  | same, `edition: 'mobile'`                                                                                                                                                                                                  | 2     |
+| N3  | sw        | `src/sw.ts`                                           | `installBrowserErrorFile({ app: 'sw' })` as the first statement                                                                                                                                                            | 2     |
+| N4  | web       | `src/lib/logger.ts`                                   | `logWarn` → also `errors.warn(msg, obj)`; `logError` → also `errors.caught(msg, obj)`. The `console.*` calls stay. Every existing `logger.error` / `logger.warn` site becomes a report with zero edits there.              | 4     |
+| N5  | server    | `cmd/initializer.go` `initializeSystem()`             | `errfile.Install(errfile.Options{App: appName(c), Command: c.Command.Name})` and `errfileserver.InstallLogHook()` right after the configuration is loaded                                                                   | 3     |
+| N6  | server    | `pkg/log/logger.go`                                   | one exported `func AddHook(hook logrus.Hook)` that attaches the hook to `bootLogger`, `cliLogger` and `defaultLogger`. Every existing `log.Errorf` / `log.Warnf` / `Boot*` / `Cli*` site becomes a report with zero edits. | 6     |
+| N7  | server    | `pkg/middlewares/recovery.go` `Recovery()`            | Pattern G7                                                                                                                                                                                                                 | 1     |
+| N8  | server    | `pkg/machine/mount.go` `wrap()` + `envelope.go`       | G7: `Recovered` in the panic net; `Caught` / `Expected` on the `toFail` branch; every `log/ezbookkeeping.log` hint → `~/T/ezbookkeeping/error.err`                                                                        | ours  |
+| N9  | server    | `pkg/machine/mount.go` `Mount()`                      | `router.POST("/error-report", errfileserver.Handler())` — outside `/machine/v1` and `/api/v1`; gin has no SPA catch-all here, so mount order is free; §9                                                                                             | ours  |
+| N10 | server    | `pkg/cron/cron_job.go` `doRun()`                      | `defer errfile.RecoverNet("running the cron job "+j.Name)()` first                                                                                                                                                         | 1     |
+| N11 | server    | `ezbookkeeping.go` `main()`                           | Pattern G8                                                                                                                                                                                                                 | 1     |
+| N12 | server    | `pkg/api/*.go`, `pkg/log/rotate_file_writer.go`       | the six `go` statements → `errfile.Go` (G6); done by the partition agents, listed here because they are nets                                                                                                                | 6     |
+| N13 | ezbk      | `cli/cmd/ezbk/main.go`, `cli/internal/app/main.go`    | `errfile.Install({App: "ezbk"})`; G5 in the deferred recover; the panic hint → `error.err`                                                                                                                                 | ours  |
+| N14 | mcp       | `mcp/src/index.ts`, `mcp/src/server.ts`               | `installNodeErrorFile({ app: 'mcp' })`; T7; T8; **nothing on stdout, ever**                                                                                                                                                | ours  |
+| N15 | vite      | `vite.config.ts`                                      | `'/error-report': { target: 'http://127.0.0.1:8080/', changeOrigin: true }` in the dev proxy, next to `/api`                                                                                                                | 4     |
+
+Total upstream-file delta for the nets: about 30 lines across 10 files. Everything else is in
+directories upstream has never heard of.
+
+---
+
+## 9. Browser and worker delivery — the ingest route
+
+### 9.1 The route
+
+The route is `POST /error-report`. The body is:
+
+```json
+{
+  "app": "web",
+  "events": [
+    { "ts": "…", "level": "ERROR", "where": "…", "doing": "…", "error": "…", "stack": "…", "data": {} }
+  ]
+}
+```
+
+It is mounted once, by `machine.Mount` on the Go server (`:8080`). The Vite dev server (`:8081`)
+proxies it there (N15), so `just dev` writes browser faults to the same file without any second
+implementation.
+
+It sits outside `/machine/v1`, so it needs no machine key. The browser never holds that key, and
+must not. It is also outside `/api/v1`, so it needs no JWT: a fault on the login page, before any
+token exists, still arrives.
+
+### 9.2 Guards, in order
+
+1. **Loopback only.** The check is the machine plane's own `peerIsLoopback` (apis.mdx §19: the real
+   socket peer, `c.Request.RemoteAddr`, never `ClientIP()` and never a proxy header). If the peer
+   is not `127.0.0.1`, `::1` or `::ffff:127.0.0.1`, the handler answers `204` and does nothing. It
+   does not answer `403`, because nothing about the route should be probe-able. When the server
+   listens on a unix socket, the same private-socket rule as `machine.Arm` applies.
+2. **Content type.** It accepts `application/json` and `text/plain`. `text/plain` is there because
+   `sendBeacon` sends a Blob.
+3. **Size cap.** The body is capped at 64 KiB, read through `http.MaxBytesReader`. Anything larger
+   is dropped.
+4. **Event cap.** At most 50 events per request. The rest are dropped and counted.
+5. **Rate limit.** 240 events per minute per `(app, remoteAddress)`, with a global ceiling of 1,200
+   per minute. Dropped events are counted and written as one WARN per minute:
+   `dropped N browser reports over the rate limit`.
+6. **Sanitize.** Every string field goes through `stripControlChars` and the caps in §3.2. Every
+   `data` value goes through `redact()` again. The server never trusts the browser's redaction.
+   `app` must be `web` or `sw`; anything else becomes `web`.
+7. **Tag and write.** Each event is tagged `via=server` (or `via=vite`), then written through the
+   Go sink with the browser's `where` and `doing` kept as they are.
+8. **Answer.** The route always answers `204`, including for events it dropped or folded. It never
+   echoes the body back, sets no cookie, and carries no CORS header (same-origin only).
+
+### 9.3 Why a separate route and not the machine plane
+
+- The machine plane is authenticated with a secret that must never reach a browser.
+- The ingest route has no secret. Its safety comes from these guards instead:
+  - it is loopback-only;
+  - it accepts write-only, append-only, capped and sanitised input;
+  - it produces no output.
+- An attacker on the same machine who can post to it can only add capped lines to a local file.
+  That same attacker could already write to the file directly.
+- It is still mounted by `machine.Mount` rather than by a third line in `cmd/webserver.go`, so the
+  upstream delta does not grow and the mount-order test (apis.mdx §21) covers it too.
+
+---
+
+## 10. Performance design
+
+| Concern          | Decision                                                                                                                                                                                                                                                                                       |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Happy path       | Go: nothing runs outside the taken branch; `runtime.Caller` is called only after an error exists. TS: `errorFileFor` stores one string; pattern calls are ordinary method calls that run only inside a `catch`. `tryOr` adds one function call to a `try`. `guard` allocates once, at registration. |
+| Error path, Go   | Record building is plain Go. `Write` is a buffer append under a mutex. A 5 ms `AfterFunc` drains the buffer with one append call on its own goroutine. There is **no sync fs on a request path**. The logrus hook does the same append under logrus's mutex.                                        |
+| Error path, node | Same shape: array push, unref'd 5 ms timer, async `appendFile` on the libuv threadpool.                                                                                                                                                                                                         |
+| Storm            | The burst folder caps writes, since identical faults become 1 line per 60 s. The 256 KiB buffer cap bounds memory. The fold table is capped at 1,000 keys, evicting least-recently-seen, and a key evicted while it still owes a summary writes that summary first.                              |
+| Stack cost       | `runtime.Callers` / `err.stack` is read only on the error path. Trimming is string work, with no source-map lookups at runtime.                                                                                                                                                                 |
+| Browser          | One fetch per 20 records or 2 s, a client budget of 30 records per minute, and `sendBeacon` only on hide. The service worker batches separately, so it never blocks on the UI thread.                                                                                                            |
+| Render path      | The Vue `errorHandler` is set once. The library never triggers a Vue reactive update.                                                                                                                                                                                                           |
+| Crash            | A synchronous flush happens only on `Fatal`, `Recovered` from a `main()` net, `uncaughtException`, exit and signals. This is the one deliberate sync write, and it is the right trade-off at the moment the process is dying.                                                                    |
+| Rotation         | Size is cached. At most one `Stat` per roll check across processes. A roll is a synchronous rename chain of about 1–2 ms, once every 5 MiB.                                                                                                                                                      |
+| Dependencies     | Zero in the libraries (`pkg/errfile` is stdlib only; the two files that need gin and logrus live in `pkg/errfile/server` and are not vendored). `src/lib/errfile` adds under 5 KB gzip to the browser bundle, and the web build must stay within that budget.                                     |
+| Tests and CI     | The libraries' tests measure these properties (§15.1).                                                                                                                                                                                                                                          |
+
+**What not to do**, because it would hurt performance, and the reviewer rejects it:
+
+- calling `errorFileFor` inside a function body or a loop;
+- calling `guard` inside a render function;
+- building the `doing` string with `fmt.Sprintf` / a template literal inside a hot loop. Put the
+  dynamic parts in fields, which are built only on error;
+- wrapping a hot inner loop body in `tryOr` or `RecoverNet`. Wrap the loop instead.
+
+---
+
+## 11. Noise control — keeping the file worth reading
+
+### 11.1 Burst folding (R10)
+
+The fold key is built from these parts:
+
+- `app`, `where` (file, without the Go line number) and `doing`;
+- the error type (`*fs.PathError` / `err.name`);
+- the **normalised** message: digits become `#`, hex runs of 8 or more become `<hex>`, absolute
+  paths become `<path>`, UUIDs become `<uuid>`, and the message is cut to 300 characters.
+
+The window is 60 s. The first occurrence of a key is written through. Later ones are counted. When
+the window closes, one summary line is written (§3.2). On exit, every owed summary is flushed.
+
+The stack is never part of the key. Two stacks for one failure would otherwise defeat the fold.
+
+### 11.2 Transient network errors
+
+An `AxiosError` with `code=ERR_NETWORK` / `ECONNABORTED`, a Go `net.OpError` / `syscall.ECONNREFUSED`
+/ `ENOTFOUND` / `EAI_AGAIN` from the exchange-rate fetchers, the mail sender or the LLM client, and
+the CLI's "server is down" probe, are folded **per 10 minutes**, not per 60 s, and are written as
+`WARN`, not `ERROR`. A closed laptop is not a fault storm. This is LFB's "offline is not a fault".
+
+### 11.3 Benign browser conditions
+
+These are never written:
+
+- `ResizeObserver loop completed with undelivered notifications`, but only when no `Error` object
+  was thrown;
+- errors raised by the Vite HMR client in development;
+- a `{ canceled: true }` rejection — the user cancelled it.
+
+A dynamic-import chunk-load failure (`Failed to fetch dynamically imported module`) is a `WARN`.
+
+### 11.4 Answer shapes (R7 in the browser)
+
+Upstream's stores and `src/lib/services.ts` reject with plain objects, never `Error` instances,
+when the failure is an answer rather than a fault. `core.ts` `isAnswer(err)` recognises an object
+that is **not** an `Error`, has no `stack`, and whose own keys are a subset of:
+
+`message`, `error` (with an `errorCode`), `processed`, `canceled`, `isUpToDate`, `errorCode`,
+`errorMessage`, `response`.
+
+For such a value, `caught` and `warn` write nothing (or `EXPECTED` under verbose). Everything the
+list does not cover — an `Error`, a string, a number, an object with unexpected keys — is a fault
+and is written. The list is a constant in `core.ts` with a test for each shape, and adding to it is
+a spec change.
+
+### 11.5 Console echo
+
+- **Go, development (`[mode] development` or `EZBK_ERROR_FILE_ECHO=1`):** every record the library
+  writes is also printed once to `stderr`. In production the echo is off. The logrus hook's records
+  are **never** echoed — upstream already printed them.
+- **Browser:** the echo is always off (§5.3).
+- **MCP:** the echo goes to **stderr only**, because stdout is the JSON-RPC channel, and it is on
+  by default because the process has no console of its own.
+
+---
+
+## 12. Privacy, redaction and open-source safety
+
+This repo is public. The books are not. The error file lives **outside** the repo, in `~/T/`, at
+mode `0600`. On top of that, both libraries apply these defences, so a call site cannot get privacy
+wrong:
+
+1. **Secret keys are redacted.** In `data` / fields, any key matching
+   `/pass(word)?|secret|token|auth|cookie|session|key|signature|credential|bearer|totp|otp|passcode/i`
+   has its value replaced with `[redacted]`. The match is case-insensitive. The machine API key
+   therefore can never appear even if a site passes it by mistake; the library's own `Install`
+   never sees it.
+2. **URL query values are redacted.** Any value in `data` or in the message that looks like a URL
+   has its query values redacted for `token`, `code`, `state`, `key`, `password`, `secret`,
+   `signature`, `sig`, `passcode` and `api_key`. The parameter names are kept. Upstream's OAuth2
+   callback and its exchange-rate provider URLs carry such values.
+3. **Ledger fields are refused.** In `data` / fields, any key matching
+   `/amount|balance|payee|comment|notes?|memo|account_?name|category_?name|tag_?name|description|statement|iban|card|number/i`
+   is **dropped** and replaced with `[ledger-field refused]`. Only opaque ids (`account_id`,
+   `transaction_id`, `uid`), counts, booleans, route and verb names, file names without directories,
+   currency codes and error codes are allowed through. The vector file lists the refused keys.
+4. **Request bodies are never logged.** The recovery net logs the method and the route **template**
+   (`c.FullPath()`), never the raw URL, the body, the query string or headers. The machine plane
+   logs `r.Method` and `r.Path` from its own route table.
+5. **Error messages are passed through as written.** An upstream message can occasionally carry a
+   value, for example a SQLite constraint message quoting a column value, or upstream's own
+   `log.Warnf(… cannot send email to "%s" …, user.Email)`. The file is local and `0600`, and the
+   message is the diagnosis, so it is kept. But **code we write must never put ledger values into
+   an error message or a `doing` string**. The analyzer's and the lint rule's `doing` check enforce
+   that `doing` is a literal, except for route, verb and job names.
+6. **Nothing from the file enters the repo.** No test fixture, snapshot, doc example or commit
+   message may contain a real line from `error.err`. Every example in this spec is synthetic. The
+   coverage report is written to `~/T/`, never into the repo.
+7. **Statement paths are redacted.** Any absolute path under the configured statements root
+   (`ezbookkeeping.statements.root` in the credentials file) is rewritten to
+   `<statements>/…basename` before it is written, because the directory name itself is private
+   (CLAUDE.md, Private Data Boundary). The library learns the root from `Install` / `EZBK_STATEMENTS_DIR`
+   and never from a constant.
+
+---
+
+## 13. Enforcement — the analyzer, the lint rule and the coverage script
+
+A rule that nothing checks is a rule nobody follows (§1.4). There are three enforcement layers.
+
+### 13.1 `errfile/catch-must-report` for Go — `scripts/errfilecheck/`
+
+- **Location:** `scripts/errfilecheck/`, its own Go module (it needs `golang.org/x/tools`, which
+  the root module does not, and the root `go.mod` is upstream's). `analyzer/analyzer.go` holds the
+  `*analysis.Analyzer` named `errfile`; `main.go` is `singlechecker.Main(analyzer.Analyzer)`, so the
+  binary works both standalone (`bin/errfilecheck ./...`) and as `go vet -vettool=bin/errfilecheck`.
+- **Type information.** It uses `pass.TypesInfo` to know which expressions are `error`-typed and
+  which calls return one. That is what makes R1-Go checkable without guessing from names.
+- **It visits four kinds of node:**
+  - `*ast.IfStmt` whose condition contains `X != nil` / `X == nil` with `X` of type `error` (the
+    taken block; the `else` block for `== nil`; `init` statements are followed), and
+    `*ast.CaseClause` with such a condition;
+  - `*ast.CallExpr` to the builtin `recover`;
+  - `*ast.ExprStmt` whose call's result type includes `error`;
+  - `*ast.GoStmt`.
+- **A block passes** if, anywhere inside it: the error identifier is used (any `*ast.Ident`
+  resolving to the same `types.Object`); a call to `errfile.*`; a call to `log.Errorf`,
+  `log.Warnf`, `log.ErrorfWithExtra`, `log.BootErrorf`, `log.BootWarnf`, `log.CliErrorf`,
+  `log.CliWarnf` (the `pkg/log` package or the CLI's `logger` package); `panic(...)`;
+  `t.Fatal*`/`t.Error*` (tests are out of scope anyway).
+- **A `recover()` passes** if its result is bound to an identifier that is then used as described,
+  or passed to `errfile.Recovered` / `panic` / `log.*`.
+- **A `go` statement passes** only when its function literal's first statement is
+  `defer errfile.RecoverNet(...)()`. (`errfile.Go(doing, fn)` is a plain call, not a `*ast.GoStmt`,
+  so it is never visited; the retrofit normally removes the `go` keyword in favour of it.)
+- **Diagnostics:** `unreported` (_"this error-nil block neither hands the error on, reports it, nor
+  marks it expected — see pm/error_err.mdx §7"_), `unreportedRecover`, `discardedError`,
+  `nakedGo`, `dynamicDoing`.
+- **Companion check on `doing`:** the first argument of `Caught`, `Warn`, `Expected`, `Fatal`,
+  `Recovered`, `Go` and `RecoverNet` must be a string literal, a `const`, or a `+` concatenation
+  whose non-literal parts are selector expressions ending in `.Method`, `.Path`, `.Name`,
+  `.Route`, or the identifier `verbName`.
+- **Flags:** `-errfile.report-sites` emits one extra diagnostic per site with category `site`, so
+  the coverage script can count sites per file (§13.3). It is off under `go vet`.
+- **Off for:** `*_test.go`, `testdata/`, `pkg/errfile/`, `cli/internal/errfile/`,
+  `scripts/errfilecheck/` itself, and generated files (a `// Code generated … DO NOT EDIT.` header).
+- **Tests:** `analyzer/analyzer_test.go` with `analysistest.Run` over `testdata/src/`, at least 10
+  passing and 10 failing cases, one per pattern.
+- **Runs in:** `just check-errors`, and `go vet -vettool=bin/errfilecheck ./...` from the repo root
+  and from `cli/`.
+
+### 13.2 `errfile/catch-must-report` for TypeScript and Vue — `scripts/eslint/`
+
+- **Location:** `scripts/eslint/catch-must-report.mjs` (the rule) and
+  `scripts/eslint/errfile-plugin.mjs` (the plugin object).
+- **Registration:** `eslint.config.mjs` imports the plugin and enables the rule — at `"warn"`
+  during Phase C (§16.3 step 5), flipped to `"error"` in Phase D (§16.4). `mcp/eslint.config.mjs`
+  imports the same rule file. That root-config edit is about six lines of upstream delta.
+- **It works on `.vue` files** because `eslint-plugin-vue`'s parser exposes the `<script>` block as
+  a standard ESTree program.
+- **It visits four kinds of node:**
+  - `CatchClause`;
+  - `CallExpression` where the callee is `.catch(fn)` or `.then(_, fn)`;
+  - `addEventListener('error' | 'unhandledrejection', fn)`;
+  - a property named `onerror` / `onabort` assigned a function on a `FileReader`, `Worker`, `Image`
+    or `XMLHttpRequest`.
+- Only an inline handler (`fn` written as an arrow or function expression) is inspected. A handler
+  passed by name (`.catch(handleFailure)`) is opaque to the rule and passes; `.catch(console.error)`
+  and its siblings are flagged, since that is the console-only report T5 replaces.
+- **A handler passes** if its body contains any of these:
+  - a call `errors.caught|warn|expected|rethrow|fatal(…)`, where the callee object is an identifier
+    named `errors` or ending in `Errors`;
+  - a call to `tryOr`, `tryOrAsync`, `reportRejection`, `guard`;
+  - a call to `logger.error` or `logger.warn` (the N4 net);
+  - a `throw` statement, which covers a bare rethrow;
+  - a `return Promise.reject(…)`, or a call to `reject(…)` where `reject` is the enclosing
+    `new Promise((resolve, reject) => …)` executor's parameter **and** the handler also contains a
+    `logger.error` / `errors.*` call — upstream's store idiom (`logger.error(...); reject(...)`)
+    passes; a bare `reject(error)` does not, because it moves the fault without recording it.
+- **Messages:** `unreported`, `emptyCatch`, `wrongWhere`, `dynamicDoing`.
+- **Companion check on `where`:** `errorFileFor('<literal>')` must be a string literal equal to
+  the file's repo-relative path. This is fixable: `--fix` rewrites it.
+- **Companion check on `doing`:** it must be a string literal, or a template literal whose
+  expressions are only `name`, `method`, `path`, `route`, `def.name`, `tool`, or `verb`.
+- **Off for:** `src/**/__tests__/**`, `*.test.ts`, `*.spec.ts`, `src/lib/errfile/**`,
+  `mcp/src/errfile/**`, `mcp/test/**`, `dist/**`, `public/**`, and `*.d.ts`.
+- **Tests:** `scripts/eslint/catch-must-report.test.mjs` using ESLint's `RuleTester`, with at least
+  10 valid and 10 invalid cases, one per pattern, including one `.vue` fixture.
+
+### 13.3 `scripts/error-file-coverage.mjs`
+
+The script walks every source file in scope (§13.4). For Go it builds `bin/errfilecheck` and runs it
+with `-json -errfile.report-sites ./...` from the repo root and from `cli/`; for TypeScript and Vue
+it runs `eslint --format json` limited to `errfile/catch-must-report` from the root and from
+`mcp/`, and counts sites with a cheap parse (`catch` clauses, `.catch(` calls). It then puts each
+file in one of four classes:
+
+| Class               | Meaning                                                                  |
+| ------------------- | ------------------------------------------------------------------------ |
+| **compliant**       | has ≥1 error site, all sites pass                                        |
+| **net-covered**     | has 0 local error sites; covered by the global nets of its runtime (§8)  |
+| **violating**       | ≥1 site fails the rule                                                   |
+| **unwired runtime** | the file belongs to a runtime whose net (§8) is missing — a hard failure |
+
+A runtime is wired when its net file contains the install call: `installBrowserErrorFile(` for
+`web` (`src/desktop-main.ts` **and** `src/mobile-main.ts`) and `sw` (`src/sw.ts`);
+`errfile.Install(` for `server`/`app-cli` (`cmd/initializer.go`) and `ezbk`
+(`cli/cmd/ezbk/main.go`); `installNodeErrorFile(` for `mcp` (`mcp/src/index.ts`); plus
+`log.AddHook(` present in `pkg/log/logger.go` and `InstallLogHook(` in `cmd/initializer.go`. When a
+runtime is unwired, that class takes precedence for every file in it, and the per-file record still
+carries its `sites` and `violations` counts so the partition (§16.3) can use them.
+
+It prints totals and writes a machine-readable report to
+`~/T/ezbookkeeping/error_file_coverage.json`, which is outside the repo. It exits non-zero on any
+violating or unwired file. `just check-errors` runs it. `just lint` runs the two rules themselves.
+
+### 13.4 Scope — what counts as "every source file"
+
+**In scope:**
+
+- all `*.go` under `pkg/`, `cmd/`, `ezbookkeeping.go`, and `cli/`;
+- all `*.ts`, `*.vue` under `src/`;
+- all `*.ts` under `mcp/src/`.
+
+**Excluded:**
+
+- `*_test.go`, `testdata/`;
+- `*.test.ts`, `*.spec.ts`, `__tests__/`, `mcp/test/`, `test/fixtures/`;
+- `pkg/errfile/`, `cli/internal/errfile/`, `src/lib/errfile/`, `mcp/src/errfile/` (the libraries);
+- `scripts/`, `docker/`, `build.*`, `*.config.*`, `*.d.ts`, `src/global.d.ts`, `src/vue-shim.d.ts`;
+- `mcp/src/instructions.ts` (generated) and any file with a `Code generated` header;
+- `pkg/mcp/` and upstream's `skills/` and `scripts/ebktools.sh` are **in** scope for the analyzer
+  where they are Go, because they run inside the server process; upstream's shell tooling is not
+  a runtime;
+- the SQL in `pkg/datastore` migrations and the locale JSON files, which carry no code.
+
+---
+
+## 14. Measurements of success
+
+| #   | Metric                                                                    | Target                                        | How measured                                            |
+| --- | ------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------- |
+| M1  | Files compliant or net-covered                                            | **100%** of in-scope files                    | `scripts/error-file-coverage.mjs`                       |
+| M2  | `errfile/catch-must-report` violations (Go + TS)                          | **0**                                         | `just lint`, `go vet -vettool`                          |
+| M3  | Runtimes with a wired net                                                 | **6 of 6** (§3.3)                             | coverage script "unwired runtime" = 0; canaries §15.3   |
+| M4  | Canary: a deliberate fault in each runtime appears in `error.err`         | 6 of 6                                        | §15.3                                                   |
+| M5  | Duplicate lines for one error reported, wrapped twice, then seen by a net | **1** line                                    | library tests (Go and TS)                               |
+| M6  | Lines written for 500 identical faults in 10 s                            | **≤ 2** (1 first + 1 summary)                 | library tests                                           |
+| M7  | Synchronous fs calls during 1,000 `Caught()` calls (no exit)              | **0**                                         | library test with a counting writer / `fs` spy          |
+| M8  | Added happy-path overhead of a retrofitted site                           | not measurable (< noise) in `go test` / vitest| CI time before and after                                |
+| M9  | Browser bundle growth                                                     | < 5 KB gzip                                   | `vite build` report before and after                    |
+| M10 | Secret/ledger values in `error.err` from the redaction corpus             | **0**                                         | vectors test, both languages                            |
+| M11 | Records lost on a panic in `main` / `uncaughtException`                   | **0**                                         | child-process test (§15.2)                              |
+| M12 | `go build`, `go vet`, `go test ./...`, `npm run lint`, `npm test`, `cli` and `mcp` suites | green                          | CI                                                      |
+| M13 | Upstream-file lines touched by the nets                                   | ≤ 40                                          | `git diff --stat` on upstream files, §8 Delta column    |
+
+Success is not just "the file exists". Success is a fault that was silent before M3 and M4 now
+being in the file within 5 ms (Go, node) or 2 s (browser) of happening, readable without opening
+the source.
+
+---
+
+## 15. Testing
+
+### 15.1 Library unit tests — `pkg/errfile/*_test.go` and `src/lib/errfile/__tests__/*.test.ts`
+
+| Test              | Checks                                                                                                                                                                                                             |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| format            | Line shape, the cause chain, stack trimming, caps, and the control-character guard. A message with `\n[ERROR]` cannot forge a header.                                                                              |
+| where             | Go: `runtime.Caller` yields `pkg/…/file.go:line` under `-trimpath` and without it. TS: the literal passes through.                                                                                                 |
+| dedupe            | Go: the same value reported, wrapped with `%w` twice, then seen by a net, produces 1 line; the same sentinel 6 s later produces a new line. TS: the same object through `rethrow` ×3 then the window net produces 1 line. |
+| fold              | 500 identical faults produce 1 line plus 1 summary. The digit and hex normalisation folds `id 123` with `id 456`. The key cap evicts and still writes owed summaries.                                              |
+| expected          | Writes nothing, or `EXPECTED` when `EZBK_ERROR_FILE_VERBOSE=1`.                                                                                                                                                    |
+| answers (TS)      | Every shape in §11.4 writes nothing; an `Error`, a string, and an object with an extra key are written.                                                                                                             |
+| writer            | No sync fs on the happy path (a counting writer / spy `appendFileSync` = 0). A burst over 256 KiB drains synchronously. Rotation at the cap. `0600` mode. A failing path falls back to stderr and does not throw.  |
+| multi-process     | Two processes appending concurrently produce no interleaved lines; only one of them rotates.                                                                                                                       |
+| pre-install queue | Records reported before install are written on install. Overflow is counted.                                                                                                                                       |
+| redact            | Every secret key and every ledger key in the corpus is refused. URL query values are redacted. A statements-root path is rewritten.                                                                                |
+| totality          | A panicking / throwing sink, an error whose `Error()` panics, and a circular `data` value all return normally. Re-entrancy drops the record.                                                                        |
+| recovered / Go    | `errfile.Go` with a panicking body writes 1 ERROR with the panic site as the first frame, and the test process survives.                                                                                            |
+| loghook           | A `log.Errorf` produces one record with `where` pointing at the caller of `log.Errorf`, not at `pkg/log`; a `log.Infof` produces nothing.                                                                           |
+| browser           | Batching at 20 records or 2 s. `sendBeacon` on `pagehide`. The client budget. A delivery failure is never re-queued. The Vue `errorHandler` reports with the component name.                                        |
+| ingest            | Non-loopback gets `204` with no write. Size and event caps. The rate limit plus its summary WARN. Sanitising. Always `204`. Mounted outside both `/api/v1` and `/machine/v1`.                                        |
+| vendor drift      | `cli/internal/errfile` and `mcp/src/errfile` match their sources byte for byte after the header.                                                                                                                   |
+
+### 15.2 Crash tests
+
+- A Go child process installs the sink, reports 3 errors, then panics on the main goroutine
+  through the `main()` net. The parent asserts that all 3 errors plus the FATAL record are on disk.
+- A node child process does the same with `uncaughtException`, and a second with
+  `unhandledRejection`.
+
+### 15.3 Runtime canaries
+
+`just check-errors --canary` sets `EZBK_ERROR_FILE` to a temp path, provokes one deliberate fault
+per runtime, and asserts that each one appears with the right `app` tag. The runtimes and triggers:
+
+- **server:** a hidden machine-plane route `POST /machine/v1/__canary`, enabled only under
+  `EZBK_ERROR_FILE_CANARY=1`, that panics inside `wrap()`; and a `log.Errorf` through the hook.
+- **app-cli:** `ezbookkeeping utility __canary` under the same variable.
+- **web:** a Playwright page (or, until Playwright exists here, a vitest + jsdom test of
+  `browser.ts` against a stub `fetch`) that throws in a click handler and asserts the POST body.
+- **sw:** a unit test of the `self` handler with a stub `fetch`.
+- **ezbk:** `ezbk __canary`, hidden.
+- **mcp:** a tool throwing `internal` through `handleCallTool`.
+
+### 15.4 Cross-language vectors — `pkg/errfile/testdata/vectors.json`
+
+One committed JSON file, synthetic throughout, listing inputs and the expected line for: the path
+table (§3.1); ten format cases (cause chains, code fields, caps, control characters); the secret
+and ledger corpora (§12); ten fold-key normalisations; and the answer shapes (TS section). Both
+`pkg/errfile/vectors_test.go` and `src/lib/errfile/__tests__/vectors.test.ts` read the same file
+(the TS test reads it by relative path from the repo). The MCP's copy of the shared files is
+covered by the drift test, not by a third run.
+
+### 15.5 Existing tests
+
+The existing tests must stay green: upstream's Go suite, `pkg/machine`'s, the CLI's, and the Vue
+`vitest` suite. Any test that asserted on `console.error` output is updated to assert the library
+call instead.
+
+---
+
+## 16. Rollout — three builders, then twelve
+
+### 16.1 Phase A — the spec (this document)
+
+The spec must be complete before any code is written.
+
+### 16.2 Phase B — three builder agents, in parallel
+
+**B1 — Go.** Does all of this, then runs `go build ./...`, `go vet ./...`, `go test ./pkg/errfile/...
+./pkg/machine/... ./cmd/...` and the CLI suite to green:
+
+1. Create `pkg/errfile/` (§4) with every test in §15.1 passing, including the vectors.
+2. Create `pkg/errfile/server/` (ingest + loghook) and `pkg/log.AddHook` (N6).
+3. Write `scripts/sync-errfile.sh` (both copies) and run it, creating `cli/internal/errfile/`.
+4. Wire nets N5, N7, N8, N9, N10, N11, N13.
+5. Write `scripts/errfilecheck/` (§13.1) with its tests; build it to `bin/errfilecheck`.
+6. Add `just check-errors`, `just sync-errfile`, and the `build` dependency on the sync.
+
+**B2 — TypeScript.** Does all of this, then runs `npm run lint`, `npm test` and `vite build` to
+green:
+
+1. Create `src/lib/errfile/` (§5) with every test in §15.1 passing, including the vectors.
+2. Write the node sink files that will live in `mcp/src/errfile/` (`node.ts`,
+   `rolling-file-writer.ts`) with their tests, in that directory, and extend
+   `scripts/sync-errfile.sh` so the six shared files land there too.
+3. Wire nets N1, N2, N3, N4, N15.
+4. Write the ESLint rule and its tests (§13.2). Register it at **`"warn"`** first, so the twelve
+   agents can see violations without the build going red mid-rollout.
+5. Write `scripts/error-file-coverage.mjs` (§13.3), calling B1's `bin/errfilecheck` for Go.
+
+**B3 — the MCP server.** Builds `mcp/` per [mcp.mdx](./mcp.mdx) §20 P1–P9, using the errfile API
+of §6.2 from the start (it imports `./errfile/index.js`, which B2 provides): N14, T7 and T8 are
+part of its P1 spine. It owns every file under `mcp/` except `mcp/src/errfile/`.
+
+When B1, B2 and B3 are done, the coordinator runs the coverage script and produces the partition
+file for Phase C (§16.3).
+
+### 16.3 Phase C — twelve partitioned agents
+
+The coverage script lists every in-scope file. The partition assigns files to 12 agents with three
+rules:
+
+- **Balance by work, not by file count.** A file's weight is `1 + 3 × (error sites)`.
+- **Keep a directory with one agent where possible,** so neighbouring files, which share idioms,
+  get consistent treatment.
+- **No file belongs to two agents.** The net files from Phase B are excluded, because the builders
+  have already finished them.
+
+The partition is computed from the coverage report's per-file `sites` and `violations`: only files
+with at least one violation are assigned (a compliant or net-covered file needs no agent). Files are
+ordered by path, grouped by directory, and split into twelve contiguous segments that minimise the
+heaviest segment, so a directory stays with one agent unless it alone outweighs a segment. The
+twelve lists (`part_01.txt` … `part_12.txt`, one repo-relative path per line, first line
+`# files=N weight=W`) are written to `~/T/ezbookkeeping/partition/`, outside the repo.
+
+Each agent:
+
+1. Reads this spec (§6, §7, §10, §12).
+2. Goes through **every** file in its partition. A file with no error sites is left untouched and
+   recorded as net-covered.
+3. Applies the matching pattern at every site. It keeps every behaviour the site already had:
+   return values, sentinels, user notifications, rethrows and cleanup. A site that already reports
+   through `log.*` / `logger.*` is left alone.
+4. Never changes control flow, except that a swallowed error becomes a reported one, and a bare
+   `go` becomes `errfile.Go`.
+5. Runs `go vet -vettool=bin/errfilecheck` / `npx eslint` on its own files, then `go build ./...`
+   and `go test` for its packages, or `vue-tsc --noEmit` for its Vue files.
+6. Writes a partition report to `~/T/ezbookkeeping/partition/report_NN.md`: files touched, sites
+   converted by pattern, sites marked `Expected` with the reason, and anything it was unsure about.
+
+### 16.4 Phase D — close
+
+1. Flip the ESLint rule to `"error"`; make `just lint` run `go vet -vettool` for both modules.
+2. Run every suite in M12 and the coverage script. M1–M3 must be met.
+3. Fix any stragglers.
+4. Do a private-data check of the whole diff (§12.6).
+5. Update [cli.mdx](./cli.mdx) §16, [mcp.mdx](./mcp.mdx) §16 and [apis.mdx](./apis.mdx) §7's
+   `internal` row so each names `error.err`, and CLAUDE.md's "Keep upstream merges cheap" list so
+   it records the nets of §8.
+
+---
+
+## 17. Upstream-merge cost, and how we keep it small
+
+This repo tracks `mayswind/ezbookkeeping`. CLAUDE.md promises that the delta to upstream's files is
+two lines in `cmd/webserver.go` and the justfile. Complete error coverage cannot be true with a
+delta of two lines, and the operator has decided that coverage is worth widening it. The spec keeps
+the widening small and predictable in five ways:
+
+- **The nets do most of the work, and they are tiny.** §8 totals about 30 upstream lines across 10
+  files. N4 and N6 alone turn about 1,700 existing log calls into reports with **zero** edits at
+  those sites.
+- **The retrofit touches only silent sites.** A Go block that already calls `log.Errorf`, and a
+  store `.catch` that already calls `logger.error`, are not edited. The remaining edits are one
+  added line per site (Go) or one import, one constant and one line per site (Vue views).
+- **Each edit is small and mechanical.** A conflict at a site is a two-line conflict with an
+  obvious resolution: keep upstream's new logic and re-apply the one call.
+- **New code arrives already checked.** After a merge, `just lint` and `just check-errors` flag any
+  new unreported site upstream introduced, so coverage cannot silently regress.
+- **The libraries are new directories upstream never touches:** `pkg/errfile/`, `src/lib/errfile/`,
+  `cli/internal/errfile/`, `mcp/src/errfile/`, `scripts/`.
+
+The list in CLAUDE.md is updated in Phase D to say exactly this, so the promise and the tree agree.
+
+---
+
+## 18. Use cases
+
+1. **The OFX import did nothing.** The operator runs `tail ~/T/ezbookkeeping/error.err` and sees:
+
+   ```
+   [server] [pkg/machine/ingest_parse.go:188] parsing the prepared OFX file — *errs.Error: invalid file format (code=104001) {file=2026-03.ofx}
+   ```
+
+   Before this spec, that error became an `upstream_error` envelope with the hint "read
+   log/ezbookkeeping.log", and the log had no line for it because the plane's `toFail` never
+   logged.
+
+2. **`ezbk statements apply` returned `internal`.** The hint now points at `error.err`, and the
+   machine-plane record has the full stack and the request id. Before, it was dropped in `toFail`.
+
+3. **The exchange-rate provider is down and the laptop is asleep.** One WARN per 10 minutes, not
+   a line per cron tick.
+
+4. **A view throws in a `.then`.** The snackbar shows nothing (the view's `.catch` treats it like a
+   server error), but `error.err` now holds the `TypeError` with the `.vue` path, tagged `[web]`.
+   Before, it went to the browser console and was gone on reload.
+
+5. **A background goroutine panics** while sending a verification email. Before: the whole server
+   died, stack on stderr, `just run`'s terminal the only witness. Now: one ERROR line with the panic
+   site, and the server is still serving.
+
+6. **An upstream merge adds a new `if err != nil { return nil, errs.ErrOperationFailed }`.**
+   `go vet -vettool=bin/errfilecheck` fails with `errfile/catch-must-report`, and the fix is one
+   line.
+
+7. **A crash at boot, before the configuration is read.** The pre-install queue holds the record,
+   and the `main()` net's `Fatal` flushes it.
+
+8. **The MCP tool answered `internal`.** `error.err` has the record tagged `[mcp]` with the tool
+   name; stdout carried only the JSON-RPC frame.
+
+---
+
+## 19. Acceptance criteria
+
+1. `pkg/errfile/` exists, stdlib only, with the API in §6.1 and every test in §15.1 green;
+   `src/lib/errfile/` exists, zero dependencies, with the API in §6.2 and every test green.
+2. `~/T/ezbookkeeping/error.err` is created lazily at mode `0600` and rotates at 5 MiB × 5, and
+   every process resolves its path by the same table (§3.1).
+3. Every net N1–N15 in §8 is wired, and each runtime has a canary (§15.3).
+4. `errfile/catch-must-report` is enabled at `"error"` for TypeScript and runs as a vet tool for
+   Go, with tests. `just lint` passes.
+5. `scripts/error-file-coverage.mjs` reports 100% compliant or net-covered, with 0 violating and 0
+   unwired files.
+6. No call site formats an error, reads `err.stack`, or touches the filesystem to report (R2). A
+   grep for `console.error(e` / `console.log(err` in `catch` blocks in scope returns 0; a grep for
+   `_ = recover()` in scope returns 0.
+7. The `cli/` and `mcp/` vendor copies pass the drift tests.
+8. `go build`, `go vet`, `go test ./...`, the CLI suite, `npm run lint`, `npm test`, `vite build`
+   and the MCP suite are green.
+9. Every `internal` / `upstream_error` hint in the machine plane, `ezbk` and the MCP points at
+   `error.err`.
+10. The diff contains no private data (§12.6) and the upstream-file delta is within M13.
+11. The vectors file is run by both languages and passes.
+
+---
+
+## 20. Invariants recap
+
+- **One file, one behaviour, one line per site.**
+- **Zero cost until an error happens.** No sync fs on the request path.
+- **Each error is written once.** A burst is one line.
+- **Expected failures, gate refusals and answer shapes are not faults.** But they are still marked
+  explicitly at the site.
+- **Upstream's own log calls are reports.** Through the two hooks, with zero call-site edits.
+- **The browser delivers; it never writes.** The ingest route is loopback-only and write-only.
+- **A fault survives the crash that caused it.** Including a panic in a goroutine, which no longer
+  kills the server.
+- **The libraries never throw, never recurse, never block, never log secrets or ledger data, and in
+  the MCP never touch stdout.**
+- **Coverage is proven by an analyzer, a lint rule and a script,** not by convention.
+
+---
+
+## 21. Related specs
+
+- [apis.mdx](./apis.mdx) — the machine plane. The `internal` and `upstream_error` detail "is in the
+  log": that log is now `error.err` (§8 N8).
+- [cli.mdx](./cli.mdx) §16 — `cli.info`/`cli.err` keep their jobs. Faults are also written to
+  `error.err` (§8 N13).
+- [mcp.mdx](./mcp.mdx) §16 — `mcp.info`/`mcp.err` keep their jobs, and stdout stays pure (§8 N14).
+- [../CLAUDE.md](../CLAUDE.md) — the fork's rules; §17 here amends its upstream-delta promise.
+- Sister-app references (read-only):
+  - `~/BGit/Bryan_git/actual_budget_bryan/pm/error_err.mdx` and `packages/error-file/src/` — the
+    sister fork this spec was grown from; its TypeScript library is the port source for
+    `src/lib/errfile/`;
+  - `~/BGit/all/app/pm/local_storage.mdx` §6–§8 and `code/packages/logging/src/rolling-file-writer.ts`;
+  - `~/BGit/act3/we_citizens/pm/errors.mdx`;
+  - `~/BGit/Bryan_git/LargeFileBridge/pm/debugging.mdx`.
