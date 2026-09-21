@@ -28,6 +28,7 @@ export const applyAccounts: ToolDef = {
   name: 'ezb_apply_accounts',
   route: { method: 'POST', path: '/ingest/accounts/apply' },
   tier: 'write',
+  noTimeout: true,
   hasDryRun: true,
   description: describe({
     what: 'Creates the accounts a statement archive needs — the plan\'s create rows in one batch, the link rows linked — and writes the statements-to-books map beside the statements; ambiguous rows are never created, and the whole batch is undoable.',
@@ -566,7 +567,6 @@ const SCHEDULE_PROPERTIES: Record<string, unknown> = {
   start: dateField('The first day the schedule may fire.'),
   end: dateField('The last day it may fire; "" removes the end date on an update.'),
   timezone: strField('The IANA timezone the schedule fires in. Defaults to the resolved one.'),
-  time: strField('The time of day the created transactions carry, HH:MM.'),
 };
 
 const zSchedule = {
@@ -589,7 +589,6 @@ const zSchedule = {
   start: zDate.optional(),
   end: z.union([zDate, z.literal('')]).optional(),
   timezone: z.string().min(1).optional(),
-  time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/).optional(),
 };
 
 export const addScheduledTransaction: ToolDef = {
@@ -626,11 +625,10 @@ export const updateScheduledTransaction: ToolDef = {
       template_id: idField('The schedule to edit.'),
       template_name: strField('The schedule by name instead of id.'),
       ...SCHEDULE_PROPERTIES,
-      hidden: boolField('Hide or show it in the UI (hiding does NOT pause a schedule; frequency disabled does).'),
       ...WRITE_PROPERTIES,
     },
   ),
-  schema: z.object({ template_id: zId.optional(), template_name: z.string().min(1).optional(), ...zSchedule, hidden: z.boolean().optional(), ...zWrite }).strict(),
+  schema: z.object({ template_id: zId.optional(), template_name: z.string().min(1).optional(), ...zSchedule, ...zWrite }).strict(),
   async run(args, ctx) {
     const a = args as WriteArgs & { template_id?: string; template_name?: string } & Record<string, unknown>;
     const ref = a.template_id ?? a.template_name;

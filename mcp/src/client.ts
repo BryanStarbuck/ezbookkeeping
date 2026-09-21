@@ -11,7 +11,7 @@
 import http from 'node:http';
 import https from 'node:https';
 
-import { fail, isErrorCode } from './envelope.js';
+import { ERROR_FILE_HINT, fail, isErrorCode } from './envelope.js';
 
 export const CLIENT_NAME = 'ezbookkeeping-mcp';
 export const CLIENT_VERSION = '0.1.0';
@@ -232,7 +232,7 @@ export function interpretEnvelope(parsed: PlaneResponse, method: string, route: 
     throw fail(
       'not_ready',
       'The machine plane refused the call before reading it (not armed, or the request did not arrive on loopback).',
-      'ask the operator to restart the app (`ezbk stop && ezbk up`) and read ~/T/_ezbookkeeping/server.log',
+      'ask the operator to restart the app (`ezbk stop && ezbk up`) and ' + ERROR_FILE_HINT,
     );
   }
 
@@ -257,7 +257,7 @@ export function interpretEnvelope(parsed: PlaneResponse, method: string, route: 
   }
 
   if (code === 'internal') {
-    throw fail('upstream_error', message ?? `The app failed on ${method} ${route}.`, parsed.error?.hint ?? 'read ~/T/_ezbookkeeping/server.log', details);
+    throw fail('upstream_error', message ?? `The app failed on ${method} ${route}.`, parsed.error?.hint ?? ERROR_FILE_HINT, details);
   }
 
   throw fail(isErrorCode(code) ? code : 'upstream_error', message ?? `The app refused ${method} ${route}.`, parsed.error?.hint, details);

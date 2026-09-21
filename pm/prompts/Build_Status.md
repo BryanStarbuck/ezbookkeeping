@@ -95,9 +95,7 @@ NEXT: (1) point db_path, log_path and the storage root at ~/T/ (outside the repo
       real statements — CLAUDE.md "Runtime state location"; (2) register the MCP with
       `just install-mcp yes` and confirm `claude mcp list` shows ezbookkeeping connected;
       (3) first real run: ezbk doctor, ezbk statements plan against the prepared archive, read the
-      unmapped list, then apply with --write; (4) the three code notes from the Phase D
-      reconciliation (mcp.mdx / apis.mdx reviewer report) — ezb_update_scheduled_transaction's
-      `hidden` and `time` arguments, and the MCP's server.log fallback hints — are small follow-ups.
+      unmapped list, then apply with --write.
 
 --------------------------------------------------------------------------------------------------
 KNOWN

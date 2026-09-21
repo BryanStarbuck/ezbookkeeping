@@ -631,7 +631,8 @@ declare capabilities `{ tools: {} }` and nothing else, and answer `-32601` to ev
 
 **The HTTP side is `node:http` / `node:https`, never `fetch`.** Node's `fetch` is undici, which
 stamps `Sec-Fetch-Mode: cors` on every request and will not let a caller remove it — and the plane's
-origin gate treats any `Sec-Fetch-*` header as a browser and answers `404` (apis.mdx §5.7). So
+origin gate treats a `Sec-Fetch-Site` or `Sec-Fetch-Mode` header as a browser and answers `404`
+(apis.mdx §5.7). So
 `src/client.ts` is the one module that opens a socket, it does so with `http.request`, and the
 `no-network` canary greps our own source for `fetch(` and fails on a hit. Our requests carry no
 browser header at all; absence is the credential.

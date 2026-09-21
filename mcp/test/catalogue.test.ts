@@ -263,3 +263,17 @@ describe('the error vocabulary (§12.3, AC 22)', () => {
     }
   });
 });
+
+describe('timeout exemption metadata (§14)', () => {
+  it('ToolDef.noTimeout names exactly the six long-running ingest tools', () => {
+    const exempt = TOOLS.filter(t => t.noTimeout).map(t => t.name).sort();
+    expect(exempt).toEqual([
+      'ezb_apply_accounts',
+      'ezb_apply_file_import',
+      'ezb_apply_statement_import',
+      'ezb_extract_statements',
+      'ezb_plan_file_import',
+      'ezb_plan_statement_import',
+    ]);
+  });
+});

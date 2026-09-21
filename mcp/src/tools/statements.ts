@@ -334,6 +334,7 @@ export const planStatementImport: ToolDef = {
   name: 'ezb_plan_statement_import',
   route: { method: 'POST', path: '/ingest/plan' },
   tier: 'read',
+  noTimeout: true,
   description: describe({
     what: "Plans the import of the statement archive into the books, per account: rows parsed, collapsed, already imported, already imported but deleted since (kept deleted — no argument re-adds them), possible matches with hand-entered rows, transfer candidates, unmapped categories, and the NEW rows — plus the confirm_token for ezb_apply_statement_import. The plane's own import record decides what is already present; show the unmapped names, the transfer candidates and any conflict to the operator and ask.",
     tier: 'read',
@@ -389,6 +390,7 @@ export const planFileImport: ToolDef = {
   name: 'ezb_plan_file_import',
   route: { method: 'POST', path: '/ingest/file/plan' },
   tier: 'read',
+  noTimeout: true,
   description: describe({
     what: "Previews the Import dialog for one file into one account: the rows the app's converter parsed, which are already in the books by the plane's import record, possible matches, unmapped categories, and the confirm_token for ezb_apply_file_import.",
     tier: 'read',
