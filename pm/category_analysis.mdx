@@ -1,0 +1,368 @@
+---
+title: ezBookkeeping — Categorical Analysis (the Statistics & Analysis page, pie chart first)
+description: >
+  What the desktop Statistics & Analysis page does when its left-bar tab "Categorical Analysis" is
+  selected: which URL encodes it, what each control in the left bar and the title toolbar changes,
+  where the numbers come from (one browser call to /api/v1/transactions/statistics.json, then grouping
+  and currency conversion in the Pinia store), how the pie chart draws and what clicking a slice does
+  today. Every behavior names the one or few source files that implement it, so a later change (the
+  pie-slice scenario in §12) starts from the right code. This is upstream ezBookkeeping UI; this fork
+  has not changed it. The fork's server-side equivalent of the same numbers is the machine plane's
+  /machine/v1/analytics/spending-by-category and income-by-category (apis.mdx §12).
+---
+
+# ezBookkeeping — Categorical Analysis
+
+`~/BGit/Bryan_git/ezbookkeeping/` · web UI **http://localhost:8080/** · page **/desktop#/statistics/transaction**
+
+---
+
+## Simple summary
+
+Open **Statistics & Analysis** from the top bar. The left bar has three tabs across its top:
+**Categorical Analysis**, **Trend Analysis** and **Asset Trends**. Categorical Analysis answers
+"for this one date range, how is the money split up?" It draws that split as a **pie chart** (or a
+bar list or a radar chart). You pick what is split, such as expense by primary category, from the
+list in the left bar.
+
+The page state lives entirely in the URL. This one:
+
+```
+http://localhost:8080/desktop#/statistics/transaction?analysisType=0&chartDataType=1&chartType=0&chartDateType=255&startTime=1764576000&endTime=1767254399&sortingType=0
+```
+
+reads as: Categorical Analysis, **Expense By Primary Category**, **Pie Chart**, a **custom date
+range** of one calendar month (Dec 1 – Dec 31, 2025, in the browser's time zone), sorted by
+**amount**.
+
+Clicking a slice once selects it. Clicking the selected slice again opens the transaction list,
+filtered to that category and the same date range (§9).
+
+The page's main source files are:
+
+* Page (desktop): `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/statistics/TransactionPage.vue`
+* Shared page logic (desktop + mobile): `~/BGit/Bryan_git/ezbookkeeping/src/views/base/statistics/StatisticsTransactionPageBase.ts`
+* Pie chart (desktop): `~/BGit/Bryan_git/ezbookkeeping/src/components/desktop/PieChart.vue`
+* Data, grouping, URL building: `~/BGit/Bryan_git/ezbookkeeping/src/stores/statistics.ts`
+* Enums (analysis types, chart types, data types, sorting): `~/BGit/Bryan_git/ezbookkeeping/src/core/statistics.ts`
+
+---
+
+## Table of Contents
+
+- [Simple summary](#simple-summary)
+- [1. Scope](#1-scope)
+- [2. Source code map](#2-source-code-map)
+- [3. The URL is the page state](#3-the-url-is-the-page-state)
+- [4. Page layout](#4-page-layout)
+- [5. Left bar: the three analysis tabs and the data-type list](#5-left-bar-the-three-analysis-tabs-and-the-data-type-list)
+- [6. Title toolbar: date range, refresh, keyword, filters, export](#6-title-toolbar-date-range-refresh-keyword-filters-export)
+- [7. Where the numbers come from](#7-where-the-numbers-come-from)
+- [8. The pie chart](#8-the-pie-chart)
+- [9. Drill-down: from a slice to the transaction list](#9-drill-down-from-a-slice-to-the-transaction-list)
+- [10. The other categorical charts: bar list, radar, Sankey overview](#10-the-other-categorical-charts-bar-list-radar-sankey-overview)
+- [11. Mobile edition](#11-mobile-edition)
+- [12. Planned scenarios (placeholders)](#12-planned-scenarios-placeholders)
+- [13. Relation to this fork's machine plane](#13-relation-to-this-forks-machine-plane)
+
+---
+
+## 1. Scope
+
+This spec covers the **Categorical Analysis** tab (`analysisType=0`) of the desktop Statistics &
+Analysis page, with most detail on the **pie chart** (`chartType=0`). It lists the code for the other
+two tabs only where they share code with this one.
+
+Not in scope: Trend Analysis (`analysisType=1`), Asset Trends (`analysisType=2`), the Insights
+Explorer page, and the statistics settings page, apart from the settings this page reads.
+
+---
+
+## 2. Source code map
+
+The top files first. The first four are where nearly every change to this page lands.
+
+| Role | File |
+|---|---|
+| **Desktop page** — left bar, toolbar, chart switch, click handlers | `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/statistics/TransactionPage.vue` |
+| **Shared page logic** — query, date-range names, totals, colors, amount formatting | `~/BGit/Bryan_git/ezbookkeeping/src/views/base/statistics/StatisticsTransactionPageBase.ts` |
+| **Store** — filter state, API load, grouping by category/account, URL params | `~/BGit/Bryan_git/ezbookkeeping/src/stores/statistics.ts` |
+| **Desktop pie chart** (ECharts via vue-echarts) | `~/BGit/Bryan_git/ezbookkeeping/src/components/desktop/PieChart.vue` |
+| Pie chart logic shared by desktop and mobile | `~/BGit/Bryan_git/ezbookkeeping/src/components/base/PieChartBase.ts` |
+| Enums: `StatisticsAnalysisType`, `CategoricalChartType`, `ChartDataType`, `ChartSortingType` | `~/BGit/Bryan_git/ezbookkeeping/src/core/statistics.ts` |
+| Date range enum (`DateRange.Custom` = 255) | `~/BGit/Bryan_git/ezbookkeeping/src/core/datetime.ts` |
+| Route `/statistics/transaction` and its URL → props mapping | `~/BGit/Bryan_git/ezbookkeeping/src/router/desktop.ts` |
+| Top-bar link into the page | `~/BGit/Bryan_git/ezbookkeeping/src/components/desktop/MainPageLayout.vue` |
+| Browser API client (`getTransactionStatistics`) | `~/BGit/Bryan_git/ezbookkeeping/src/lib/services.ts` |
+| Radar chart (desktop only) | `~/BGit/Bryan_git/ezbookkeeping/src/components/desktop/RadarChart.vue` |
+| Sankey chart (the Overview data type) | `~/BGit/Bryan_git/ezbookkeeping/src/components/desktop/AccountAndCategorySankeyChart.vue` |
+| Filter dialogs (accounts, categories, tags) | `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/common/dialogs/AccountFilterSettingsDialog.vue`, `CategoryFilterSettingsDialog.vue`, `TransactionTagFilterSettingsDialog.vue` |
+| Statistics settings page (defaults, show amount/percent) | `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/settings/StatisticsSettingPage.vue` |
+| Drill-down target: transaction list | `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/transactions/ListPage.vue` |
+| Mobile page | `~/BGit/Bryan_git/ezbookkeeping/src/views/mobile/statistics/TransactionPage.vue` |
+| Mobile pie chart | `~/BGit/Bryan_git/ezbookkeeping/src/components/mobile/PieChart.vue` |
+| Server route `GET /api/v1/transactions/statistics.json` | `~/BGit/Bryan_git/ezbookkeeping/cmd/webserver.go` |
+| Server handler | `~/BGit/Bryan_git/ezbookkeeping/pkg/api/transactions.go` — `TransactionsApi.TransactionStatisticsHandler` |
+| Server query (per account × category totals) | `~/BGit/Bryan_git/ezbookkeeping/pkg/services/transactions.go` — `TransactionService.GetAccountsAndCategoriesTotalInflowAndOutflow` |
+
+---
+
+## 3. The URL is the page state
+
+Every control on the page rewrites the URL (`router.push`). Loading a URL rebuilds the page from it.
+So a URL can be bookmarked, shared, or opened by a script, and it lands on the same view.
+
+The route maps each query parameter to a prop named `init…`.
+Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/router/desktop.ts` — the `/statistics/transaction` route's `props`.
+
+The page reads those props once, merges them into the store's filter, and decides whether to reload.
+Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/statistics/TransactionPage.vue` — `init()`.
+
+The page writes the URL back from the store after every change.
+Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/stores/statistics.ts` — `getTransactionStatisticsPageParams()`, called from `TransactionPage.vue` `getFilterLinkUrl()`.
+
+| Parameter | Meaning for Categorical Analysis | Values |
+|---|---|---|
+| `analysisType` | Which left-bar tab | `0` Categorical, `1` Trend, `2` Asset Trends |
+| `chartDataType` | What is split up (the left-bar list, §5) | e.g. `1` Expense By Primary Category, `2` Expense By Secondary Category, `0` Expense By Account, `4` Income By Primary Category, `16` Overview |
+| `chartType` | How it is drawn | `0` Pie, `1` Bar, `2` Radar (desktop only) |
+| `chartDateType` | Date range preset | e.g. this month, last month, …; `255` = custom |
+| `startTime`, `endTime` | Custom range bounds, **Unix seconds**, inclusive | used when `chartDateType=255` |
+| `sortingType` | Slice / row order | `0` Amount, `1` Display Order, `2` Name |
+| `filterAccountIds`, `filterCategoryIds` | Accounts / categories **excluded** from the chart | comma-separated ids |
+| `tagFilter` | Tag filter expression | |
+| `keyword`, `matchMode` | Description text filter | |
+
+The example URL's `startTime=1764576000` is Dec 1, 2025 00:00:00 and `endTime=1767254399` is
+Dec 31, 2025 23:59:59, both in US Pacific time. The page shows and edits those bounds in the
+browser's time zone.
+
+---
+
+## 4. Page layout
+
+```
+┌──────────────────────────┬──────────────────────────────────────────────────────────────┐
+│ [Categorical Analysis]   │ Statistics & Analysis  [<] [Dec 2025 ▾] [>]  ⟳   🔍 filter  ⋮ │
+│ [Trend Analysis]         │ Total Expense  $x,xxx.xx                                      │
+│ [Asset Trends]           │                                                              │
+│ ──────────────           │   legend           ╭──────╮                                  │
+│ Chart Type  [Pie ▾]      │   ■ Food          ╱  pie   ╲                                 │
+│ Sort Order  [Amount ▾]   │   ■ Housing      │  chart   │                                │
+│ ──────────────           │   ■ Transport     ╲        ╱                                 │
+│ Overview                 │   ...              ╰──────╯                                  │
+│ Outflows By Account      │                                                              │
+│ Expense By Account       │                                                              │
+│ ▶ Expense By Primary Cat │                                                              │
+│ Expense By Secondary Cat │                                                              │
+│ ...                      │                                                              │
+└──────────────────────────┴──────────────────────────────────────────────────────────────┘
+```
+
+The page is one `main-page-layout` with a `#nav-items` slot (the left bar) and a `#content` slot
+(one card).
+Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/statistics/TransactionPage.vue` — `<template>`.
+
+---
+
+## 5. Left bar: the three analysis tabs and the data-type list
+
+**The three tabs** are a vertical button group bound to `queryAnalysisType`. Switching tabs keeps
+each tab's own chart type and date range. The store holds them as separate fields:
+`categoricalChartType`, `trendChartType`, and so on.
+Implemented in: `TransactionPage.vue` — the `btn-vertical-group` and `setAnalysisType()`.
+
+**Chart Type** lists Pie, Bar and Radar for Categorical Analysis. Radar is desktop-only. When the
+data type is Overview, the select is replaced by a disabled "Sankey Chart".
+Implemented in: `TransactionPage.vue` — `allChartTypes`, `queryChartType`, `setChartType()`; the list comes from `CategoricalChartType` in `~/BGit/Bryan_git/ezbookkeeping/src/core/statistics.ts`.
+
+**Sort Order** reorders slices, bar rows and the legend: Amount (default), Display Order, or Name.
+Implemented in: `TransactionPage.vue` — `setSortingType()`; the store sorts in `sortCategoryTotalAmountItems()`.
+
+**The data-type list** is every `ChartDataType` available to the current tab. Clicking one sets
+`chartDataType`. For Categorical Analysis the list is:
+
+* Overview (Sankey, desktop only)
+* Outflows By Account, Expense By Account, Expense By Primary Category, Expense By Secondary Category
+* Inflows By Account, Income By Account, Income By Primary Category, Income By Secondary Category
+* Account Total Assets, Account Total Liabilities, Total Assets By Currency, Total Liabilities By Currency
+
+The default is Expense By Primary Category.
+Implemented in: `TransactionPage.vue` — the `v-for="dataType in ChartDataType.values(undefined, true)"` list and `setChartDataType()`; the definitions live in `ChartDataType`, `~/BGit/Bryan_git/ezbookkeeping/src/core/statistics.ts`.
+
+---
+
+## 6. Title toolbar: date range, refresh, keyword, filters, export
+
+**Date range.** The middle button names the current range. Its menu lists the presets, and "Custom
+Date" opens a date-range dialog. The ◀ ▶ arrows shift the range by one period of the same length.
+For a custom one-month range, that means the previous or next month.
+Implemented in: `TransactionPage.vue` — `setDateFilter()`, `setCustomDateFilter()`, `shiftDateRange()`, the `date-range-selection-dialog`; the names and permissions come from `StatisticsTransactionPageBase.ts` (`queryDateRangeName`, `canShiftDateRange`, `canShowCustomDateRange`).
+
+**Refresh** reloads from the server (`reload(true)`). If the data has not changed, the page says it
+is up to date.
+
+**Keyword filter** limits the chart to transactions whose description matches. It applies on Enter.
+Implemented in: `TransactionPage.vue` — `setKeywordFilter()`.
+
+**⋮ menu:**
+
+* **Filter Accounts**, **Filter Transaction Categories**, **Filter Transaction Tags** — each opens a
+  dialog whose result is an exclusion set in the store.
+* **Export Results** — writes the current rows to a file.
+* **Settings** — goes to `/settings/statistics`.
+
+Implemented in: `TransactionPage.vue` — `setAccountFilter()`, `setCategoryFilter()`, `setTagFilter()`, `exportResults()`.
+
+**Total line.** Under the title, "Total Expense" (or Total Income, and so on) shows the sum of the
+chart, in the user's default currency.
+Implemented in: `TransactionPage.vue` — the `statistics-overview-title` card text; the label comes from `totalAmountName` in `StatisticsTransactionPageBase.ts`.
+
+---
+
+## 7. Where the numbers come from
+
+There are two steps. Only the first one touches the server.
+
+1. **One API call.** `GET /api/v1/transactions/statistics.json?start_time=…&end_time=…` (plus tag,
+   keyword and time-zone options) returns one total per **account × category** for the date range.
+   It is not grouped for the chart.
+   The store makes the call in: `~/BGit/Bryan_git/ezbookkeeping/src/stores/statistics.ts` — `loadCategoricalAnalysis()`, through `services.getTransactionStatistics()` in `~/BGit/Bryan_git/ezbookkeeping/src/lib/services.ts`.
+   The server answers in: `~/BGit/Bryan_git/ezbookkeeping/pkg/api/transactions.go` — `TransactionsApi.TransactionStatisticsHandler`, which calls `~/BGit/Bryan_git/ezbookkeeping/pkg/services/transactions.go` — `TransactionService.GetAccountsAndCategoriesTotalInflowAndOutflow`.
+
+2. **Grouping in the browser.** The store attaches account and category details to each row, then
+   keeps only the rows that match the data type (expense rows for "Expense By …"). It drops excluded
+   accounts and categories, and sums by primary category, secondary category or account, in the
+   **default currency**. It also works out each item's percent of the total and sorts the items.
+   Hidden accounts and categories are kept but flagged `hidden`.
+   Grouping in: `~/BGit/Bryan_git/ezbookkeeping/src/stores/statistics.ts` — `assembleAccountAndCategoryInfo()` then `getCategoryTotalAmountItems()`, exposed as the `categoricalAnalysisData` computed.
+
+Changing the data type, the sort, or an exclusion filter regroups the loaded data and does not call
+the server again. Changing the date range, the tags or the keyword does call the server again.
+
+Upstream converts currencies and groups in TypeScript. This fork's rule, "clients never sum", is
+met on the machine plane by moving the same work into Go (§13, apis.mdx §12.4). This page is
+upstream code and still does it in the browser.
+
+---
+
+## 8. The pie chart
+
+The page shows `<pie-chart>` when the tab is Categorical Analysis, the data type is not Overview and
+the chart type is Pie. While the first load is in flight, it shows a grey three-slice skeleton.
+Implemented in: `TransactionPage.vue` — the `v-card-text` with `query.categoricalChartType === CategoricalChartType.Pie.type`.
+
+The props it passes in:
+
+* `items` — `categoricalAnalysisData.items` (§7): id, name, value, percent, color, icon, hidden
+* `show-value` / `show-percent` — from the statistics settings (`showAmountInChart`, `showPercentInCategoricalChart`)
+* `enable-click-item="true"`, `default-currency`
+* `@click="onClickPieChartItem"`
+
+The chart itself is an ECharts pie through `vue-echarts`:
+
+* The **legend** sits on the left, one entry per item. Clicking a legend entry hides or shows that
+  slice. Once anything is hidden, the tooltip percent is recomputed over the visible slices only, so
+  it again adds up to 100.
+* The **tooltip** on hover shows the name, plus the amount and/or the percent (per the settings).
+* **Slice labels** show the name, plus the amount or percent when the settings say so.
+* **Selected slice.** One slice is always "selected" (pulled out). It starts as the first slice, and
+  it resets when the data changes or its legend entry is hidden.
+* Items with `hidden` set, and items that are zero or negative, are left out of the slices.
+
+Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/components/desktop/PieChart.vue` — `seriesData`, `chartOptions`, `onLegendSelectChanged()`; the filtering of valid items and `selectedIndex` live in `~/BGit/Bryan_git/ezbookkeeping/src/components/base/PieChartBase.ts` — `usePieChartBase()`.
+
+**Clicking a slice today** works in two steps:
+
+1. A click on a slice the pointer is hovering (ECharts state `emphasis`) only **selects** it:
+   `selectedIndex = dataIndex`. Nothing else happens.
+2. A click on the already-selected slice **emits `click`** with that slice's source item. The page
+   then navigates to the transaction list (§9).
+
+Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/components/desktop/PieChart.vue` — `clickItem()`; the page handles the emit in `TransactionPage.vue` — `onClickPieChartItem()`.
+
+---
+
+## 9. Drill-down: from a slice to the transaction list
+
+`onClickPieChartItem(item)` calls `router.push('/transaction/list?…')`. The query string it pushes
+carries over the chart's context:
+
+* `type=3` (expense) or `type=2` (income), from the data type
+* `categoryIds=<slice id>` for a category data type, or `accountIds=<slice id>` for an account data type
+* the page's account or category exclusions, turned into explicit inclusion lists
+* `tagFilter`, `keyword` and `matchMode`, when they are set
+* `dateType=<same preset>`, plus `minTime` and `maxTime` for a custom range
+
+So a slice in the December example opens December's expense transactions in that category.
+Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/stores/statistics.ts` — `getTransactionListPageParams()`, called from `TransactionPage.vue` — `getTransactionItemLinkUrl()`; the target page is `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/transactions/ListPage.vue`.
+
+The bar list (§10) links to the same URL from each row's icon and name.
+
+---
+
+## 10. The other categorical charts: bar list, radar, Sankey overview
+
+* **Bar** (`chartType=1`) is not an ECharts chart. It is a Vuetify list: icon, name, percent,
+  amount and a progress bar per item. Each row is a `router-link` to the drill-down URL of §9.
+  Implemented in: `TransactionPage.vue` — the `v-card-text` with `CategoricalChartType.Bar.type`.
+* **Radar** (`chartType=2`, desktop only) draws the same items on a radar. It has no click-through.
+  Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/components/desktop/RadarChart.vue`; its data comes from `radarChartData` and `radarChartCategoryNames` in `StatisticsTransactionPageBase.ts`.
+* **Overview** (`chartDataType=16`, desktop only) is a Sankey chart from accounts to categories, with
+  Total Income and Total Expense above it. Clicking a node or a link drills down by account and/or
+  category.
+  Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/components/desktop/AccountAndCategorySankeyChart.vue`; the click is handled by `TransactionPage.vue` — `onClickSankeyChartItem()`, and the data comes from `categoricalOverviewAnalysisData` in the store.
+
+---
+
+## 11. Mobile edition
+
+The mobile edition (Framework7) uses the same store and the same shared page logic. It has its own
+page and pie chart. It has no Radar and no Overview.
+
+* Page: `~/BGit/Bryan_git/ezbookkeeping/src/views/mobile/statistics/TransactionPage.vue`
+* Pie chart: `~/BGit/Bryan_git/ezbookkeeping/src/components/mobile/PieChart.vue`
+* Settings: `~/BGit/Bryan_git/ezbookkeeping/src/views/mobile/statistics/SettingsPage.vue`
+
+Any change to pie-slice behavior must decide whether it also applies here. If it does, the shared
+logic belongs in `PieChartBase.ts` or `StatisticsTransactionPageBase.ts`.
+
+---
+
+## 12. Planned scenarios (placeholders)
+
+These are recorded so the next spec work has a place to land. None of them is designed yet.
+
+### 12.1 Clicking a pie slice (to be specified)
+
+The starting point is the pie chart with one slice selected, for one date range such as one month.
+The user clicks that slice. What should happen instead of, or in addition to, today's two-step
+behavior (§8, §9) is **not yet decided**. This section will be filled in when it is.
+
+The code that any change here will touch:
+
+* Slice click handling: `~/BGit/Bryan_git/ezbookkeeping/src/components/desktop/PieChart.vue` — `clickItem()`
+* Page reaction: `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/statistics/TransactionPage.vue` — `onClickPieChartItem()`
+* Drill-down URL: `~/BGit/Bryan_git/ezbookkeeping/src/stores/statistics.ts` — `getTransactionListPageParams()`
+* Mobile counterpart: `~/BGit/Bryan_git/ezbookkeeping/src/components/mobile/PieChart.vue`
+
+This fork keeps changes to upstream's files small (see CLAUDE.md, "Keep upstream merges cheap").
+A new behavior should therefore prefer a new component or a new directory, and edit these files as
+little as possible.
+
+---
+
+## 13. Relation to this fork's machine plane
+
+The same split is available headless, computed in Go, not in the browser:
+
+* `GET /machine/v1/analytics/spending-by-category` and `…/income-by-category` group expense or
+  income by primary category, secondary category or account, per interval. They take `top_n` and
+  return an "other" bucket. They are "the pie / bar chart" in API form.
+  Implemented in: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_analytics.go` — `anHandleSpendingByCategory()`, `anHandleIncomeByCategory()`, both through `anCategoryBreakdown()`.
+* The CLI reaches them as `ezbk analytics spending` and `ezbk analytics income` (cli.mdx). The MCP
+  reaches them as the `ezb_spending_by_category` and `ezb_income_by_category` tools (mcp.mdx).
+
+apis.mdx §12.4 sets the rule for new charts. A future chart, or a changed one, should read these
+routes and must not add up numbers in new TypeScript. If §12.1 needs numbers that the pie does not
+already hold, they should come from here.

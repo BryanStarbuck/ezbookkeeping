@@ -20,7 +20,7 @@ Our fork adds seven things:
 1. **Machine-plane API** at `/machine/v1`, inside the same Go server. It only answers loopback callers, and every call needs the API secret key (below). It calls the same `pkg/services` the browser's API uses, so the browser, the CLI and the agent never disagree about a number. Spec: `pm/apis.mdx`.
 2. **CLI `ezbk`**: a thin Go client of the machine plane. It starts the app if it is down. Its flagship job is importing years of bank statements exactly once. Spec: `pm/cli.mdx`.
 3. **MCP server `ezbookkeeping`** (tools prefixed `ezb_`): a thin Node + TypeScript stdio client of the machine plane, for Claude Code.
-   * 74 tools: 50 read, 24 write. Writes are off by default. One tool deletes (`ezb_delete_transactions`, by id only), and it also needs the admin tier on both sides (`EZBKMCP_ALLOW_ADMIN=1`, `ezbk up --allow-admin`).
+   * 75 tools: 50 read, 25 write. Writes are off by default. One tool deletes (`ezb_delete_transactions`, by id only), and it also needs the admin tier on both sides (`EZBKMCP_ALLOW_ADMIN=1`, `ezbk up --allow-admin`).
    * Spec: `pm/mcp.mdx`.
    * Its instructions to the model: `ai/mcp_prompt_ezbookkeeping.md`.
 4. **More APIs, and more charting.** Upstream's statistics page groups categories and converts currencies in the browser (`src/stores/statistics.ts`). We move that work into Go analytics routes (`/machine/v1/analytics/*`) so every total is computed once. Future charts must read those same routes, never re-add numbers in new TypeScript (`pm/apis.mdx` §12.4).
@@ -31,8 +31,9 @@ Our fork adds seven things:
 
 Upstream's own API tokens (`[security] enable_api_token`) and its MCP endpoint (`[mcp] enable_mcp`) stay **off**. We neither use them nor modify them.
 
-**Keep upstream merges cheap.** New code goes in new directories (`pkg/machine/`, `pkg/errfile/`, `cli/`, `mcp/`, `src/lib/errfile/`, `scripts/`). The delta to upstream's files is deliberately small and fully listed:
+**Keep upstream merges cheap.** New code goes in new directories (`pkg/machine/`, `pkg/errfile/`, `cli/`, `mcp/`, `src/lib/errfile/`, `src/lib/export/`, `src/components/desktop/export/`, `scripts/`). The delta to upstream's files is deliberately small and fully listed:
 * one `machine.Mount(router, config)` line and one `machine.Arm()` call in `cmd/webserver.go`,
+* two lines in `src/views/desktop/transactions/ListPage.vue` (the import and the tag of the transaction list's More ▾ copy/download button, `pm/transaction_list.mdx` §9),
 * the error-file nets of `pm/error_err.mdx` §8 — about 30 lines across `cmd/initializer.go`, `cmd/utility.go`, `pkg/log/logger.go` (`AddHook`), `pkg/middlewares/recovery.go`, `pkg/cron/cron_job.go`, `ezbookkeeping.go`, `src/desktop-main.ts`, `src/mobile-main.ts`, `src/sw.ts`, `src/lib/logger.ts`, `vite.config.ts`, `vitest.config.ts`, `eslint.config.mjs`,
 * one added report line at each upstream error site that used to swallow its error (`pm/error_err.mdx` §17 — the operator decided complete fault coverage is worth this; a merge conflict at such a site is two lines with an obvious resolution: keep upstream's logic, re-apply the one call),
 * the justfile.
@@ -63,6 +64,8 @@ The directory below holds the product management specification files on how ever
 * cli.mdx — `ezbk`
 * mcp.mdx — the `ezbookkeeping` MCP server
 * import_formats.mdx — the statement file formats, the converters, and what our pipeline writes
+* category_analysis.mdx — the Statistics & Analysis page's Categorical Analysis tab (pie chart, drill-down)
+* transaction_list.mdx — the Transaction List page, and the fork's More ▾ copy / download menu (CSV, YAML, Markdown)
 pm/ holds no code, ever.
 
 The directory below is where the source code goes for a CLI (command-line interface), so we can interface with this web app from the command line.

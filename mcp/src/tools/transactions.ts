@@ -173,18 +173,19 @@ export const exportTransactions: ToolDef = {
   route: { method: 'GET', path: '/transactions/export' },
   tier: 'read',
   description: describe({
-    what: "Exports the transactions matching the same filters as ezb_list_transactions as the app's own CSV or TSV text, for a spreadsheet; the file content is returned in data.content.",
+    what: "Exports the transactions matching the same filters as ezb_list_transactions as the app's own CSV or TSV text, for a spreadsheet — or, with with_ids, a file keyed by each row's database id that ezb_set_transaction_categories_csv can write back; the file content is returned in data.content.",
     tier: 'read',
     insteadOf: 'For rows to reason about, use ezb_list_transactions; for totals, the analytics tools.',
   }),
   inputSchema: objectSchema({
     ...FILTER_PROPERTIES,
     format: enumField('The file format. Defaults to csv.', ['csv', 'tsv']),
+    with_ids: boolField('Write the plane\'s own file instead of upstream\'s: ID (the database primary key) first, the category as "Type > Group > Sub", a signed amount, and empty New Category / New Counter Account / Rule columns for ezb_set_transaction_categories_csv to read back. Defaults to false.'),
   }),
-  schema: z.object({ ...zFilter, format: z.enum(['csv', 'tsv']).optional() }).strict(),
+  schema: z.object({ ...zFilter, format: z.enum(['csv', 'tsv']).optional(), with_ids: z.boolean().optional() }).strict(),
   async run(args, ctx) {
-    const a = args as FilterArgs & { format?: string };
-    const res = await ctx.client.request('/transactions/export', { query: { ...filterQuery(a), format: a.format ?? 'csv' } });
+    const a = args as FilterArgs & { format?: string; with_ids?: boolean };
+    const res = await ctx.client.request('/transactions/export', { query: { ...filterQuery(a), format: a.format ?? 'csv', ...(a.with_ids === true ? { with_ids: true } : {}) } });
     return fromPlane(res, ['content']);
   },
 };

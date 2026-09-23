@@ -1,0 +1,579 @@
+---
+title: ezBookkeeping — the Transaction List page, and its More ▾ menu (copy / download as CSV, YAML, Markdown)
+description: >
+  What the desktop Transaction List page does: which URL encodes it, what the left bar, the action
+  buttons (Add, Import, Refresh, More), the date-range line, the column-header filters, the rows and
+  the pagination each do, and which source files implement each part. Its last part (§9) specifies
+  this fork's one addition to the page: a "More ▾" button whose menu copies to the clipboard or
+  downloads every transaction that matches the current filter, as CSV, YAML or Markdown, with the
+  columns, signs, escaping and transfer handling defined exactly. Everything except §9 is upstream
+  ezBookkeeping UI that this fork has not changed.
+---
+
+# ezBookkeeping — the Transaction List page
+
+`~/BGit/Bryan_git/ezbookkeeping/` · web UI **http://localhost:8080/** · page **/desktop#/transaction/list**
+
+---
+
+## Simple summary
+
+**Transaction List** is the top entry of the left bar on the transactions page. It is a table of
+transactions: time, category, amount, account, tags and description. Every column header is also a
+filter. You arrive here from the top bar, or by drilling down from a chart, as in this example:
+
+```
+http://localhost:8080/desktop#/transaction/list?type=3&categoryIds=3844049114752876544&dateType=255&minTime=1764576000&maxTime=1767254399
+```
+
+That URL means **expenses** (`type=3`) in **one category** (`categoryIds=…`) over a **custom
+date range** (`dateType=255`) of Dec 1 – Dec 31, 2025. It is exactly the URL a click on a
+Categorical Analysis pie slice produces (category_analysis.mdx §9).
+
+Above the table sit the page's **action buttons**. From left to right they are:
+
+**Add** · **Import** · **⟳ Refresh** · **More ▾** *(this fork)*
+
+**More ▾** opens a menu of six items:
+
+* Copy as CSV · Copy as YAML · Copy as Markdown
+* Download CSV · Download Markdown · Download YAML
+
+Each item exports **every transaction that matches the page's current filters**, not just the page
+on screen. It uses the same 15 columns in all three formats. A transfer, such as a cash withdrawal
+from checking to a wallet, comes out as one row with both sides: `Account = Checking`,
+`Amount = -200.00`, `To Account = Cash Wallet`, `To Amount = 200.00` (§9.4).
+
+The page's main source files are:
+
+* Page (desktop): `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/transactions/ListPage.vue`
+* Shared page logic (desktop + mobile): `~/BGit/Bryan_git/ezbookkeeping/src/views/base/transactions/TransactionListPageBase.ts`
+* Filter state, loading, URL building: `~/BGit/Bryan_git/ezbookkeeping/src/stores/transaction.ts`
+* More ▾ button (fork): `~/BGit/Bryan_git/ezbookkeeping/src/components/desktop/export/TransactionListMoreButton.vue`
+* Export rows and formats (fork): `~/BGit/Bryan_git/ezbookkeeping/src/lib/export/transaction_export.ts`
+
+---
+
+## Table of Contents
+
+- [Simple summary](#simple-summary)
+- [1. Scope](#1-scope)
+- [2. Source code map](#2-source-code-map)
+- [3. The URL is the page state](#3-the-url-is-the-page-state)
+- [4. Page layout](#4-page-layout)
+- [5. Left bar: page type, transaction type, page size, recent months](#5-left-bar-page-type-transaction-type-page-size-recent-months)
+- [6. The action buttons: Add, Import, Refresh, More](#6-the-action-buttons-add-import-refresh-more)
+- [7. Date range line and totals](#7-date-range-line-and-totals)
+- [8. The table](#8-the-table)
+  - [8.1 Column headers are filters](#81-column-headers-are-filters)
+  - [8.2 Rows, by transaction type (transfers and withdrawals)](#82-rows-by-transaction-type-transfers-and-withdrawals)
+  - [8.3 Clicking a row](#83-clicking-a-row)
+  - [8.4 Pagination and where rows come from](#84-pagination-and-where-rows-come-from)
+  - [8.5 Calendar and Gallery page types](#85-calendar-and-gallery-page-types)
+- [9. More ▾ — copy and download (this fork)](#9-more--copy-and-download-this-fork)
+  - [9.1 The button and the menu](#91-the-button-and-the-menu)
+  - [9.2 Which rows](#92-which-rows)
+  - [9.3 How the rows are fetched](#93-how-the-rows-are-fetched)
+  - [9.4 The columns](#94-the-columns)
+  - [9.5 CSV](#95-csv)
+  - [9.6 Markdown](#96-markdown)
+  - [9.7 YAML](#97-yaml)
+  - [9.8 Copy vs. download, file names, feedback](#98-copy-vs-download-file-names-feedback)
+  - [9.9 Decisions and why](#99-decisions-and-why)
+  - [9.10 Errors and limits](#910-errors-and-limits)
+  - [9.11 Tests](#911-tests)
+- [10. Mobile edition](#10-mobile-edition)
+- [11. Keeping upstream merges cheap](#11-keeping-upstream-merges-cheap)
+
+---
+
+## 1. Scope
+
+This spec covers the desktop **Transaction List** page (`pageType=0`, the default), with notes on its
+Calendar and Gallery siblings where they share code. It also specifies the fork's **More ▾** menu
+(§9).
+
+Not in scope: the transaction edit dialog's own fields, the import wizard's steps, and the mobile
+page (apart from §10).
+
+---
+
+## 2. Source code map
+
+| Role | File |
+|---|---|
+| **Desktop page** — left bar, action buttons, header filters, rows, pagination | `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/transactions/ListPage.vue` |
+| **Shared page logic** — query, names of the selected filters, amount display per account filter | `~/BGit/Bryan_git/ezbookkeeping/src/views/base/transactions/TransactionListPageBase.ts` |
+| **Store** — `transactionsFilter`, `loadTransactions()`, `loadMonthlyAllTransactions()`, `getTransactionListPageParams()` | `~/BGit/Bryan_git/ezbookkeeping/src/stores/transaction.ts` |
+| Route `/transaction/list` and its URL → props mapping | `~/BGit/Bryan_git/ezbookkeeping/src/router/desktop.ts` |
+| Browser API client (`getTransactions`, `getAllTransactionsByMonth`, `getExportedUserData`) | `~/BGit/Bryan_git/ezbookkeeping/src/lib/services.ts` |
+| Transaction model and list API response types | `~/BGit/Bryan_git/ezbookkeeping/src/models/transaction.ts` |
+| Transaction type enum (1 Modify Balance, 2 Income, 3 Expense, 4 Transfer) | `~/BGit/Bryan_git/ezbookkeeping/src/core/transaction.ts` |
+| Edit / view dialog (opens on row click and on Add) | `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/transactions/list/dialogs/EditDialog.vue` |
+| AI image recognition dialog (Add ▸ AI Image Recognition) | `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/transactions/list/dialogs/AIImageRecognitionDialog.vue` |
+| Import wizard (Import) | `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/transactions/import/ImportDialog.vue` |
+| Multi-select filter dialogs | `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/common/dialogs/AccountFilterSettingsDialog.vue`, `CategoryFilterSettingsDialog.vue`, `TransactionTagFilterSettingsDialog.vue` |
+| Pagination control | `~/BGit/Bryan_git/ezbookkeeping/src/components/desktop/PaginationButtons.vue` |
+| **More ▾ button** (fork) | `~/BGit/Bryan_git/ezbookkeeping/src/components/desktop/export/TransactionListMoreButton.vue` |
+| **Export rows, columns, CSV / YAML / Markdown** (fork, pure functions) | `~/BGit/Bryan_git/ezbookkeeping/src/lib/export/transaction_export.ts` |
+| **Export row fetcher** — all pages of the current filter (fork) | `~/BGit/Bryan_git/ezbookkeeping/src/lib/export/transaction_export_source.ts` |
+| Export unit tests (fork) | `~/BGit/Bryan_git/ezbookkeeping/src/lib/export/__tests__/transaction_export.test.ts` |
+| Server routes `GET /api/v1/transactions/list.json`, `…/list/by_month.json` | `~/BGit/Bryan_git/ezbookkeeping/cmd/webserver.go` |
+| Server handlers | `~/BGit/Bryan_git/ezbookkeeping/pkg/api/transactions.go` — `TransactionsApi.TransactionListHandler`, `TransactionsApi.TransactionMonthListHandler` |
+| Server query (filters, transfer de-duplication) | `~/BGit/Bryan_git/ezbookkeeping/pkg/services/transactions.go` — `TransactionService.GetTransactionsByMaxTime`, `buildTransactionQueryCondition` |
+| Server response shape (transfer sides normalised) | `~/BGit/Bryan_git/ezbookkeeping/pkg/models/transaction.go` — `Transaction.ToTransactionInfoResponse` |
+| Mobile page | `~/BGit/Bryan_git/ezbookkeeping/src/views/mobile/transactions/ListPage.vue` |
+
+---
+
+## 3. The URL is the page state
+
+Every filter change rewrites the URL, and loading a URL rebuilds the page from it.
+
+The route maps each query parameter to an `init…` prop.
+Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/router/desktop.ts` — the `/transaction/list` route's `props`.
+
+The page reads those props into the store's filter.
+Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/transactions/ListPage.vue` — `init()`, which calls `transactionsStore.initTransactionListFilter()`.
+
+The page writes the URL back after every change.
+Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/stores/transaction.ts` — `getTransactionListPageParams()`, called from `ListPage.vue` `updateUrlWhenChanged()`.
+
+| Parameter | Meaning | Values |
+|---|---|---|
+| `pageType` | Which left-bar view | `0` List, `1` Calendar, `2` Gallery |
+| `type` | Transaction type filter | `0`/absent all, `1` Modify Balance, `2` Income, `3` Expense, `4` Transfer |
+| `categoryIds` | Category filter; a primary category includes its subcategories | comma-separated ids |
+| `accountIds` | Account filter | comma-separated ids |
+| `tagFilter` | Tag filter expression (include / exclude / none) | |
+| `dateType` | Date range preset; `255` = custom | |
+| `minTime`, `maxTime` | Range bounds in **Unix seconds**, inclusive | used for custom, billing-cycle and reconciled ranges |
+| `amountFilter` | Amount comparison, e.g. greater than, between | `type:value[:value]` |
+| `keyword`, `matchMode` | Description search | |
+
+In the example URL, `minTime=1764576000` is Dec 1, 2025 00:00:00 Pacific time, and
+`maxTime=1767254399` is Dec 31, 2025 23:59:59 Pacific time.
+
+---
+
+## 4. Page layout
+
+```
+┌──────────────────────────┬────────────────────────────────────────────────────────────────────┐
+│ [Transaction List]       │ Transaction List  [Add] [Import] ⟳ [More ▾]        🔍 search       │
+│ [Transaction Calendar]   │ Date Range  ◀ Dec 1, 2025 – Dec 31, 2025 ▶   Total Income  Total Exp │
+│ [Transaction Gallery]    │ ┌──────────┬────────────┬────────┬───────────────┬──────┬─────────┐ │
+│ ──────────────           │ │ Time ▾   │ Category ▾ │Amount ▾│ Account ▾     │Tags ▾│ Descr.  │ │
+│ Transaction Type [All ▾] │ ├──────────┴────────────┴────────┴───────────────┴──────┴─────────┤ │
+│ Transactions Per Page    │ │ Wednesday, December 3, 2025                                     │ │
+│   [15 ▾]                 │ │ 14:13    Groceries     42.17   Checking              Corner Mkt │ │
+│ ──────────────           │ │ 09:02    ATM Withdr.  200.00   Checking → Cash Wallet   ATM 5th │ │
+│ This month               │ │ ...                                                             │ │
+│ Last month               │ └─────────────────────────────────────────────────────────────────┘ │
+│ ...                      │                       ‹ 1 2 3 … ›                                  │
+└──────────────────────────┴────────────────────────────────────────────────────────────────────┘
+                                                   More ▾ opens:
+                                                   ┌──────────────────────┐
+                                                   │ ⧉ Copy as CSV        │
+                                                   │ ⧉ Copy as YAML       │
+                                                   │ ⧉ Copy as Markdown   │
+                                                   │ ──────────────────── │
+                                                   │ ⤓ Download CSV       │
+                                                   │ ⤓ Download Markdown  │
+                                                   │ ⤓ Download YAML      │
+                                                   └──────────────────────┘
+```
+
+The page is one `main-page-layout`. Its `#nav-items` slot holds the left bar, and its `#content` slot
+holds one card: title bar, date-range line, table, pagination.
+Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/transactions/ListPage.vue` — `<template>`.
+
+---
+
+## 5. Left bar: page type, transaction type, page size, recent months
+
+* **Page type**: Transaction List / Transaction Calendar / Transaction Gallery, a vertical button
+  group bound to `queryPageType`.
+  Implemented in: `ListPage.vue` — `changePageType()`; the types are defined in `TransactionListPageType`, `~/BGit/Bryan_git/ezbookkeeping/src/views/base/transactions/TransactionListPageBase.ts`.
+* **Transaction Type**: All Types, Modify Balance, Income, Expense, Transfer.
+  Implemented in: `ListPage.vue` — `changeTypeFilter()`.
+* **Transactions Per Page**: 5, 10, 15, 20, 25, 30 or 50. List and Gallery only.
+  The choices are defined in: `~/BGit/Bryan_git/ezbookkeeping/src/consts/page.ts` — `DEFAULT_PAGE_COUNTS`.
+* **Recent months**: one-click month ranges. They set a date range just as the Time menu does.
+  Implemented in: `ListPage.vue` — `recentMonthDateRanges`, `changeDateFilter()`.
+
+---
+
+## 6. The action buttons: Add, Import, Refresh, More
+
+This is the page's action row, from left to right:
+
+1. **Add** opens the edit dialog for a new transaction. Hovering shows a menu, when there is anything
+   to put in it: AI Clipboard Text Recognition, AI Image Recognition, and one entry per saved
+   template.
+   Implemented in: `ListPage.vue` — `add()`, `addByRecognizingClipboardText()`, `addByRecognizingImage()`.
+2. **Import** opens the import wizard. Hovering shows upstream's **Export to CSV / TSV File**. That
+   is the server's full-fidelity re-importable export, and it is different from More ▾ (§9.9).
+   When importing is off and exporting is on, upstream shows a separate **Export** button instead.
+   Implemented in: `ListPage.vue` — `importTransaction()`, `exportTransactions()`; the server side is `GET /api/v1/data/export.csv|tsv`.
+3. **⟳ Refresh** reloads from the server and shows "Data has been updated".
+   Implemented in: `ListPage.vue` — `reload(true, false)`.
+4. **More ▾** *(this fork)* is the copy / download menu (§9). New page-level actions go into this
+   menu, not into new top-level buttons.
+   Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/components/desktop/export/TransactionListMoreButton.vue`, mounted by one tag in `ListPage.vue`.
+
+On the far right, the **search** field filters by description when you press Enter.
+Implemented in: `ListPage.vue` — `changeKeywordFilter()`.
+
+---
+
+## 7. Date range line and totals
+
+Under the title, **Date Range** shows either "All" or the range, with ◀ ▶ arrows. The arrows
+shift the range by one period of the same length.
+Implemented in: `ListPage.vue` — `shiftDateRange()`, `formatRange()`.
+
+When the range is exactly one month and the setting is on, the line also shows **Total Income** and
+**Total Expense**. With an account filter, these become **Total Inflows** and **Total Outflows**.
+The totals come from the store's month totals and are shown in each currency. A tooltip shows them
+converted to the default currency.
+Implemented in: `ListPage.vue` — `currentMonthTotalAmount`; computed by `~/BGit/Bryan_git/ezbookkeeping/src/stores/transaction.ts` — `calculateMonthTotalAmount()`.
+
+---
+
+## 8. The table
+
+### 8.1 Column headers are filters
+
+| Column | Header menu |
+|---|---|
+| **Time ▾** | Date-range presets, plus Custom Date (dialog) and a month picker |
+| **Category ▾** | All, Multiple Categories (dialog), then every category grouped by type. Disabled when Type = Modify Balance |
+| **Amount ▾** | All, or a comparison (greater than, less than, between, …) entered inline |
+| **Account ▾** | All, Multiple Accounts (dialog), then every account |
+| **Tags ▾** | All, Without Tags, Multiple Tags (dialog), then tags by tag group. Shown only when the "show tags" setting is on |
+| **Description** | No menu. The search box in the title bar filters it |
+
+A header whose filter is active turns the primary color.
+Implemented in: `ListPage.vue` — the `<thead>` menus; `changeDateFilter()`, `changeCategoryFilter()`, `changeAmountFilter()`, `changeAccountFilter()`, `changeTagFilter()`, and the `showFilter…Dialog` dialogs.
+
+### 8.2 Rows, by transaction type (transfers and withdrawals)
+
+Rows are grouped under a date line (weekday chip included). Each row shows:
+
+* **Time**, in the transaction's own time zone. When that zone differs from the default, the zone is
+  shown under the time, with a tooltip in the default zone.
+* **Category**: the icon plus the category name. For Modify Balance, the words "Modify Balance".
+* **Amount**: shown **unsigned**, colored red for expense and green for income, in the account's
+  currency. A tooltip gives the default-currency value. With an account filter, a transfer shows the
+  side that touches the filtered account. Amounts marked "hide amount" show as `***`.
+* **Account**: the source account. For a **transfer**, it shows `Source → Destination`, for example a
+  withdrawal `Checking → Cash Wallet`, or a card payment `Checking → Credit Card`.
+* **Tags** as chips, or "None".
+* **Description**, truncated.
+
+Implemented in: `ListPage.vue` — the `<tbody>` rows; the amount's side and currency come from `~/BGit/Bryan_git/ezbookkeeping/src/views/base/transactions/TransactionListPageBase.ts` — `getDisplayAmount()`, `getDisplayAmountCurrency()`.
+
+**Transfers appear once.** The database stores a transfer as two rows, *transfer-out* and
+*transfer-in*. The list query returns only the transfer-out row when there is no account filter. With
+one account filter it returns whichever side touches that account. With several accounts it returns
+the transfer-in side only when its partner account is outside the filter. Either way the API response
+normalises the transfer, so that **source = where the money left, destination = where it arrived**.
+The filtering is in: `~/BGit/Bryan_git/ezbookkeeping/pkg/services/transactions.go` — `buildTransactionQueryCondition`.
+The normalising is in: `~/BGit/Bryan_git/ezbookkeeping/pkg/models/transaction.go` — `Transaction.ToTransactionInfoResponse`.
+
+### 8.3 Clicking a row
+
+Clicking a row opens the edit dialog on that transaction, in view mode. Edits and deletes happen
+there.
+Implemented in: `ListPage.vue` — `show()`; the dialog is `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/transactions/list/dialogs/EditDialog.vue`.
+
+### 8.4 Pagination and where rows come from
+
+There are two load paths:
+
+* **The range is exactly one month.** The page loads the **whole month** at once with
+  `GET /api/v1/transactions/list/by_month.json` and pages through it in the browser.
+  Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/stores/transaction.ts` — `loadMonthlyAllTransactions()`; the page slices it in `ListPage.vue` — the `transactions` computed.
+* **Any other range.** The page loads one page at a time with
+  `GET /api/v1/transactions/list.json?max_time=…&min_time=…&count=…&page=…`. Page 1 also asks for
+  the total count.
+  Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/stores/transaction.ts` — `loadTransactions()`; the server side is `~/BGit/Bryan_git/ezbookkeeping/pkg/api/transactions.go` — `TransactionsApi.TransactionListHandler`.
+
+In both cases the order is **newest first**. The pagination buttons sit under the table.
+
+### 8.5 Calendar and Gallery page types
+
+* **Calendar** shows a month grid with daily income and expense. The table below it lists the
+  selected day's transactions.
+* **Gallery** shows only transactions that have pictures, as thumbnails grouped by day.
+
+Implemented in: `ListPage.vue` — the `transaction-calendar` and `transaction-gallery-container` blocks.
+
+---
+
+## 9. More ▾ — copy and download (this fork)
+
+### 9.1 The button and the menu
+
+* An outlined **More** button with a **down chevron** on its right. It sits immediately right of
+  ⟳ Refresh.
+* Clicking it opens a menu anchored under the button's right edge. The items appear in this order:
+
+| # | Item | Icon | Action |
+|---|---|---|---|
+| 1 | Copy as CSV | copy | Clipboard ← CSV text |
+| 2 | Copy as YAML | copy | Clipboard ← YAML text |
+| 3 | Copy as Markdown | copy | Clipboard ← Markdown table |
+| — | *divider* | | |
+| 4 | Download CSV | download | Save `transactions_<from>_<to>.csv` |
+| 5 | Download Markdown | download | Save `…md` |
+| 6 | Download YAML | download | Save `…yaml` |
+
+* The button is **disabled while the list is loading**. While an export runs it shows a spinner and
+  ignores clicks, so one export runs at a time.
+* The button is **hidden when the server disables data export** (`[data] enable_export = false`),
+  like upstream's Export. The data would leave the app through the clipboard or a file, so the same
+  switch governs it.
+
+Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/components/desktop/export/TransactionListMoreButton.vue` — the template and `run()`; mounted in `~/BGit/Bryan_git/ezbookkeeping/src/views/desktop/transactions/ListPage.vue` right after the Refresh button.
+
+### 9.2 Which rows
+
+**Every transaction that matches the page's current filter**: date range, type, category, account,
+tags, amount and keyword. The rows are **in the list's order (newest first)**, and **each transfer
+appears once**, exactly as §8.2 describes.
+
+* The export does **not** depend on pagination or on the page type. Page 2 of 5, Calendar and
+  Gallery all export the whole filtered set. Pagination is a display choice, but the filter is the
+  question the user asked.
+* The export can have **zero** rows: CSV and Markdown are then just the header, and YAML is
+  `transactions: []`. The snackbar says "0 transactions", so an empty result is visible, not silent.
+
+In the example URL, this means every December 2025 expense in that one category.
+
+### 9.3 How the rows are fetched
+
+The export reads the **same API as the list**, `GET /api/v1/transactions/list.json`, with the same
+filter values. It pages through the results with the server's cursor: `count=50`, the server
+maximum, and `max_time = nextTimeSequenceId` from the previous page. It continues until the server
+reports no more rows.
+
+The cursor is a transaction time-sequence id, and the server's condition is
+`transaction_time <= max_time`. The next cursor is the first row the previous page did not include,
+so the pages have no gaps and no duplicates. The fetcher does **not** touch the transactions store,
+so the table on screen is not disturbed.
+
+Names come from the already-loaded account, category and tag stores. The API is called with
+`trim_account/category/tag=true`, so it returns ids only.
+
+Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/lib/export/transaction_export_source.ts` — `fetchAllTransactionsForExport()`; the name lookups are in `TransactionListMoreButton.vue` — `lookups`.
+
+### 9.4 The columns
+
+All three formats carry the **same 15 fields in the same order**:
+
+| # | Header (CSV / Markdown) | YAML key | Content |
+|---|---|---|---|
+| 1 | Date | `date` | `YYYY-MM-DD`, in the **transaction's own time zone** (what the list shows) |
+| 2 | Time | `time` | `HH:mm:ss`, same zone |
+| 3 | Timezone | `timezone` | That zone's UTC offset, `-08:00` |
+| 4 | Type | `type` | `Expense`, `Income`, `Transfer` or `Modify Balance` |
+| 5 | Category | `category` | The **primary** category. Empty for Modify Balance |
+| 6 | Subcategory | `subcategory` | The transaction's own category when it is a secondary one, else empty |
+| 7 | Account | `account` | The source account: for a transfer, the account the money **left** |
+| 8 | Amount | `amount` | **Signed** decimal in the source account's currency (below) |
+| 9 | Currency | `currency` | The source account's currency code |
+| 10 | To Account | `to_account` | Transfers only: the account the money **arrived** in |
+| 11 | To Amount | `to_amount` | Transfers only: **positive** decimal in the destination currency |
+| 12 | To Currency | `to_currency` | Transfers only |
+| 13 | Tags | `tags` | Tag names. Joined with `; ` in CSV and Markdown, a list in YAML |
+| 14 | Description | `description` | The comment, verbatim |
+| 15 | ID | `id` | The transaction id, **as a string** |
+
+**The amount sign.** Amount is signed as the source account sees it:
+
+| Type | Amount |
+|---|---|
+| Expense | `−stored` (a stored negative expense, i.e. a refund, comes out positive) |
+| Income | `+stored` |
+| Transfer | `−source amount` (money leaving). `To Amount` is `+destination amount` |
+| Modify Balance | the stored adjustment, which is already signed |
+
+**The amount format.** The API gives integer hundredths, which become a decimal with exactly two
+places: `4217 → 42.17`, `-5 → -0.05`. There is no digit grouping, no currency symbol, and the decimal
+separator is always `.`. The conversion is integer arithmetic, never floating point. ezBookkeeping
+keeps two decimal places for every currency.
+
+**Worked rows** (synthetic):
+
+| Date | Time | Timezone | Type | Category | Subcategory | Account | Amount | Currency | To Account | To Amount | To Currency | Tags | Description | ID |
+|---|---|---|---|---|---|---|---:|---|---|---:|---|---|---|---|
+| 2025-12-03 | 14:13:20 | -08:00 | Expense | Food & Dining | Groceries | Northbank Checking ••4021 | -42.17 | USD | | | | household | Corner Market | 9007…001 |
+| 2025-12-02 | 09:02:00 | -08:00 | Transfer | Transfers | ATM Withdrawal | Northbank Checking ••4021 | -200.00 | USD | Cash Wallet | 200.00 | USD | | ATM 5th & Main | 9007…002 |
+| 2025-12-01 | 08:00:00 | -08:00 | Income | Salary | | Northbank Checking ••4021 | 5000.00 | USD | | | | acme_llc | Payroll | 9007…003 |
+| 2025-11-30 | 12:00:00 | +01:00 | Transfer | Transfers | Savings | Northbank Checking ••4021 | -108.50 | USD | Meridian Savings | 100.00 | EUR | | Monthly save | 9007…004 |
+
+Implemented in: `~/BGit/Bryan_git/ezbookkeeping/src/lib/export/transaction_export.ts` — `TRANSACTION_EXPORT_COLUMNS`, `toTransactionExportRow()`, `signedSourceHundredths()`, `formatHundredths()`, `formatTransactionLocalTime()`.
+
+### 9.5 CSV
+
+* The format is RFC 4180. There is one header row, then one line per transaction, each ending in
+  **CRLF**.
+* A field is quoted when it contains `,`, `"`, CR or LF, or has leading or trailing spaces. An
+  embedded `"` becomes `""`. Newlines inside a description are kept inside the quotes.
+* Nothing is replaced or dropped. Upstream's own export replaces commas and newlines in descriptions
+  with spaces, which would quietly corrupt bank descriptions like `ACME, INC`.
+* **Download** puts a UTF-8 BOM in front, so Excel reads non-ASCII names (`••4021`, accents)
+  correctly. **Copy** has no BOM.
+
+```
+Date,Time,Timezone,Type,Category,Subcategory,Account,Amount,Currency,To Account,To Amount,To Currency,Tags,Description,ID
+2025-12-03,14:13:20,-08:00,Expense,Food & Dining,Groceries,Northbank Checking ••4021,-42.17,USD,,,,household,"Corner Market, aisle 3",9007199254740993001
+2025-12-02,09:02:00,-08:00,Transfer,Transfers,ATM Withdrawal,Northbank Checking ••4021,-200.00,USD,Cash Wallet,200.00,USD,,ATM 5th & Main,9007199254740993002
+```
+
+Implemented in: `transaction_export.ts` — `toCsv()`; the BOM is added in `TransactionListMoreButton.vue` — `download()`.
+
+### 9.6 Markdown
+
+* The output is a GitHub-flavored Markdown table: a header row, then an alignment row. **Amount** and
+  **To Amount** are right-aligned (`---:`).
+* Inside a cell, `|` becomes `\|`, `\` becomes `\\`, and a newline becomes `<br>`.
+* It is only the table, with no heading or preamble, so it pastes straight into a doc, an issue or a
+  chat.
+
+```
+| Date | Time | Timezone | Type | Category | Subcategory | Account | Amount | Currency | To Account | To Amount | To Currency | Tags | Description | ID |
+| --- | --- | --- | --- | --- | --- | --- | ---: | --- | --- | ---: | --- | --- | --- | --- |
+| 2025-12-02 | 09:02:00 | -08:00 | Transfer | Transfers | ATM Withdrawal | Northbank Checking ••4021 | -200.00 | USD | Cash Wallet | 200.00 | USD |  | ATM 5th & Main | 9007199254740993002 |
+```
+
+Implemented in: `transaction_export.ts` — `toMarkdown()`.
+
+### 9.7 YAML
+
+* The top level is `transactions:`, a list of mappings, one per row. The keys are the snake_case names
+  of §9.4, in the same order.
+* **Every string is double-quoted** (JSON string syntax, which is valid YAML), so no value can be
+  misread as a number, a boolean, `null` or a date. This matters for `"-08:00"`, `"2025-12-03"`, ids
+  like `"9007199254740993001"` (a bare id would lose precision as a float), and a description of
+  `no` or `yes`.
+* Amounts are quoted decimal strings, such as `"-42.17"`, so they are never floats.
+* `to_account`, `to_amount` and `to_currency` are `null` on non-transfers, so every record has the
+  same shape.
+* `tags` is a flow list: `["household", "acme_llc"]`, or `[]`.
+
+```yaml
+transactions:
+  - date: "2025-12-02"
+    time: "09:02:00"
+    timezone: "-08:00"
+    type: "Transfer"
+    category: "Transfers"
+    subcategory: "ATM Withdrawal"
+    account: "Northbank Checking ••4021"
+    amount: "-200.00"
+    currency: "USD"
+    to_account: "Cash Wallet"
+    to_amount: "200.00"
+    to_currency: "USD"
+    tags: []
+    description: "ATM 5th & Main"
+    id: "9007199254740993002"
+```
+
+Implemented in: `transaction_export.ts` — `toYaml()`.
+
+### 9.8 Copy vs. download, file names, feedback
+
+**Copy** puts the text on the clipboard as `text/plain`, in up to three attempts:
+
+1. `navigator.clipboard.write` with a *promise-valued* `ClipboardItem`. The browser gets the promise
+   inside the click handler, so the click's user activation still counts even though the rows arrive
+   later. Safari needs this.
+2. If that fails, `navigator.clipboard.writeText` once the text is ready.
+3. If that fails too, the app's execCommand-based `copyTextToClipboard()`.
+
+Each fallback is recorded as an expected failure in the error file.
+
+**Download** saves a file. The MIME types are `text/csv`, `text/markdown` and `application/yaml`,
+all UTF-8. The file name is:
+
+| Range | Name |
+|---|---|
+| from and to | `transactions_2025-12-01_2025-12-31.csv` |
+| from only | `transactions_from_2025-12-01.csv` |
+| to only | `transactions_until_2025-12-31.csv` |
+| no range | `transactions_all.csv` |
+
+The dates are the range bounds in the app's time zone. The extensions are `.csv`, `.md` and `.yaml`.
+
+**Feedback**: a snackbar says "Copied 42 transactions as CSV" or "Downloaded 42 transactions as
+YAML". On failure it shows the error.
+
+Implemented in: `TransactionListMoreButton.vue` — `copy()`, `download()`, `fileName()`, `run()`; the names come from `transaction_export.ts` — `transactionExportFileName()`, `TRANSACTION_EXPORT_FILE`.
+
+### 9.9 Decisions and why
+
+| Decision | Why |
+|---|---|
+| Export **all filtered rows**, not only the visible page | The filter is what the user asked; a page of 15 rows is arbitrary. This matches upstream's Export. |
+| Build rows in the browser from the **list API**, not from upstream's `/data/export.csv` | Upstream's export replaces commas and newlines in text with spaces, so it is lossy for bank descriptions. Upstream's columns are also shaped for re-import, not for reading. The list API gives the exact rows the table shows, with transfers de-duplicated by the server. |
+| **Signed** amounts, where the screen shows unsigned red and green | The color does not survive a copy. With a sign, a column can be summed per account in a spreadsheet, and it matches how the bank statements this app imports are written. |
+| A transfer is **one row with both sides** | A withdrawal is one event. Two rows would double-count it and hide the pairing. A cross-currency transfer keeps each side in its own currency, with no conversion. |
+| **No currency conversion, no totals** | Clients never sum or convert (CLAUDE.md, "Money rules"). Totals belong to the analytics routes (category_analysis.mdx §13, apis.mdx §12.4). |
+| Real amounts even for "hide amount" rows | "Hide amount" is a screen-privacy flag. This is the user's own export of their own data, as upstream's Export does. |
+| English type names, not localized | The files stay stable and parseable whatever the UI language is. The fork's UI strings for this menu are English literals (no upstream locale files edited). |
+| ID column, as a string | Lets a row be traced back to the app (`ezbk`, MCP `ezb_get_transaction`). int64 ids exceed JavaScript's safe integer range. |
+| Text is exported verbatim, with no "formula injection" escaping | Fidelity comes first for the user's own data. Prefixing `'` to fields that start with `=` `+` `-` `@` would corrupt amounts like `-42.17` and descriptions. |
+| Hidden when data export is disabled on the server | The same switch governs every way data leaves the app. |
+
+### 9.10 Errors and limits
+
+* A failed page request ends the export with an error in the snackbar. It is also reported to
+  `~/T/ezbookkeeping/error.err` as *"exporting the transaction list from the More menu"*, with
+  `format` and `action`. Nothing partial is copied or saved.
+* **Runaway guard.** The export stops with an error if more than 100,000 rows match ("narrow the date
+  range"), or if the server's cursor fails to move backwards.
+* An id whose account, category or tag is unknown leaves that name empty. It does not fail.
+* Tag names that contain `;` are ambiguous in CSV and Markdown, which join tags with `; `. YAML keeps
+  them as a real list.
+
+Implemented in: `TransactionListMoreButton.vue` — `run()` (the `errors.caught` site); `transaction_export_source.ts` — `TRANSACTION_EXPORT_MAX_ROWS` and the cursor check.
+
+### 9.11 Tests
+
+The pure functions have unit tests (vitest, synthetic data only). The tests cover:
+
+* amount formatting and signs, including refunds
+* offsets and midnight crossing
+* both sides of a withdrawal transfer and of a cross-currency transfer
+* Modify Balance, a primary category used alone, and unknown ids
+* RFC 4180 quoting
+* Markdown escaping
+* exact YAML output
+* zero rows
+* file names
+
+In: `~/BGit/Bryan_git/ezbookkeeping/src/lib/export/__tests__/transaction_export.test.ts` — run with `just test` or `npx vitest run src/lib/export`.
+
+---
+
+## 10. Mobile edition
+
+The mobile page (`~/BGit/Bryan_git/ezbookkeeping/src/views/mobile/transactions/ListPage.vue`) shares
+the store and `TransactionListPageBase.ts`. It does **not** have More ▾ yet. If it gets it later,
+it reuses `transaction_export.ts` and `transaction_export_source.ts` unchanged and adds only a
+Framework7 action sheet.
+
+---
+
+## 11. Keeping upstream merges cheap
+
+The fork's whole footprint on upstream files for this feature is **two lines** in
+`src/views/desktop/transactions/ListPage.vue`. One is the import, the other is the
+`<transaction-list-more-button :disabled="loading" />` tag after the Refresh button, and each is
+marked `fork: pm/transaction_list.mdx §9`. Everything else lives in new directories:
+`src/components/desktop/export/` and `src/lib/export/`. A merge conflict at either line resolves
+the same way: keep upstream's lines and re-apply ours.

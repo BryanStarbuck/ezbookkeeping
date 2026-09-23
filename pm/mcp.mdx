@@ -161,7 +161,7 @@ accident.**
 - _Without inventing a number_ — every figure is computed behind the plane and returned verbatim. The
   ANALYTICS family exists so a total is always a tool call and never a model's addition, and so a
   multi-currency total always arrives with its rates named.
-- _Cannot change it by accident_ — 50 of 74 tools are read-only; the 24 that write need the server's
+- _Cannot change it by accident_ — 50 of 75 tools are read-only; the 25 that write need the server's
   write tier **and** this server's **and** `dry_run: false` **and** a `confirm_token` only the matching
   plan produces, under a ceiling that refuses and reports the real count (§9.7). One deletes
   (`ezb_delete_transactions`, ids only), and it needs a third switch, the admin tier (§9.5b).
@@ -181,7 +181,7 @@ accident.**
 | **Authenticates with** | `X-Ezbk-Api-Key`, from `~/.credentials/ezbookkeeping.json` (0600)                                      |
 | **Env prefix**         | `EZBKMCP_`                                                                                             |
 | **Logs**               | `~/T/_ezbookkeeping/mcp.info` and `mcp.err`                                                            |
-| **Writes?**            | **off by default.** 50 of 74 read; the 24 that write need two switches, a dry run and a token          |
+| **Writes?**            | **off by default.** 50 of 75 read; the 25 that write need two switches, a dry run and a token          |
 | **Deletes?**           | **one tool, by id only**: `ezb_delete_transactions`, behind a third switch (admin tier, §9.5b)         |
 | **Computes?**          | nothing                                                                                                |
 | **Instructions**       | `ai/mcp_prompt_ezbookkeeping.md`, generated into `src/instructions.ts` at build time (§8.3)            |
@@ -221,7 +221,7 @@ this section prevents.
 | Enabled by         | `[mcp] enable_mcp = true` — **off by default, and off in this fork**                              | registering it (§5)                                                          |
 | Authenticates with | an upstream **MCP token** (JWT type 5) the operator generates with their password                | **the API secret key, nothing to generate**                                  |
 | Reachable from     | anywhere `mcp_allowed_remote_ips` permits (blank = everywhere)                                   | **nowhere but this machine**                                                 |
-| Tools              | 7, bare names: `add_transaction`, `query_transactions`, `query_all_accounts`, `query_all_accounts_balance`, `query_all_transaction_categories`, `query_all_transaction_tags`, `query_latest_exchange_rates` | **74, all `ezb_`**                           |
+| Tools              | 7, bare names: `add_transaction`, `query_transactions`, `query_all_accounts`, `query_all_accounts_balance`, `query_all_transaction_categories`, `query_all_transaction_tags`, `query_latest_exchange_rates` | **75, all `ezb_`**                           |
 | Money on the wire  | **decimal strings** (`"12.34"`)                                                                  | **integer hundredths with a currency**                                      |
 | Writes             | `add_transaction` (with its own `dry_run`), no tier, no ceiling                                  | 23 tools behind two switches, a token and a ceiling                           |
 | Totals / analytics | none — the model sums `query_transactions` pages                                                 | the analytics family                                                          |
@@ -304,7 +304,7 @@ Budget in its first sentence.
 | --- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | 1   | Distinct server key `ezbookkeeping`                                                                       | registration-level collision                                              |
 | 2   | `serverInfo.name` agreeing with the key                                                                   | two names for one server in a transcript                                  |
-| 3   | `ezb_` prefix on all 74 tools                                                                             | the model losing the server segment                                       |
+| 3   | `ezb_` prefix on all 75 tools                                                                             | the model losing the server segment                                       |
 | 4   | A fourth mandatory description clause naming the app (§9.2)                                              | a model reading a description and still not knowing whose tool it is      |
 | 5   | An `instructions` block with routing FIRST, naming Actual Budget explicitly                               | the model choosing before it has read any tool                            |
 | 6   | Refuse-with-redirect on a foreign-shaped argument                                                         | the model that has already chosen wrong                                   |
@@ -802,7 +802,7 @@ tool seems to need computation, the computation becomes a route first.
 | `ezb_list_transactions`   | `account_ids`, `start`, `end`, `type`, `category_ids`, `tag_ids`, `untagged`, `keyword`, `min_amount`, `max_amount`, `currency`, `limit`, `cursor`. Transfers appear once, with both sides |
 | `ezb_get_transaction`     | one transaction, with tags and the transfer's other side                                                                                                          |
 | `ezb_count_transactions`  | the app's count for the same filters — never the length of a page                                                                                                 |
-| `ezb_export_transactions` | the same filters as CSV, for a spreadsheet                                                                                                                        |
+| `ezb_export_transactions` | the same filters as CSV, for a spreadsheet; `with_ids: true` → the id-carrying file (apis.mdx §10.3.1a) that `ezb_set_transaction_categories_csv` writes back                                                                                                                        |
 | `ezb_list_uncategorized`  | the categorisation work queue: rows still in the fallback categories grouped by normalised payee, largest first, each with its ids, samples, per-currency totals and a suggestion counted from already-categorised rows with the same payee (apis.mdx §10.3.1) |
 
 **Reference data (7, read)**
@@ -881,7 +881,7 @@ Code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/tools/analytics.ts` — `commonQue
 | `ezb_plan_reconcile` | the app's balance vs the operator's figure, the difference, and the rows since last reconciled. **It takes the apply's arguments** (`target_balance`, `as_of`, `create_adjustment`, `adjustment_category_id` / `_name`, `adjustment_comment`, `mark_reconciled`) because the plane's plan and apply take the same ones and the token is issued for the apply route over that exact change set. `mark_reconciled` defaults to true; with the bound user's "use last reconciled time" setting off, the plane answers `forbidden` unless `mark_reconciled: false` |
 | `ezb_list_journal`   | recent machine-plane writes — what `ezb_undo` would reverse next                             |
 
-**The write tier (22, off by default)**
+**The write tier (23, off by default)**
 
 | Tool                               | Changes                                                                                     |
 | ---------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -893,6 +893,7 @@ Code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/tools/analytics.ts` — `commonQue
 | `ezb_update_transaction`           | one transaction's fields                                                                    |
 | `ezb_set_transaction_category`     | one category on named ids or a filter, under a ceiling; `allow_type_change` flips income ↔ expense |
 | `ezb_set_transaction_categories`   | many categories in one write — `assignments[]` of `{ids, category: "Type > Group > Sub"}`; `allow_type_change` moves a row to another major category (a transfer names its `counter_account`); `summary_only` for big batches |
+| `ezb_set_transaction_categories_csv` | the same write from a CSV keyed by database id — the file `ezb_export_transactions` with `with_ids: true` writes, its `New Category` (and, for a transfer, `New Counter Account`) filled; rows with a blank `New Category` are left alone and counted; `data.csv` reports rows / withCategory / blankLeftAlone / assignments. It parses the text only — it never reads or writes a file (§11.5c). Implemented in ~/BGit/Bryan_git/ezbookkeeping/mcp/src/tools/writes.ts `setTransactionCategoriesCsv.run`, `csvAssignments` |
 | `ezb_set_transaction_account`      | moves named ids or a filter to another account (same currency)                              |
 | `ezb_add_transaction_tags`         | adds tags to named ids or a filter                                                          |
 | `ezb_remove_transaction_tags`      | removes tags from named ids or a filter                                                     |
@@ -978,12 +979,12 @@ In code: `~/BGit/Bryan_git/ezbookkeeping/mcp/src/tools/tool.ts` — `verbTier()`
 
 | Dimension    | Values                                                                                                                  |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| Tier         | read (50) · write (24) — 74 total. One write, `ezb_delete_transactions`, is admin on the plane; no ARGUMENT produces an admin call |
+| Tier         | read (50) · write (25) — 75 total. One write, `ezb_delete_transactions`, is admin on the plane; no ARGUMENT produces an admin call |
 | Target       | local (default) · remote (read-only, `https:`, `EZBKMCP_ALLOW_REMOTE=1`)                                                |
 | Write tier   | server off (default) · server on (`ezbk up --allow-write`) + `EZBKMCP_ALLOW_WRITE=1`; the admin tool also `--allow-admin` + `EZBKMCP_ALLOW_ADMIN=1` |
 | Confirmation | none (read) · `confirm_token` echo of the preview's token (write; `confirm` is accepted as an alias and sent as `confirm_token`) |
 | Ceiling      | `max_changes` (write; default 200; exceeding refuses and reports the count)                                             |
-| Dry run      | `dry_run: true` **is the default on 23 of the 24 write tools**. **`ezb_undo` has none** — its preview is the thing itself, and it reports what it reversed |
+| Dry run      | `dry_run: true` **is the default on 24 of the 25 write tools**. **`ezb_undo` has none** — its preview is the thing itself, and it reports what it reversed |
 | Currency     | per-currency (default) · converted with `convert_to` (rates named)                                                      |
 | Truncation   | `truncated: true` + `limitApplied` (+ `nextCursor` for transactions) whenever a cap bound the result                    |
 | Result       | `ok: true` + `data` · `ok: false` + `error` with `isError: true`                                                        |
@@ -1218,6 +1219,24 @@ Rows an earlier pass turned into transfers (own-account moves, market-value chan
 nothing here converts either way. Implemented in
 ~/BGit/Bryan_git/ezbookkeeping/pkg/machine/ingest_categorize.go `ingHandleCategorize`, reusing
 ~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_categorize.go `catzPlanAssignments` / `catzApply`.
+
+### 11.5c Categorising the uncategorised queue, by id (the round trip)
+
+For rows that are already in the books and still in a fallback category — whatever imported them —
+the categoriser works on ONE file:
+
+1. `ezb_get_category_tree` — the newest tree (the operator may have changed it since the last run).
+2. `ezb_export_transactions` with `category_ids` = every fallback sub-category and `with_ids: true`.
+3. The categoriser fills `New Category` (`Type > Group > Sub`) and, when a row becomes a transfer,
+   `New Counter Account` — the operator's own account, or a hidden counterpart for money that leaves
+   the books (a family member's account, "Own-Account Clearing").
+4. `ezb_add_categories` for the paths the tree lacks (preview, yes).
+5. `ezb_set_transaction_categories_csv` with the file text, `allow_type_change: true` when any row
+   becomes a transfer, previewed, then applied with the token and `max_changes` = the rows it changes.
+6. Export again: the fallback holds exactly the rows left blank.
+
+The operator's own driver for this — the rules it learns and the human guidance it reads — lives with
+the private statements, never in this repo. The two tools make ONE plane call each.
 
 ### 11.6 The plan is recomputed at apply time
 
@@ -1579,10 +1598,10 @@ no clean sequence is a missing tool; a sentence that needs the model to compute 
    §3.4 layer 5 verbatim, naming Actual Budget.
 5. `grep -rE "console\.log\(|process\.stdout\.write\(" mcp/dist/` returns nothing.
 6. No host literal but loopback, no `child_process`.
-7. All 74 tools carry four clauses; names match `^ezb_[a-z_]+$`; `delete_` exists only on the admin tool (§9.5b); list and dispatch
+7. All 75 tools carry four clauses; names match `^ezb_[a-z_]+$`; `delete_` exists only on the admin tool (§9.5b); list and dispatch
    agree. 7a. Every tool maps to one apis.mdx route, and every ✅ route has a tool or an omission row.
    7b. Every `ezb_` name in `ai/mcp_prompt_ezbookkeeping.md` exists.
-8. With the write tier off, all 24 write tools are **listed**, and each returns `write_disabled` naming
+8. With the write tier off, all 25 write tools are **listed**, and each returns `write_disabled` naming
    both switches.
 9. With both switches on: no `confirm_token` → `confirm_required`; stale token → `conflict`; over the
    ceiling → `too_many_changes` with the real count (recoded from the plane's `conflict` +

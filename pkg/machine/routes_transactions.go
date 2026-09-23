@@ -62,7 +62,7 @@ func txnRoutes() []RouteDef {
 		{Method: "GET", Path: "/transactions/count", Tier: TierRead, Summary: "How many transactions match the filters (a transfer counts once).", Handler: txnHandleCount},
 		{Method: "GET", Path: "/transactions/earliest", Tier: TierRead, Summary: "The earliest transaction, optionally of one account.", Handler: txnHandleEarliest, Composed: true, Untrusted: untrusted},
 		{Method: "GET", Path: "/transactions/latest", Tier: TierRead, Summary: "The latest transaction, optionally of one account.", Handler: txnHandleLatest, Composed: true, Untrusted: untrusted},
-		{Method: "GET", Path: "/transactions/export", Tier: TierRead, Summary: "The matching transactions as upstream's ezBookkeeping CSV or TSV.", Handler: txnHandleExport, Feature: featureExport},
+		{Method: "GET", Path: "/transactions/export", Tier: TierRead, Summary: "The matching transactions as upstream's ezBookkeeping CSV or TSV; with_ids=true renders the plane's own file with the database id and category path per row.", Handler: txnHandleExport, Feature: featureExport},
 		{Method: "GET", Path: "/transactions/:id", Tier: TierRead, Summary: "One transaction, with its tags, pictures metadata and both sides of a transfer.", Handler: txnHandleGet, Untrusted: untrusted},
 		{Method: "POST", Path: "/transactions", Tier: TierWrite, DryRunnable: true, Composed: true, Summary: "Add transactions (income, expense, transfer); names resolve to ids; dry run by default.", Handler: txnHandleCreate, Untrusted: untrusted, Features: []string{"undo"}},
 		{Method: "PATCH", Path: "/transactions/:id", Tier: TierWrite, DryRunnable: true, Summary: "Edit one transaction; the preview is the exact field-by-field before/after.", Handler: txnHandlePatch, Untrusted: untrusted},
@@ -1532,6 +1532,12 @@ func txnHandleExport(mc *Ctx) (any, error) {
 		return nil, NotFound("widen the filter; no account matches it", "the filter selects no account, so there is nothing to export")
 	}
 
+	if withIds, err := mc.QueryBool("with_ids", false); err != nil {
+		return nil, err
+	} else if withIds {
+		return txnExportWithIds(mc, lk, rf, format)
+	}
+
 	q := rf.upstreamListQuery()
 	q.Del("min_time")
 	q.Del("max_time")
@@ -2148,6 +2154,29 @@ func txnBulkFinish(mc *Ctx, st *txnBulkState, summary string) (any, error) {
 // change, a new counter account) goes through TransactionModifyHandler one by one. A failure part
 // way journals what was already written, so undo can still reverse it.
 func txnApplyBulkStates(mc *Ctx, st *txnBulkState) error {
+	var states []txnState
+
+	for _, id := range st.Changed {
+		states = append(states, st.Before[id], st.After[id])
+	}
+
+	return txnWithHiddenVisible(mc, states, func() error { return txnApplyBulkStatesVisible(mc, st) })
+}
+
+// txnWithHiddenVisible runs fn with every hidden account the states touch made visible for the
+// moment of the write (upstream refuses to modify a transaction in a hidden account) — e.g. an
+// expense becoming a transfer into a hidden counterpart account, or the undo of that
+func txnWithHiddenVisible(mc *Ctx, states []txnState, fn func() error) error {
+	lk, err := txnLoadLookup(mc)
+
+	if err != nil {
+		return err
+	}
+
+	return xferWithVisible(mc, lk, xferAccountsOf(states...), fn)
+}
+
+func txnApplyBulkStatesVisible(mc *Ctx, st *txnBulkState) error {
 	byCat := map[string][]int64{}
 	var catOrder []string
 	var modify []int64
@@ -3747,6 +3776,8 @@ func txnExecRestore(mc *Ctx, payload json.RawMessage, check json.RawMessage) err
 		}
 	}
 
+	var touched []txnState
+
 	for _, s := range target {
 		id, _ := strconv.ParseInt(s.Id, 10, 64)
 		current, _, _, err := txnReadStates(mc, []int64{id})
@@ -3755,16 +3786,33 @@ func txnExecRestore(mc *Ctx, payload json.RawMessage, check json.RawMessage) err
 			return err
 		}
 
-		if cur := current[id]; cur != nil && txnStatesEqual(*cur, s) {
-			continue
-		}
+		touched = append(touched, s)
 
-		if _, err := mc.CallUpstream(api.Transactions.TransactionModifyHandler, "POST", nil, txnModifyBody(s)); err != nil {
-			return err
+		if cur := current[id]; cur != nil {
+			touched = append(touched, *cur)
 		}
 	}
 
-	return nil
+	return txnWithHiddenVisible(mc, touched, func() error {
+		for _, s := range target {
+			id, _ := strconv.ParseInt(s.Id, 10, 64)
+			current, _, _, err := txnReadStates(mc, []int64{id})
+
+			if err != nil {
+				return err
+			}
+
+			if cur := current[id]; cur != nil && txnStatesEqual(*cur, s) {
+				continue
+			}
+
+			if _, err := mc.CallUpstream(api.Transactions.TransactionModifyHandler, "POST", nil, txnModifyBody(s)); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
 // txnExecDelete deletes rows this plane created; rows already gone are skipped

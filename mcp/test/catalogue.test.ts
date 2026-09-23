@@ -70,16 +70,16 @@ const OMISSIONS: Record<string, string> = {
 };
 
 describe('the catalogue', () => {
-  it('is seventy-four tools: fifty read, twenty-four write', () => {
-    expect(TOTAL_TOOLS).toBe(74);
+  it('is seventy-five tools: fifty read, twenty-five write', () => {
+    expect(TOTAL_TOOLS).toBe(75);
     expect(READ_TOOLS).toBe(50);
-    expect(WRITE_TOOL_COUNT).toBe(24);
-    expect(TOOLS.length).toBe(74);
+    expect(WRITE_TOOL_COUNT).toBe(25);
+    expect(TOOLS.length).toBe(75);
   });
 
   it('has the families of §9.5 with their sizes', () => {
     const sizes = Object.fromEntries(FAMILIES.map(f => [f.name, f.tools.length]));
-    expect(sizes).toEqual({ orientation: 4, accounts: 5, transactions: 5, reference: 7, currency: 2, analytics: 13, statements: 11, previews: 2, writes: 22, transfers: 3 });
+    expect(sizes).toEqual({ orientation: 4, accounts: 5, transactions: 5, reference: 7, currency: 2, analytics: 13, statements: 11, previews: 2, writes: 23, transfers: 3 });
   });
 
   it('names every tool ^ezb_[a-z_]+$ with a verb from the closed set (or a sanctioned bare name)', () => {

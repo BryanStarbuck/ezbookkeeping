@@ -1169,7 +1169,7 @@ Code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_reconcile.go` — `txnR
 | `/transactions/:id`             | GET    | R     | — (with tags, pictures metadata, the transfer's other side)                                                                                                                                                           | —       |
 | `/transactions/earliest`        | GET    | R     | `account_id`                                                                                                                                                                                                          | —       |
 | `/transactions/latest`          | GET    | R     | `account_id`                                                                                                                                                                                                          | —       |
-| `/transactions/export`          | GET    | R     | same filters, `format=csv\|tsv`                                                                                                                                                                                       | —       |
+| `/transactions/export`          | GET    | R     | same filters, `format=csv\|tsv`; `with_ids=true` → the id-carrying file of §10.3.1a                                                                                                                                                                                       | —       |
 | `/transactions`                 | POST   | W     | `transactions[]` of `{type, time, account_id, amount, destination_account_id, destination_amount, category_id\|category_name, tag_ids[], comment, hide_amount, geo}`, `dry_run`                                        | resolve |
 | `/transactions/:id`             | PATCH  | W     | any field upstream's `TransactionModifyHandler` accepts                                                                                                                                                               | resolve |
 | `/transactions/set-category`    | POST   | W     | `ids[]` \| `filter{}`, `category_id` \| `category_name` (a name or path), `allow_type_change`, `max_changes`, `dry_run` — `TransactionBatchUpdateCategoriesHandler`                                                  | resolve |
@@ -1253,6 +1253,32 @@ serve whoever categorises them — usually an agent through the MCP:
 
 A category's own type cannot change (upstream forbids it); moving a group to another major category
 is `categories/ensure` under the new type followed by `transactions/categorize`.
+
+#### 10.3.1a Round trip by id: export with ids, categorise from the file
+
+Upstream's CSV/TSV export has no id column, so a file pulled out of the books cannot be written back
+to the same rows. `GET /transactions/export?with_ids=true` renders the plane's own file instead, from
+the same filtered walk `GET /transactions` uses (one row per API transaction; a transfer once; at most
+50,000 rows, past that `invalid_input` asks for start/end). Columns, in this order:
+
+`ID, Date, Type, Category Path, Category, Sub Category, Account, Currency, Amount, Amount Hundredths,
+Counter Account, Counter Amount, Tags, Description, New Category, New Counter Account, Rule`
+
+- `ID` is the database primary key, always first, always a decimal string (a spreadsheet must keep it
+  as text: 18 digits do not survive a float).
+- `Category Path` is `Type > Group > Sub` (§10.3.1). `Amount` is signed — money out of the row's
+  account is negative — and `Amount Hundredths` is the same figure as an integer.
+- `New Category`, `New Counter Account` and `Rule` are empty: a categoriser fills them. The MCP's
+  `ezb_set_transaction_categories_csv` reads the file back, groups rows by (New Category, New Counter
+  Account) into `assignments[]` and sends ONE `POST /transactions/categorize` — so the whole round
+  trip is two calls and every row is found by its primary key.
+- A row that becomes a transfer may name a HIDDEN counterpart (a family member's account, "Own-Account
+  Clearing"). Upstream refuses to modify a transaction in a hidden account, so every bulk write —
+  and its undo — makes the hidden accounts it touches visible for the moment of the write and hides
+  them again, whether the write failed or not (the same rule §10.3.2's conversion follows).
+  In code: `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_transactions.go` — `txnWithHiddenVisible`, used by `txnApplyBulkStates` and `txnExecRestore`.
+Implemented in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/export_rows.go` — `txnExportWithIds`, `exportRowsRender`;
+the switch in `~/BGit/Bryan_git/ezbookkeeping/pkg/machine/routes_transactions.go` — `txnHandleExport`.
 
 #### 10.3.2 Own-account moves as transfers
 

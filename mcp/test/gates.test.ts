@@ -22,7 +22,7 @@ describe('gate 4 — mode', () => {
     const { host, config } = makeHost();
     expect(config.allowWrite).toBe(false);
     const listed = host.handleListTools().tools;
-    expect(listed.length).toBe(74);
+    expect(listed.length).toBe(75);
     for (const tool of WRITE_TOOLS) {
       const entry = listed.find(t => t.name === tool.name);
       expect(entry?.description).toContain('CURRENTLY DISABLED');
@@ -311,6 +311,8 @@ function minimalArgs(name: string): Record<string, unknown> {
       return { transaction_id: '1' };
     case 'ezb_set_transaction_category':
       return { ids: ['1'], category_id: '2' };
+    case 'ezb_set_transaction_categories_csv':
+      return { csv: 'ID,New Category\n1,Expense > Food & Drink > Food\n' };
     case 'ezb_set_transaction_categories':
       return { assignments: [{ ids: ['1'], category: 'Expense > Food > Groceries' }] };
     case 'ezb_add_categories':

@@ -1,5 +1,5 @@
 /**
- * The write tier — pm/mcp.mdx §9.5, §9.7. Twenty-two tools, off by default. Every one but ezb_undo
+ * The write tier — pm/mcp.mdx §9.5, §9.7. Twenty-three tools, off by default. Every one but ezb_undo
  * previews by default (dry_run: true) and applies only with dry_run: false plus the confirm_token
  * the preview returned, under a max_changes ceiling; the plane recomputes the change set at apply
  * time and refuses a moved fingerprint with conflict. None deletes anything.
@@ -387,6 +387,123 @@ export const setTransactionCategories: ToolDef = {
     const a = args as WriteArgs & Record<string, unknown>;
     const res = await ctx.client.request('/transactions/categorize', { method: 'POST', body: { ...withoutWriteKeys(a), ...writeOpts(a, ctx.config) } });
     return fromWrite(res);
+  },
+};
+
+/** RFC 4180 CSV (or TSV) to rows of cells; quoted cells may hold the separator, quotes and newlines. */
+export function parseDelimited(text: string, sep: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (ch === '"') quoted = false; else cell += ch;
+    } else if (ch === '"' && cell === '') quoted = true;
+    else if (ch === sep) { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell); cell = '';
+      if (row.some(c => c !== '')) rows.push(row);
+      row = [];
+    } else cell += ch;
+  }
+  row.push(cell);
+  if (row.some(c => c !== '')) rows.push(row);
+  return rows;
+}
+
+type CsvAssignment = { ids: string[]; category: string; counter_account_name?: string };
+
+/**
+ * The id-carrying CSV back into ezb_set_transaction_categories' assignments: one assignment per
+ * distinct (category, counter account), rows with a blank category left out and counted.
+ */
+export function csvAssignments(text: string, idColumn: string, categoryColumn: string, counterColumn: string): { assignments: CsvAssignment[]; rows: number; blank: number } {
+  const firstLine = text.slice(0, text.search(/\r?\n|$/));
+  const sep = firstLine.includes('\t') && !firstLine.includes(',') ? '\t' : ',';
+  const table = parseDelimited(text.replace(/^\uFEFF/, ''), sep);
+  if (table.length === 0) toolFail('invalid_input', 'the CSV is empty', 'pass the file ezb_export_transactions with_ids wrote, with its header row');
+  const head = (table[0] ?? []).map(h => h.trim().toLowerCase());
+  const col = (name: string): number => head.indexOf(name.trim().toLowerCase());
+  const iId = col(idColumn);
+  const iCat = col(categoryColumn);
+  const iCounter = col(counterColumn);
+  if (iId < 0) toolFail('invalid_input', `the CSV has no "${idColumn}" column`, 'export with ezb_export_transactions with_ids: true; its first column is ID');
+  if (iCat < 0) toolFail('invalid_input', `the CSV has no "${categoryColumn}" column`, 'fill the New Category column, or name the column with category_column');
+  const groups = new Map<string, CsvAssignment>();
+  const seen = new Set<string>();
+  let blank = 0;
+  for (const [n, r] of table.slice(1).entries()) {
+    const id = (r[iId] ?? '').trim();
+    const category = (r[iCat] ?? '').trim();
+    const counter = iCounter < 0 ? '' : (r[iCounter] ?? '').trim();
+    if (!/^\d+$/.test(id)) toolFail('invalid_input', `row ${n + 2}: "${id}" is not an ezBookkeeping id`, 'ids are the long decimal strings the export wrote; keep the ID column as text in a spreadsheet');
+    if (seen.has(id)) toolFail('invalid_input', `row ${n + 2}: id ${id} appears twice`, 'give each transaction one row');
+    seen.add(id);
+    if (category === '') { blank++; continue; }
+    const key = `${category}\u0000${counter}`;
+    const g = groups.get(key) ?? { ids: [], category, ...(counter === '' ? {} : { counter_account_name: counter }) };
+    g.ids.push(id);
+    groups.set(key, g);
+  }
+  return { assignments: [...groups.values()], rows: table.length - 1, blank };
+}
+
+export const setTransactionCategoriesCsv: ToolDef = {
+  name: 'ezb_set_transaction_categories_csv',
+  route: { method: 'POST', path: '/transactions/categorize' },
+  tier: 'write',
+  hasDryRun: true,
+  description: describe({
+    what: 'Categorises transactions from a CSV keyed by database id — the file ezb_export_transactions with_ids: true writes, with its New Category column filled ("Type > Group > Sub") and, for a row that becomes a transfer, New Counter Account — in one previewed, undoable write; rows with a blank New Category are left alone and counted.',
+    tier: 'write',
+    insteadOf: 'For a handful of decisions ezb_set_transaction_categories takes the ids directly. Create missing categories first with ezb_add_categories; a path the tree lacks is refused.',
+  }),
+  inputSchema: objectSchema({
+    csv: strField('The CSV (or TSV) text, header row first. A script can read the file and pass its text; this server never reads or writes files itself.'),
+    id_column: strField('The id column. Defaults to ID.'),
+    category_column: strField('The column holding the category path. Defaults to "New Category".'),
+    counter_account_column: strField('The column holding a transfer\'s counter account name. Defaults to "New Counter Account".'),
+    allow_type_change: boolField('Let a row move to another major category (e.g. an expense becoming a transfer). Defaults to false.'),
+    skip_invalid: boolField('List rows that cannot take their category under preview.skipped and change the rest. Defaults to false.'),
+    summary_only: boolField('Keep only the per-category counts in the preview. Defaults to true for more than 200 rows.'),
+    ...WRITE_PROPERTIES,
+  }, ['csv']),
+  schema: z
+    .object({
+      csv: z.string().min(1),
+      id_column: z.string().min(1).optional(),
+      category_column: z.string().min(1).optional(),
+      counter_account_column: z.string().min(1).optional(),
+      allow_type_change: z.boolean().optional(),
+      skip_invalid: z.boolean().optional(),
+      summary_only: z.boolean().optional(),
+      ...zWrite,
+    })
+    .strict(),
+  async run(args, ctx) {
+    const a = args as WriteArgs & { csv: string; id_column?: string; category_column?: string; counter_account_column?: string; allow_type_change?: boolean; skip_invalid?: boolean; summary_only?: boolean };
+    const text = a.csv;
+    const { assignments, rows, blank } = csvAssignments(text, a.id_column ?? 'ID', a.category_column ?? 'New Category', a.counter_account_column ?? 'New Counter Account');
+    if (assignments.length === 0) toolFail('invalid_input', `none of the ${rows} row(s) has a category to set`, 'fill the New Category column with "Type > Group > Sub" paths');
+    const changing = assignments.reduce((n, g) => n + g.ids.length, 0);
+    const res = await ctx.client.request('/transactions/categorize', {
+      method: 'POST',
+      body: {
+        assignments,
+        ...(a.allow_type_change === undefined ? {} : { allow_type_change: a.allow_type_change }),
+        ...(a.skip_invalid === undefined ? {} : { skip_invalid: a.skip_invalid }),
+        summary_only: a.summary_only ?? changing > 200,
+        ...writeOpts(a, ctx.config),
+      },
+    });
+    const out = fromWrite(res);
+    if (out.data !== null && typeof out.data === 'object') {
+      (out.data as Record<string, unknown>).csv = { rows, withCategory: changing, blankLeftAlone: blank, assignments: assignments.length };
+    }
+    return out;
   },
 };
 
@@ -940,6 +1057,7 @@ export const WRITE_TOOLS: ToolDef[] = [
   updateTransaction,
   setTransactionCategory,
   setTransactionCategories,
+  setTransactionCategoriesCsv,
   setTransactionAccount,
   addTransactionTags,
   removeTransactionTags,

@@ -118,6 +118,7 @@
                                     <v-icon :icon="mdiRefresh" size="24" />
                                     <v-tooltip activator="parent">{{ tt('Refresh') }}</v-tooltip>
                                 </v-btn>
+                                <transaction-list-more-button :disabled="loading" /><!-- fork: pm/transaction_list.mdx §9 -->
                                 <v-spacer/>
                                 <div class="transaction-keyword-filter ms-2">
                                     <v-text-field density="compact" :disabled="loading"
@@ -707,6 +708,7 @@ import SnackBar from '@/components/desktop/SnackBar.vue';
 import EditDialog from './list/dialogs/EditDialog.vue';
 import AIImageRecognitionDialog from './list/dialogs/AIImageRecognitionDialog.vue';
 import ImportDialog from './import/ImportDialog.vue';
+import TransactionListMoreButton from '@/components/desktop/export/TransactionListMoreButton.vue'; // fork: pm/transaction_list.mdx §9
 import AccountFilterSettingsDialog from '@/views/desktop/common/dialogs/AccountFilterSettingsDialog.vue';
 import CategoryFilterSettingsDialog from '@/views/desktop/common/dialogs/CategoryFilterSettingsDialog.vue';
 import TransactionTagFilterSettingsDialog from '@/views/desktop/common/dialogs/TransactionTagFilterSettingsDialog.vue';
